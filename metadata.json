@@ -1,0 +1,6 @@
+{
+  "name": "HOD Faculty Task Monitoring System",
+  "description": "System for Head of Department to manage staff, classes, assign tasks, track observations, daily faculty monitoring, and print A4 reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

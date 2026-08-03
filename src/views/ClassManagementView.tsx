@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ClassRoom, DEPARTMENTS } from '../types';
 import { StudentAttendanceModal } from '../components/StudentAttendanceModal';
+import { isSameDept } from '../utils/departmentUtils';
 import {
   GraduationCap,
   Plus,
@@ -50,16 +51,18 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({
   }, [isAddModalOpen]);
 
   const openAddModal = () => {
+    const defaultDept = currentUser?.department || DEPARTMENTS[0];
+    const deptStaff = staffList.find((s) => isSameDept(s.department, defaultDept));
     setEditingClass(null);
-    setYear('3rd Year');
-    setDepartment(DEPARTMENTS[0]);
-    setSection('A');
-    setClassAdvisor(staffList[0]?.facultyName || '');
-    setRoomNumber('CS-301');
-    setSemester('Semester 5');
+    setYear('2nd Year');
+    setDepartment(defaultDept);
+    setSection('Sec A');
+    setClassAdvisor(deptStaff?.facultyName || staffList[0]?.facultyName || '');
+    setRoomNumber('ROOM-101');
+    setSemester('Semester 3');
     setAcademicYear('2025-2026');
-    setCourseCode('CS3501');
-    setCourseName('Compiler Design');
+    setCourseCode('');
+    setCourseName('');
     setShowModal(true);
   };
 
@@ -126,10 +129,7 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({
   const filteredClasses = classList.filter((c) => {
     // HOD Scope: Only see classes from their department
     if (isHod) {
-      const classDept = c.department.toLowerCase();
-      const userDept = hodDepartment.toLowerCase();
-      const isSameDept = classDept === userDept || (classDept.includes('ai & ds') && userDept.includes('ai & ds'));
-      if (!isSameDept) return false;
+      if (!isSameDept(c.department, hodDepartment)) return false;
     }
 
     const q = (search || filterState.searchQuery).toLowerCase();
@@ -264,7 +264,8 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({
                   const attSummary = (dailyReport.studentAttendanceSummaries || []).find(
                     (s) =>
                       s.classId === cls.id ||
-                      s.className.toLowerCase().includes(cls.section.toLowerCase())
+                      (isSameDept(s.department || s.className, cls.department) &&
+                        s.className.toLowerCase().includes(cls.section.toLowerCase()))
                   );
 
                   return (

@@ -197,25 +197,25 @@ export const ClassObservationView: React.FC = () => {
 
   const availableStaffList = isHod
     ? staffList.filter((s) => {
-        const staffDept = s.department.toLowerCase();
-        const userDept = hodDepartment.toLowerCase();
+        const staffDept = (s.department || '').toLowerCase();
+        const userDept = (hodDepartment || '').toLowerCase();
         return staffDept === userDept || (staffDept.includes('ai & ds') && userDept.includes('ai & ds'));
       })
     : staffList;
 
   const filteredObservations = observationList.filter((obs) => {
-    const q = (search || filterState.searchQuery).toLowerCase();
+    const q = (search || filterState?.searchQuery || '').toLowerCase();
     const matchesSearch =
-      obs.facultyName.toLowerCase().includes(q) ||
-      obs.subject.toLowerCase().includes(q) ||
-      obs.className.toLowerCase().includes(q) ||
-      obs.remarks.toLowerCase().includes(q);
+      (obs.facultyName || '').toLowerCase().includes(q) ||
+      (obs.subject || '').toLowerCase().includes(q) ||
+      (obs.className || '').toLowerCase().includes(q) ||
+      (obs.remarks || '').toLowerCase().includes(q);
 
     const matchesRating = ratingFilter === 'all' || obs.observation === ratingFilter;
 
     let matchesYear = true;
     if (yearFilter !== 'all') {
-      matchesYear = obs.className.toLowerCase().includes(yearFilter.toLowerCase());
+      matchesYear = (obs.className || '').toLowerCase().includes((yearFilter || '').toLowerCase());
     }
 
     return matchesSearch && matchesRating && matchesYear;

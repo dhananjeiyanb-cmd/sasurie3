@@ -148,9 +148,30 @@
         "read": { "type": "boolean" }
       },
       "required": ["id", "title", "message", "read"]
+    },
+    "EventRecord": {
+      "title": "EventRecord Entity",
+      "description": "Institutional and Department Events, Workshops, Seminars, Guest Lectures and Club Activities",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "eventTitle": { "type": "string" },
+        "eventType": { "type": "string" },
+        "department": { "type": "string" },
+        "association": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "semester": { "type": "string" },
+        "plannedDate": { "type": "string" },
+        "eventStatus": { "type": "string" }
+      },
+      "required": ["id", "eventTitle", "eventType", "department", "eventStatus"]
     }
   },
   "firestore": {
+    "/events/{eventDocId}": {
+      "schema": { "$ref": "#/entities/EventRecord" },
+      "description": "Collection of events, participants, guest details, documents and feedback"
+    },
     "/staff/{staffDocId}": {
       "schema": { "$ref": "#/entities/Staff" },
       "description": "Collection of faculty members"

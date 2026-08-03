@@ -23,30 +23,35 @@ export function calculateDimension1(record: StudentSkillBankData): {
   cappedTotal: number;
   isCapped: boolean;
 } {
+  if (!record) {
+    return { attendanceCoins: 0, libraryCoins: 0, libraryUtilCoins: 0, feeCoins: 0, miniProjectCoins: 0, ictToolsCoins: 0, examCoins: 0, learnerCatCoins: 0, endSemCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
   let attCoins = 0;
-  MONTH_LIST.forEach((m) => {
-    attCoins += record.attendanceMonths[m]?.coinsEarned || 0;
-  });
+  if (record.attendanceMonths) {
+    MONTH_LIST.forEach((m) => {
+      attCoins += record.attendanceMonths[m]?.coinsEarned || 0;
+    });
+  }
   const attendanceCoins = Math.min(8000, attCoins);
 
   let libraryCoins = 0;
   if (record.libraryChecklist) {
-    libraryCoins = record.libraryChecklist.coinsEarned;
-  } else {
-    const libBooksCount = record.libraryBooks.filter((b) => b.verifiedByLibrarian && b.returnedOnTime).length;
+    libraryCoins = record.libraryChecklist.coinsEarned || 0;
+  } else if (record.libraryBooks && Array.isArray(record.libraryBooks)) {
+    const libBooksCount = record.libraryBooks.filter((b) => b?.verifiedByLibrarian && b?.returnedOnTime).length;
     libraryCoins = Math.min(3000, Math.max(1500, Math.floor(libBooksCount / 5) * 1500));
   }
   libraryCoins = Math.min(3000, libraryCoins);
 
-  const libVisitsCount = record.libraryVisits.filter((v) => v.verified).length;
+  const libVisitsCount = record.libraryVisits && Array.isArray(record.libraryVisits) ? record.libraryVisits.filter((v) => v?.verified).length : 0;
   const libraryUtilCoins = Math.min(500, libVisitsCount * 20);
 
-  const feeCoins = Math.min(5000, record.feePayment.coinsEarned);
-  const miniProjectCoins = Math.min(2500, record.miniProjectChecklist.coinsEarned);
-  const ictToolsCoins = Math.min(2500, record.ictToolsChecklist.coinsEarned);
-  const examCoins = Math.min(12000, record.examPerformance.coinsEarned);
-  const learnerCatCoins = record.learnerCategory.coinsEarned;
-  const endSemCoins = record.endSemResults.coinsEarned;
+  const feeCoins = Math.min(5000, record.feePayment?.coinsEarned || 0);
+  const miniProjectCoins = Math.min(2500, record.miniProjectChecklist?.coinsEarned || 0);
+  const ictToolsCoins = Math.min(2500, record.ictToolsChecklist?.coinsEarned || 0);
+  const examCoins = Math.min(12000, record.examPerformance?.coinsEarned || 0);
+  const learnerCatCoins = record.learnerCategory?.coinsEarned || 0;
+  const endSemCoins = record.endSemResults?.coinsEarned || 0;
 
   const rawTotal =
     attendanceCoins +
@@ -88,25 +93,32 @@ export function calculateDimension2(record: StudentSkillBankData): {
   cappedTotal: number;
   isCapped: boolean;
 } {
+  if (!record) {
+    return { nptelCoins: 0, leetCodeCoins: 0, onlineBasicCoins: 0, advancedCourseCoins: 0, paperCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
   let nptel = 0;
-  MONTH_LIST.forEach((m) => {
-    nptel += record.nptelMonths[m]?.coinsEarned || 0;
-  });
+  if (record.nptelMonths) {
+    MONTH_LIST.forEach((m) => {
+      nptel += record.nptelMonths[m]?.coinsEarned || 0;
+    });
+  }
   const nptelCoins = Math.min(3000, nptel);
 
   let leet = 0;
-  MONTH_LIST.forEach((m) => {
-    leet += record.leetCodeMonths[m]?.coinsEarned || 0;
-  });
+  if (record.leetCodeMonths) {
+    MONTH_LIST.forEach((m) => {
+      leet += record.leetCodeMonths[m]?.coinsEarned || 0;
+    });
+  }
   const leetCodeCoins = Math.min(2000, leet);
 
-  const basicSum = record.onlineCertBasic.reduce((sum, item) => sum + item.coinsEarned, 0);
+  const basicSum = (record.onlineCertBasic || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const onlineBasicCoins = Math.min(1000, basicSum);
 
-  const advSum = record.advancedCourses.reduce((sum, item) => sum + item.coinsEarned, 0);
+  const advSum = (record.advancedCourses || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const advancedCourseCoins = Math.min(2000, advSum);
 
-  const paperSum = record.paperPresentations.reduce((sum, item) => sum + item.coinsEarned, 0);
+  const paperSum = (record.paperPresentations || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const paperCoins = Math.min(2000, paperSum);
 
   const rawTotal = nptelCoins + leetCodeCoins + onlineBasicCoins + advancedCourseCoins + paperCoins;
@@ -138,22 +150,27 @@ export function calculateDimension3(record: StudentSkillBankData): {
   cappedTotal: number;
   isCapped: boolean;
 } {
+  if (!record) {
+    return { aptitudeCoins: 0, resumeCoins: 0, mockInterviewCoins: 0, linkedInCoins: 0, gitHubCoins: 0, socialMediaCoins: 0, hackathonCoins: 0, internshipCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
   let apt = 0;
-  MONTH_LIST.forEach((m) => {
-    apt += record.aptitudeMonths[m]?.coinsEarned || 0;
-  });
+  if (record.aptitudeMonths) {
+    MONTH_LIST.forEach((m) => {
+      apt += record.aptitudeMonths[m]?.coinsEarned || 0;
+    });
+  }
   const aptitudeCoins = Math.min(3000, apt);
 
-  const resumeCoins = Math.min(2000, record.resume.coinsEarned);
-  const mockInterviewCoins = Math.min(2000, record.mockInterview.coinsEarned);
-  const linkedInCoins = Math.min(2000, record.linkedIn.coinsEarned);
-  const gitHubCoins = Math.min(1000, record.gitHub.coinsEarned);
-  const socialMediaCoins = record.socialMedia.coinsEarned;
+  const resumeCoins = Math.min(2000, record.resume?.coinsEarned || 0);
+  const mockInterviewCoins = Math.min(2000, record.mockInterview?.coinsEarned || 0);
+  const linkedInCoins = Math.min(2000, record.linkedIn?.coinsEarned || 0);
+  const gitHubCoins = Math.min(1000, record.gitHub?.coinsEarned || 0);
+  const socialMediaCoins = record.socialMedia?.coinsEarned || 0;
 
-  const hackSum = record.hackathons.reduce((sum, item) => sum + item.coinsEarned, 0);
+  const hackSum = (record.hackathons || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const hackathonCoins = Math.min(2000, hackSum);
 
-  const internshipCoins = Math.min(1000, record.internship.coinsEarned);
+  const internshipCoins = Math.min(1000, record.internship?.coinsEarned || 0);
 
   const rawTotal =
     aptitudeCoins +
@@ -192,11 +209,14 @@ export function calculateDimension4(record: StudentSkillBankData): {
   cappedTotal: number;
   isCapped: boolean;
 } {
-  const workshopCoins = Math.min(4000, record.workshop.coinsEarned);
-  const eventCoins = Math.min(4000, record.collegeEvent.coinsEarned);
-  const volunteeringCoins = Math.min(4000, record.volunteering.coinsEarned);
+  if (!record) {
+    return { workshopCoins: 0, eventCoins: 0, volunteeringCoins: 0, membershipCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
+  const workshopCoins = Math.min(4000, record.workshop?.coinsEarned || 0);
+  const eventCoins = Math.min(4000, record.collegeEvent?.coinsEarned || 0);
+  const volunteeringCoins = Math.min(4000, record.volunteering?.coinsEarned || 0);
 
-  const memSum = record.professionalMemberships.reduce((sum, item) => sum + item.coinsEarned, 0);
+  const memSum = (record.professionalMemberships || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const membershipCoins = Math.min(3000, memSum);
 
   const rawTotal = workshopCoins + eventCoins + volunteeringCoins + membershipCoins;
@@ -222,13 +242,16 @@ export function calculateDimension5(record: StudentSkillBankData): {
   cappedTotal: number;
   isCapped: boolean;
 } {
-  const sportsSum = record.sportsLogs.reduce((sum, item) => sum + item.coinsEarned, 0);
+  if (!record) {
+    return { sportsCoins: 0, artsCoins: 0, clubCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
+  const sportsSum = (record.sportsLogs || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const sportsCoins = Math.min(5000, sportsSum);
 
-  const artsSum = record.artsLogs.reduce((sum, item) => sum + item.coinsEarned, 0);
+  const artsSum = (record.artsLogs || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const artsCoins = Math.min(5000, artsSum);
 
-  const clubSum = record.clubLogs.reduce((sum, item) => sum + item.coinsEarned, 0);
+  const clubSum = (record.clubLogs || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
   const clubCoins = Math.min(5000, clubSum);
 
   const rawTotal = sportsCoins + artsCoins + clubCoins;
@@ -255,9 +278,11 @@ export function calculateStudentTotals(record: StudentSkillBankData) {
   const totalGrossEarned = d1.cappedTotal + d2.cappedTotal + d3.cappedTotal + d4.cappedTotal + d5.cappedTotal;
 
   let totalDeductions = 0;
-  record.violations.forEach((v) => {
-    totalDeductions += v.coinsDeducted;
-  });
+  if (record && record.violations) {
+    record.violations.forEach((v) => {
+      totalDeductions += v?.coinsDeducted || 0;
+    });
+  }
 
   const grandTotalNetCoins = Math.max(0, totalGrossEarned - totalDeductions);
   const percentageOfTarget = Math.round((grandTotalNetCoins / 100000) * 100);
@@ -1812,6 +1837,220 @@ const RAW_INITIAL_STUDENTS_SKILL_BANK: StudentSkillBankData[] = [
       checkpoint2Grade: 'A+ (Excellent)',
       finalGradeCoin: 55000,
       finalGradeLetter: 'A+ (Excellent)',
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-CYB1',
+      skillBankAccountNo: 'SB-CYBER-2026-001',
+      studentName: 'PRAVEEN KUMAR K.',
+      registerNumber: '732422108001',
+      degreeBranch: 'B.E. Cyber Security',
+      department: 'Cyber Security (CYBER)',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-CYB01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'O+ve',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-8001',
+      dateOfBirth: '2006-05-14',
+      communicationAddress: '15, Cyber Hub Street, Coimbatore',
+      pinCode: '641001',
+      studentMobile: '9876543230',
+      studentEmail: 'praveen.cyber@sasurie.ac.in',
+      personalEmail: 'praveen.cyber@gmail.com',
+      fatherName: 'K. Kumar',
+      fatherOccupation: 'Engineer',
+      fatherMobile: '9876543231',
+      motherName: 'K. Sangeetha',
+      motherOccupation: 'Teacher',
+      motherMobile: '9876543232',
+      sslcSchool: 'Government HSS Coimbatore',
+      hscSchool: 'Government HSS Coimbatore',
+      yearOfPassing: '2025',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Prof. R. Shielda',
+      mentorStaffId: 'STF011',
+      dreamCompany: 'Palo Alto Networks / Cisco',
+      careerGoal: 'Ethical Hacker & Security Analyst',
+      studentSigned: true,
+      mentorSigned: true,
+      hodSigned: true,
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 22, attendancePct: 100, coinsEarned: 8000 },
+    },
+    transformationJourney: {
+      academicReflection: 'Ethical Hacking and Network Defense fundamentals.',
+      skillReflection: 'Wireshark, Metasploit, Nmap hands-on labs.',
+      careerReflection: 'Security Operations Center (SOC) Analyst.',
+      checkpoint1Coins: 30000,
+      checkpoint1Grade: 'O (Outstanding)',
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-CYB2',
+      skillBankAccountNo: 'SB-CYBER-2026-002',
+      studentName: 'VISHNU PRIYA R.',
+      registerNumber: '732422108002',
+      degreeBranch: 'B.E. Cyber Security',
+      department: 'Cyber Security (CYBER)',
+      batch: '2024-2028',
+      academicYear: '3rd Year',
+      semester: 'Sem V & VI',
+      section: 'A',
+      admissionNumber: 'ADM-2024-CYB02',
+      gender: 'Female',
+      age: 20,
+      bloodGroup: 'A+ve',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-8002',
+      dateOfBirth: '2005-09-20',
+      communicationAddress: '88, Defense Enclave, Tirupur',
+      pinCode: '641602',
+      studentMobile: '9876543233',
+      studentEmail: 'vishnupriya.cyber@sasurie.ac.in',
+      personalEmail: 'vishnupriya.r@gmail.com',
+      fatherName: 'R. Rajan',
+      fatherOccupation: 'Business',
+      fatherMobile: '9876543234',
+      motherName: 'R. Kavitha',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9876543235',
+      sslcSchool: 'KSC Girls HSS Tirupur',
+      hscSchool: 'KSC Girls HSS Tirupur',
+      yearOfPassing: '2024',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Prof. A. Vigilant',
+      mentorStaffId: 'STF012',
+      dreamCompany: 'CrowdStrike / IBM Security',
+      careerGoal: 'Cyber Forensics Investigator',
+      studentSigned: true,
+      mentorSigned: true,
+      hodSigned: true,
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 23, attendancePct: 95.8, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 21, attendancePct: 95.4, coinsEarned: 8000 },
+    },
+    transformationJourney: {
+      academicReflection: 'Cryptography and Incident Response.',
+      skillReflection: 'Digital forensics tools and malware analysis.',
+      careerReflection: 'Cyber Risk Manager.',
+      checkpoint1Coins: 28000,
+      checkpoint1Grade: 'A+ (Excellent)',
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-EEE1',
+      skillBankAccountNo: 'SB-EEE-2026-001',
+      studentName: 'DEEPAK M.',
+      registerNumber: '732422105001',
+      degreeBranch: 'B.E. EEE',
+      department: 'Electrical & Electronics Engineering',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-EEE01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'B+ve',
+      studentMobile: '9876543240',
+      studentEmail: 'deepak.eee@sasurie.ac.in',
+      mentorFaculty: 'Prof. K. Deepa',
+      mentorStaffId: 'STF008',
+      dreamCompany: 'Siemens / L&T Electrical',
+      careerGoal: 'Power Systems Engineer',
+      studentSigned: true,
+      mentorSigned: true,
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-MCH1',
+      skillBankAccountNo: 'SB-MECH-2026-001',
+      studentName: 'GOKUL R.',
+      registerNumber: '732422102001',
+      degreeBranch: 'B.E. Mechanical',
+      department: 'Mechanical Engineering',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-MCH01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'O+ve',
+      studentMobile: '9876543250',
+      studentEmail: 'gokul.mech@sasurie.ac.in',
+      mentorFaculty: 'Prof. S. Ramesh',
+      mentorStaffId: 'STF010',
+      dreamCompany: 'Tata Motors / Caterpillar',
+      careerGoal: 'CAD/CAM Design Engineer',
+      studentSigned: true,
+      mentorSigned: true,
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-IT1',
+      skillBankAccountNo: 'SB-IT-2026-001',
+      studentName: 'NAVEEN T.',
+      registerNumber: '732422107001',
+      degreeBranch: 'B.Tech IT',
+      department: 'Information Technology',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-IT01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'A+ve',
+      studentMobile: '9876543260',
+      studentEmail: 'naveen.it@sasurie.ac.in',
+      mentorFaculty: 'Prof. N. Tech',
+      mentorStaffId: 'STF013',
+      dreamCompany: 'Zoho / Cognizant',
+      careerGoal: 'Cloud Solutions Architect',
+      studentSigned: true,
+      mentorSigned: true,
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-CIV1',
+      skillBankAccountNo: 'SB-CIVIL-2026-001',
+      studentName: 'MANOJ C.',
+      registerNumber: '732422101001',
+      degreeBranch: 'B.E. Civil',
+      department: 'Civil Engineering',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-CIV01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'B+ve',
+      studentMobile: '9876543270',
+      studentEmail: 'manoj.civil@sasurie.ac.in',
+      mentorFaculty: 'Prof. C. Build',
+      mentorStaffId: 'STF014',
+      dreamCompany: 'L&T Construction',
+      careerGoal: 'Structural Design Specialist',
+      studentSigned: true,
+      mentorSigned: true,
     },
   } as any,
 ];

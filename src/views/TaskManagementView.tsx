@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Task, TaskStatus, TaskPriority } from '../types';
 import { TaskStatusBadge, PriorityBadge } from '../components/StatusBadge';
 import { GoogleWorkspaceModal } from '../components/GoogleWorkspaceModal';
+import { isSameDept } from '../utils/departmentUtils';
 import {
   CheckSquare,
   Plus,
@@ -10,6 +11,8 @@ import {
   Filter,
   Calendar,
   User,
+  Users,
+  Sparkles,
   GraduationCap,
   Paperclip,
   CheckCircle2,
@@ -70,6 +73,7 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
   // Form states for assign task
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [assignmentMode, setAssignmentMode] = useState<'individual' | 'group_hods' | 'group_faculty'>('individual');
   const [assignedToStaffId, setAssignedToStaffId] = useState(staffList[0]?.id || 'STF001');
   const [classId, setClassId] = useState('');
   const [customClassName, setCustomClassName] = useState('');
@@ -86,6 +90,7 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
     setEditingTask(null);
     setTitle('');
     setDescription('');
+    setAssignmentMode('individual');
     setAssignedToStaffId(staffList[0]?.id || '');
     setClassId('');
     setCustomClassName('');
@@ -98,6 +103,7 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
     setEditingTask(t);
     setTitle(t.title);
     setDescription(t.description);
+    setAssignmentMode(t.groupName === 'HODs Group' ? 'group_hods' : t.groupName === 'All Faculty' ? 'group_faculty' : 'individual');
     setAssignedToStaffId(t.assignedToStaffId);
     setClassId(t.classId || '');
     setCustomClassName(t.className || '');
@@ -134,17 +140,82 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
         targetDate,
       });
     } else {
-      addTask({
-        title,
-        description,
-        assignedToStaffId,
-        assignedToName: assignedStaff?.facultyName || 'Staff Member',
-        classId,
-        className: resolvedClassName || undefined,
-        priority,
-        targetDate,
-        status: 'Pending',
-      });
+      if (isPrincipal && assignmentMode === 'group_hods') {
+        // Find all HOD staff members
+        const hodsList = staffList.filter(
+          (s) =>
+            s.role === 'admin' ||
+            s.id.startsWith('HOD') ||
+            (s.designation && s.designation.toLowerCase().includes('hod')) ||
+            (s.designation && s.designation.toLowerCase().includes('head of department'))
+        );
+
+        if (hodsList.length > 0) {
+          hodsList.forEach((hod) => {
+            addTask({
+              title,
+              description,
+              assignedToStaffId: hod.id,
+              assignedToName: `${hod.facultyName} (HOD - ${hod.department})`,
+              classId,
+              className: resolvedClassName || undefined,
+              priority,
+              targetDate,
+              status: 'Pending',
+              groupName: 'HODs Group',
+              isGroupTask: true,
+              department: hod.department,
+            });
+          });
+        }
+
+        // Always add master group task for GROUP_HODS
+        addTask({
+          title: `${title} [HODs Group Broadcast]`,
+          description,
+          assignedToStaffId: 'GROUP_HODS',
+          assignedToName: 'HODs Group (All Department HODs)',
+          classId,
+          className: resolvedClassName || undefined,
+          priority,
+          targetDate,
+          status: 'Pending',
+          groupName: 'HODs Group',
+          isGroupTask: true,
+        });
+      } else if (isPrincipal && assignmentMode === 'group_faculty') {
+        staffList.forEach((s) => {
+          addTask({
+            title,
+            description,
+            assignedToStaffId: s.id,
+            assignedToName: `${s.facultyName} (${s.department})`,
+            classId,
+            className: resolvedClassName || undefined,
+            priority,
+            targetDate,
+            status: 'Pending',
+            groupName: 'All Faculty',
+            isGroupTask: true,
+            department: s.department,
+          });
+        });
+      } else {
+        addTask({
+          title,
+          description,
+          assignedToStaffId,
+          assignedToName: assignedStaff
+            ? `${assignedStaff.facultyName} (${assignedStaff.department})`
+            : 'Staff Member',
+          classId,
+          className: resolvedClassName || undefined,
+          priority,
+          targetDate,
+          status: 'Pending',
+          department: assignedStaff?.department,
+        });
+      }
     }
 
     handleCloseAssignModal();
@@ -158,11 +229,18 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
     setAttachmentUrl(task.attachmentUrl || '');
   };
 
+  const isPrincipal = currentUser?.role === 'principal';
+  const isHod = currentUser?.role === 'admin';
+  const isSupervisor = isPrincipal || isHod;
+  const isStaff = currentUser?.role === 'staff';
+  const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
+
   const handleApproveTask = (task: Task) => {
+    const approverLabel = isPrincipal ? 'Principal' : 'HOD';
     updateTaskStatus(
       task.id,
       'Completed',
-      updateRemarks || task.completionRemarks || 'Approved by HOD.',
+      updateRemarks || task.completionRemarks || `Approved by ${approverLabel}.`,
       attachmentUrl || task.attachmentUrl,
       attachmentName || task.attachmentName
     );
@@ -170,10 +248,11 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
   };
 
   const handleRejectTask = (task: Task) => {
+    const approverLabel = isPrincipal ? 'Principal' : 'HOD';
     updateTaskStatus(
       task.id,
       'In Progress',
-      updateRemarks ? `HOD Feedback: ${updateRemarks}` : 'Re-opened by HOD for revisions.',
+      updateRemarks ? `${approverLabel} Feedback: ${updateRemarks}` : `Returned by ${approverLabel} for revisions.`,
       attachmentUrl || task.attachmentUrl,
       attachmentName || task.attachmentName
     );
@@ -184,9 +263,15 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
     e.preventDefault();
     if (!statusModalTask) return;
 
+    // Faculty members cannot mark complete directly without Principal/HOD approval
+    let targetStatus = updateStatusVal;
+    if (!isSupervisor && targetStatus === 'Completed') {
+      targetStatus = 'Submitted';
+    }
+
     updateTaskStatus(
       statusModalTask.id,
-      updateStatusVal,
+      targetStatus,
       updateRemarks,
       attachmentUrl,
       attachmentName
@@ -209,16 +294,12 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
     }
   };
 
-  const isHod = currentUser?.role === 'admin' || currentUser?.role === 'principal';
-  const isStaff = currentUser?.role === 'staff';
-  const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
-
-  const availableStaffList = isHod || isStaff
-    ? staffList.filter((s) => {
-        const staffDept = s.department.toLowerCase();
-        const userDept = hodDepartment.toLowerCase();
-        return staffDept === userDept || (staffDept.includes('ai & ds') && userDept.includes('ai & ds'));
-      })
+  // Principal can assign tasks to ALL faculty across ALL departments
+  // HOD can assign tasks to faculty in their department
+  const availableStaffList = isPrincipal
+    ? staffList
+    : isHod
+    ? staffList.filter((s) => isSameDept(s.department, hodDepartment))
     : staffList;
 
   const deptStaffIds = availableStaffList.map((s) => s.id);
@@ -238,8 +319,8 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
       if (!isMyTask) return false;
     }
 
-    // If HOD role, strictly enforce viewing tasks for their department staff
-    if (isHod) {
+    // If HOD role (and not Principal), enforce department filter
+    if (isHod && !isPrincipal) {
       const isDeptTask =
         deptStaffIds.includes(t.assignedToStaffId) ||
         availableStaffList.some((s) => s.facultyName.toLowerCase() === t.assignedToName?.toLowerCase());
@@ -379,7 +460,9 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                 onChange={(e) => setSelectedStaffFilter(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none"
               >
-                <option value="all">All Faculty Members</option>
+                <option value="all">All Faculty & Group Assignments</option>
+                <option value="group_hods">👥 HODs Group Tasks ({taskList.filter((t) => t.groupName === 'HODs Group' || t.assignedToStaffId === 'GROUP_HODS').length})</option>
+                <option value="group_all">🏛️ All Group Broadcast Tasks ({taskList.filter((t) => t.isGroupTask || t.groupName).length})</option>
                 {availableStaffList.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.facultyName} ({s.id})
@@ -430,11 +513,17 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
               <div>
                 {/* Header Row */}
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
                       {task.id}
                     </span>
                     <PriorityBadge priority={task.priority} />
+                    {(task.isGroupTask || task.groupName || task.assignedToStaffId === 'GROUP_HODS') && (
+                      <span className="font-bold text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1 shrink-0">
+                        <Users className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                        {task.groupName || 'HODs Group'}
+                      </span>
+                    )}
                   </div>
                   <TaskStatusBadge status={task.status} />
                 </div>
@@ -664,7 +753,11 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
           <div className="bg-white dark:bg-slate-800 w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl p-6 relative">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 mb-4">
               <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                {editingTask ? 'Edit Task Assignment' : 'Assign New Faculty Task'}
+                {editingTask
+                  ? 'Edit Task Assignment'
+                  : isPrincipal
+                  ? 'Assign New Faculty Task (Principal Portal)'
+                  : 'Assign New Faculty Task (HOD Portal)'}
               </h3>
               <button onClick={handleCloseAssignModal} className="p-1 text-slate-400 hover:text-slate-600">
                 <X className="w-5 h-5" />
@@ -672,6 +765,81 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
             </div>
 
             <form onSubmit={handleAssignSubmit} className="space-y-4 text-xs">
+              {isPrincipal && !editingTask && (
+                <div className="bg-gradient-to-r from-amber-50 to-purple-50 dark:from-slate-900 dark:to-slate-800 p-3 rounded-xl border border-amber-200 dark:border-amber-800/60 mb-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-amber-900 dark:text-amber-300 text-xs flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-amber-600" />
+                      Principal Assignment Target:
+                    </label>
+                    <span className="text-[10px] font-bold bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-full">
+                      Principal Exclusive
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentMode('individual')}
+                      className={`px-2 py-2 rounded-lg font-bold text-[11px] transition-all flex items-center justify-center gap-1 border ${
+                        assignmentMode === 'individual'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <User className="w-3.5 h-3.5" />
+                      Individual
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentMode('group_hods')}
+                      className={`px-2 py-2 rounded-lg font-bold text-[11px] transition-all flex items-center justify-center gap-1 border ${
+                        assignmentMode === 'group_hods'
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-xs ring-2 ring-purple-400/40'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      HODs Group
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentMode('group_faculty')}
+                      className={`px-2 py-2 rounded-lg font-bold text-[11px] transition-all flex items-center justify-center gap-1 border ${
+                        assignmentMode === 'group_faculty'
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <GraduationCap className="w-3.5 h-3.5" />
+                      All Faculty
+                    </button>
+                  </div>
+
+                  {assignmentMode === 'group_hods' && (
+                    <div className="p-2 rounded-lg bg-purple-100/90 dark:bg-purple-950/80 border border-purple-200 dark:border-purple-800 text-[11px] text-purple-900 dark:text-purple-200 flex items-start gap-2">
+                      <Sparkles className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-bold">👥 HODs Group Broadcast Active:</strong>
+                        This task will be automatically dispatched to ALL Department HODs simultaneously. Every HOD login (AI&DS, ECE, CSE, EEE, MECH, Civil, MBA, S&H, etc.) will see and execute this task in their portal!
+                      </div>
+                    </div>
+                  )}
+
+                  {assignmentMode === 'group_faculty' && (
+                    <div className="p-2 rounded-lg bg-indigo-100/90 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 text-[11px] text-indigo-900 dark:text-indigo-200 flex items-start gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block font-bold">🏛️ All Faculty Broadcast Active:</strong>
+                        This task will be dispatched to every active faculty member across all departments in the institution.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Task Title *
@@ -702,19 +870,31 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Assign To Faculty *
+                    Assign To * {isPrincipal && assignmentMode === 'individual' && <span className="text-[10px] text-amber-600 font-bold">(All Departments)</span>}
                   </label>
-                  <select
-                    value={assignedToStaffId}
-                    onChange={(e) => setAssignedToStaffId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none"
-                  >
-                    {availableStaffList.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.facultyName} ({s.id})
-                      </option>
-                    ))}
-                  </select>
+                  {assignmentMode === 'group_hods' ? (
+                    <div className="w-full px-3 py-2 bg-purple-50 dark:bg-purple-950/80 border border-purple-300 dark:border-purple-800 rounded-lg text-purple-900 dark:text-purple-200 font-bold text-xs flex items-center gap-1.5">
+                      <Users className="w-4 h-4 text-purple-600" />
+                      <span>HODs Group (All Department HODs)</span>
+                    </div>
+                  ) : assignmentMode === 'group_faculty' ? (
+                    <div className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-300 dark:border-indigo-800 rounded-lg text-indigo-900 dark:text-indigo-200 font-bold text-xs flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-indigo-600" />
+                      <span>All Faculty Members (Institution Wide)</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={assignedToStaffId}
+                      onChange={(e) => setAssignedToStaffId(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none"
+                    >
+                      {availableStaffList.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.facultyName} — {s.department} ({s.designation || s.id})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -818,7 +998,11 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 mb-4">
               <div>
                 <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                  {isHod ? 'HOD Task Review & Approval' : 'Submit Task & Upload Proof'}
+                  {isPrincipal
+                    ? 'Principal Task Review & Approval'
+                    : isHod
+                    ? 'HOD Task Review & Approval'
+                    : 'Submit Task & Upload Proof'}
                 </h3>
                 <p className="text-[11px] text-slate-500 font-mono">Task ID: {statusModalTask.id}</p>
               </div>
@@ -849,12 +1033,12 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                 <div className="p-3.5 bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 rounded-xl space-y-1.5">
                   <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200 font-bold text-xs">
                     <CheckCircle2 className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span>Staff Submitted Task — Awaiting HOD Approval</span>
+                    <span>Staff Submitted Task — Awaiting {isPrincipal ? 'Principal' : 'HOD'} Approval</span>
                   </div>
                   <p className="text-[11px] text-purple-800 dark:text-purple-300 leading-relaxed">
-                    {isHod
+                    {isSupervisor
                       ? 'Review the staff completion notes & proof document below. Approve to mark completed or reject to request revision.'
-                      : 'Your submission is recorded. Waiting for HOD review & final approval.'}
+                      : `Your submission is recorded. Waiting for ${isPrincipal ? 'Principal' : 'HOD'} review & final approval.`}
                   </p>
                   {statusModalTask.submittedDate && (
                     <p className="text-[10px] font-mono text-purple-700 dark:text-purple-400">
@@ -864,17 +1048,17 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                 </div>
               )}
 
-              {/* HOD Quick Approval Actions */}
-              {isHod && statusModalTask.status === 'Submitted' && (
+              {/* Supervisor Quick Approval Actions */}
+              {isSupervisor && statusModalTask.status === 'Submitted' && (
                 <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl space-y-2">
                   <span className="font-bold text-emerald-900 dark:text-emerald-300 text-xs block">
-                    ⚡ HOD Decision Actions
+                    ⚡ {isPrincipal ? 'Principal' : 'HOD'} Decision Actions
                   </span>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => handleApproveTask(statusModalTask)}
-                      className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all"
+                      className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       Approve & Complete
@@ -882,7 +1066,7 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleRejectTask(statusModalTask)}
-                      className="py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-600/20 transition-all"
+                      className="py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-600/20 transition-all cursor-pointer"
                     >
                       <AlertCircle className="w-4 h-4" />
                       Reject / Request Revision
@@ -902,27 +1086,27 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                 >
                   <option value="Pending">Pending (Orange)</option>
                   <option value="In Progress">In Progress (Blue)</option>
-                  <option value="Submitted">Submitted (Awaiting HOD Approval - Purple)</option>
-                  {isHod && <option value="Completed">Completed / HOD Approved (Green)</option>}
+                  <option value="Submitted">Submitted (Awaiting Approval - Purple)</option>
+                  {isSupervisor && <option value="Completed">Completed / Approved (Green)</option>}
                   <option value="Cancelled">Cancelled (Grey)</option>
                 </select>
-                {!isHod && updateStatusVal === 'Completed' && (
+                {!isSupervisor && updateStatusVal === 'Completed' && (
                   <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
-                    Note: Staff submissions are sent to HOD as "Submitted" for final approval before marking Completed.
+                    Note: Faculty submissions are sent to Principal / HOD as "Submitted" for final approval before marking Completed.
                   </p>
                 )}
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  {isHod ? 'HOD Remarks / Approval Notes' : 'Completion Remarks / Proof Summary'}
+                  {isSupervisor ? `${isPrincipal ? 'Principal' : 'HOD'} Remarks / Approval Notes` : 'Completion Remarks / Proof Summary'}
                 </label>
                 <textarea
                   rows={3}
                   placeholder={
-                    isHod
-                      ? 'Enter HOD feedback, approval notes, or guidelines for faculty...'
-                      : 'Enter work done summary, links, or progress remarks for HOD...'
+                    isSupervisor
+                      ? `Enter ${isPrincipal ? 'Principal' : 'HOD'} feedback, approval notes, or guidelines for faculty...`
+                      : 'Enter work done summary, links, or progress remarks...'
                   }
                   value={updateRemarks}
                   onChange={(e) => setUpdateRemarks(e.target.value)}

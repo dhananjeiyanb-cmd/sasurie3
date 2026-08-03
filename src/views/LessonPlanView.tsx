@@ -76,17 +76,17 @@ export const LessonPlanView: React.FC = () => {
   const allowedStaffList = staffList.filter((s) => {
     if (isStaff) {
       return (
-        s.facultyName.toLowerCase() === currentUser?.name?.toLowerCase() ||
+        (s.facultyName || '').toLowerCase() === (currentUser?.name || '').toLowerCase() ||
         s.id === currentUser?.staffId ||
-        (currentUser?.email && s.email.toLowerCase() === currentUser.email.toLowerCase())
+        (currentUser?.email && (s.email || '').toLowerCase() === (currentUser.email || '').toLowerCase())
       );
     }
     if (isHod) {
-      return s.department.toLowerCase() === hodDepartment.toLowerCase();
+      return (s.department || '').toLowerCase() === (hodDepartment || '').toLowerCase();
     }
     if (isPrincipal) {
       if (selectedDepartment === 'all') return true;
-      return s.department.toLowerCase() === selectedDepartment.toLowerCase();
+      return (s.department || '').toLowerCase() === (selectedDepartment || '').toLowerCase();
     }
     return true;
   });
@@ -94,7 +94,7 @@ export const LessonPlanView: React.FC = () => {
   // Filter base lesson plan items strictly by Role and Department
   const roleFilteredLessonPlans = lessonPlanList.filter((item) => {
     const ownerStaff = staffList.find(
-      (s) => s.id === item.staffId || s.facultyName.toLowerCase() === item.staffName.toLowerCase()
+      (s) => s.id === item.staffId || (s.facultyName || '').toLowerCase() === (item.staffName || '').toLowerCase()
     );
     const itemDept = ownerStaff?.department || hodDepartment;
 
@@ -102,20 +102,20 @@ export const LessonPlanView: React.FC = () => {
     if (isStaff) {
       const isOwner =
         (currentUser?.staffId && item.staffId === currentUser.staffId) ||
-        (currentUser?.name && item.staffName.toLowerCase() === currentUser.name.toLowerCase()) ||
-        (currentUser?.email && ownerStaff?.email?.toLowerCase() === currentUser.email.toLowerCase());
+        (currentUser?.name && (item.staffName || '').toLowerCase() === (currentUser.name || '').toLowerCase()) ||
+        (currentUser?.email && ownerStaff?.email && ownerStaff.email.toLowerCase() === (currentUser.email || '').toLowerCase());
       return isOwner;
     }
 
     // RULE 2: HOD Login -> ONLY show lesson plans of faculty members in HOD's department
     if (isHod) {
-      return itemDept.toLowerCase() === hodDepartment.toLowerCase();
+      return (itemDept || '').toLowerCase() === (hodDepartment || '').toLowerCase();
     }
 
     // RULE 3: Principal Login -> Department-wise lesson plans selection
     if (isPrincipal) {
       if (selectedDepartment === 'all') return true;
-      return itemDept.toLowerCase() === selectedDepartment.toLowerCase();
+      return (itemDept || '').toLowerCase() === (selectedDepartment || '').toLowerCase();
     }
 
     return true;
@@ -202,7 +202,7 @@ export const LessonPlanView: React.FC = () => {
     // Secondary Staff Filter Dropdown
     const matchesStaff =
       selectedStaffFilter === 'all' ||
-      item.staffName.toLowerCase().includes(selectedStaffFilter.toLowerCase()) ||
+      (item.staffName || '').toLowerCase().includes((selectedStaffFilter || '').toLowerCase()) ||
       item.staffId === selectedStaffFilter;
 
     // Unit filter
@@ -214,10 +214,10 @@ export const LessonPlanView: React.FC = () => {
     // Search query
     const matchesQuery =
       searchQuery === '' ||
-      item.unitName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.topicName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.courseName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.staffName.toLowerCase().includes(searchQuery.toLowerCase());
+      (item.unitName || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+      (item.topicName || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+      (item.courseName || '').toLowerCase().includes((searchQuery || '').toLowerCase()) ||
+      (item.staffName || '').toLowerCase().includes((searchQuery || '').toLowerCase());
 
     return matchesStaff && matchesUnit && matchesStatus && matchesQuery;
   });

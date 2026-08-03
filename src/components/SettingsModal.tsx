@@ -9,9 +9,9 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { dailyReport, updateDailyReport, exportFullDatabase, importFullDatabase, syncAllDataToFirestore, resetToDefaultData } = useApp();
+  const { dailyReport, updateDailyReport, exportFullDatabase, importFullDatabase, syncAllDataToFirestore, resetToDefaultData, currentUser } = useApp();
 
-  const rawDept = dailyReport.department || '';
+  const rawDept = currentUser?.department || dailyReport.department || '';
   const cleanDept = rawDept.replace(/^Department of\s+/i, '');
   const matchedDept = DEPARTMENTS.find((d) => d.toLowerCase() === cleanDept.toLowerCase()) || DEPARTMENTS[0];
 

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, getDocs, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, testFirestoreConnection } from '../lib/firebase';
 import { syncDocToFirestore, deleteDocFromFirestore } from '../lib/firestoreSync';
 import {
@@ -16,6 +16,10 @@ import {
   TaskStatus,
   LessonPlanItem,
   StudentAttendanceRecord,
+  EventRecord,
+  EventParticipant,
+  EventDocument,
+  EventFeedbackResponse,
 } from '../types';
 import { StudentSkillBankData, GoogleSheetsConfig } from '../types/skillBank';
 import {
@@ -28,9 +32,12 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_LESSON_PLANS,
   INITIAL_ATTENDANCE_RECORDS,
+  INITIAL_EVENTS,
 } from '../data/seedData';
 import { INITIAL_STUDENTS_SKILL_BANK, stripSkillBankDates } from '../data/mockSkillBank';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
+import { isSameDept, getDeptTag } from '../utils/departmentUtils';
+import { normalizeStudentSkillBankRecord } from '../utils/excelSkillBank';
 
 interface AppContextType {
   currentUser: User | null;
@@ -58,6 +65,7 @@ interface AppContextType {
   addStaff: (staff: Omit<Staff, 'id'> & { id?: string }) => void;
   updateStaff: (id: string, staff: Partial<Staff>) => void;
   deleteStaff: (id: string) => void;
+  clearAllStaff: () => void;
 
   classList: ClassRoom[];
   addClass: (cls: Omit<ClassRoom, 'id'>) => void;
@@ -94,6 +102,17 @@ interface AppContextType {
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
 
+  // Events Management System
+  eventsList: EventRecord[];
+  addEvent: (eventData: Omit<EventRecord, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updateEvent: (id: string, updates: Partial<EventRecord>) => void;
+  deleteEvent: (id: string) => void;
+  addEventParticipant: (eventId: string, participant: Omit<EventParticipant, 'id'>) => void;
+  importEventParticipants: (eventId: string, participants: Omit<EventParticipant, 'id'>[]) => void;
+  addEventDocument: (eventId: string, docData: Omit<EventDocument, 'id'>) => void;
+  deleteEventDocument: (eventId: string, docId: string) => void;
+  addEventFeedback: (eventId: string, feedback: Omit<EventFeedbackResponse, 'id' | 'submittedAt'>) => void;
+
   filterState: FilterState;
   setFilterState: React.Dispatch<React.SetStateAction<FilterState>>;
 
@@ -102,6 +121,9 @@ interface AppContextType {
   updateSkillBankStudent: (registerNumber: string, updatedRecord: Partial<StudentSkillBankData>) => void;
   addSkillBankStudent: (student: StudentSkillBankData) => void;
   deleteSkillBankStudent: (registerNumber: string) => void;
+  deleteSkillBankStudents: (registerNumbers: string[]) => void;
+  clearDepartmentSkillBankStudents: (departmentName: string) => void;
+  clearAllSkillBankStudents: () => void;
   bulkMapStudentsToMentor: (registerNumbers: string[], staffId: string, mentorName: string) => void;
   importBulkSkillBankStudents: (newStudents: StudentSkillBankData[]) => void;
 
@@ -144,73 +166,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [staffList, setStaffList] = useState<Staff[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
-    return saved ? JSON.parse(saved) : INITIAL_STAFF;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [classList, setClassList] = useState<ClassRoom[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`);
-    return saved ? JSON.parse(saved) : INITIAL_CLASSES;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [taskList, setTaskList] = useState<Task[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`);
-    return saved ? JSON.parse(saved) : INITIAL_TASKS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [observationList, setObservationList] = useState<ClassObservation[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`);
-    return saved ? JSON.parse(saved) : INITIAL_OBSERVATIONS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [monitoringList, setMonitoringList] = useState<FacultyDailyMonitoring[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`);
-    return saved ? JSON.parse(saved) : INITIAL_DAILY_MONITORING;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [lessonPlanList, setLessonPlanList] = useState<LessonPlanItem[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`);
-    return saved ? JSON.parse(saved) : INITIAL_LESSON_PLANS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [attendanceRecords, setAttendanceRecords] = useState<StudentAttendanceRecord[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`);
-    return saved ? JSON.parse(saved) : INITIAL_ATTENDANCE_RECORDS;
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`);
-    return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [eventsList, setEventsList] = useState<EventRecord[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}events`);
+    return saved ? JSON.parse(saved) : INITIAL_EVENTS;
   });
 
   const [skillBankStudents, setSkillBankStudents] = useState<StudentSkillBankData[]>(() => {
-    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v7`);
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`);
     if (saved) {
       try {
         const parsed: StudentSkillBankData[] = JSON.parse(saved);
-        const map = new Map<string, StudentSkillBankData>();
-        INITIAL_STUDENTS_SKILL_BANK.forEach((s) => map.set(s.studentProfile.registerNumber, s));
-        parsed.forEach((s) => map.set(s.studentProfile.registerNumber, s));
-        return Array.from(map.values());
+        return parsed.map(normalizeStudentSkillBankRecord);
       } catch (err) {
         console.error('Error parsing saved skill bank students:', err);
       }
     }
-    const oldSaved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students`);
-    if (oldSaved) {
-      try {
-        const parsed: StudentSkillBankData[] = JSON.parse(oldSaved);
-        const map = new Map<string, StudentSkillBankData>();
-        INITIAL_STUDENTS_SKILL_BANK.forEach((s) => map.set(s.studentProfile.registerNumber, s));
-        parsed.forEach((s) => map.set(s.studentProfile.registerNumber, s));
-        const combined = Array.from(map.values());
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v7`, JSON.stringify(combined));
-        return combined;
-      } catch (err) {
-        // Fallback
-      }
-    }
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v7`, JSON.stringify(INITIAL_STUDENTS_SKILL_BANK));
-    return INITIAL_STUDENTS_SKILL_BANK;
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify([]));
+    return [];
   });
 
   const [googleSheetsConfig, setGoogleSheetsConfig] = useState<GoogleSheetsConfig>(() => {
@@ -274,9 +284,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [notifications]);
 
   useEffect(() => {
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v7`, JSON.stringify(skillBankStudents));
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students`, JSON.stringify(skillBankStudents));
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(eventsList));
+  }, [eventsList]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(skillBankStudents));
   }, [skillBankStudents]);
+
+  // One-time auto-purge on boot to ensure database is completely cleared of any mock students
+  useEffect(() => {
+    const purgeKey = `${LOCAL_STORAGE_KEY_PREFIX}skill_bank_purged_v11`;
+    if (localStorage.getItem(purgeKey) !== 'true') {
+      const purgeFirestoreDocs = async () => {
+        try {
+          const snap = await getDocs(collection(db, 'skillBankStudents'));
+          snap.docs.forEach((d) => {
+            deleteDocFromFirestore('skillBankStudents', d.id);
+          });
+          localStorage.setItem(purgeKey, 'true');
+          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify([]));
+          setSkillBankStudents([]);
+        } catch (err) {
+          console.error('Error purging Firestore skillBankStudents on boot:', err);
+        }
+      };
+      purgeFirestoreDocs();
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}google_sheets_config`, JSON.stringify(googleSheetsConfig));
@@ -375,17 +409,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'notifications'));
 
+    // Events Listener
+    const unsubEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
+      if (!snapshot.empty) {
+        const items = snapshot.docs.map((d) => d.data() as EventRecord);
+        setEventsList(items);
+      } else {
+        INITIAL_EVENTS.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'events'));
+
     // Skill Bank Students Listener
     const unsubSkill = onSnapshot(collection(db, 'skillBankStudents'), (snapshot) => {
-      if (!snapshot.empty) {
-        const items = snapshot.docs.map((d) => d.data() as StudentSkillBankData);
-        setSkillBankStudents(items);
-      } else {
-        INITIAL_STUDENTS_SKILL_BANK.forEach((st) => {
-          const docId = st.studentProfile.registerNumber.replace(/\//g, '_');
-          syncDocToFirestore('skillBankStudents', docId, st);
-        });
-      }
+      const items = snapshot.docs.map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData));
+      setSkillBankStudents((prev) => {
+        // If snapshot is empty and we had local items, keep local state so state isn't wiped out before sync
+        if (snapshot.empty && prev.length > 0) {
+          return prev;
+        }
+        return items;
+      });
     }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
 
     // Daily Report Listener
@@ -406,6 +449,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubAtt();
       unsubLp();
       unsubNotif();
+      unsubEvents();
       unsubSkill();
       unsubReport();
     };
@@ -453,7 +497,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // If current logged in user matches, update in session
     if (
       currentUser &&
-      (currentUser.username.toLowerCase() === key ||
+      ((currentUser.username || '').toLowerCase() === key ||
         currentUser.email?.toLowerCase() === key ||
         currentUser.staffId?.toLowerCase() === key)
     ) {
@@ -565,9 +609,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (
       skillBankStudents.some(
         (st) =>
-          st.studentProfile.studentEmail?.toLowerCase() === low ||
-          st.studentProfile.personalEmail?.toLowerCase() === low ||
-          st.studentProfile.registerNumber?.toLowerCase() === low
+          st.studentProfile?.studentEmail?.toLowerCase() === low ||
+          st.studentProfile?.personalEmail?.toLowerCase() === low ||
+          st.studentProfile?.registerNumber?.toLowerCase() === low
       )
     ) {
       return true;
@@ -858,7 +902,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const name = targetStaff?.facultyName || dailyReport.hodName || 'DHANANJEIYAN B (HOD)';
       const department = targetStaff?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
-      setCurrentUser({
+      const newUser: User = {
         username: targetStaff?.id || 'admin',
         role: 'admin',
         staffId: targetStaff?.id,
@@ -867,6 +911,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'admin'),
+      };
+      setCurrentUser(newUser);
+      updateDailyReport({
+        hodName: name,
+        hodEmail: email,
+        department,
       });
     } else {
       const targetStaff = staffList.find((s) => s.id === (staffId || 'STF001')) || staffList[0];
@@ -975,25 +1025,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteDocFromFirestore('staff', id);
   };
 
+  const clearAllStaff = () => {
+    staffList.forEach((s) => deleteDocFromFirestore('staff', s.id));
+    setStaffList([]);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
+  };
+
   // CRUD Classes
   const addClass = (clsData: Omit<ClassRoom, 'id'>) => {
-    const newId = `CLS-${clsData.department.slice(0, 3).toUpperCase()}-${clsData.year[0]}${clsData.section}`;
+    const newId = `CLS-${clsData.department.slice(0, 3).toUpperCase()}-${clsData.year[0]}${clsData.section.replace(/\s+/g, '')}`;
     const newClass: ClassRoom = { id: newId, ...clsData };
     setClassList((prev) => [...prev, newClass]);
     syncDocToFirestore('classes', newClass.id, newClass);
+
+    // Also auto-sync new class section into dailyReport studentAttendanceSummaries
+    const secTag = clsData.section.startsWith('Sec') ? clsData.section : `Sec ${clsData.section}`;
+    const cName = `${clsData.year} ${getDeptTag(clsData.department)} - ${secTag}`;
+    const summaries = dailyReport.studentAttendanceSummaries || [];
+    if (!summaries.some((s) => s.classId === newClass.id)) {
+      const newSummary = {
+        classId: newClass.id,
+        className: cName,
+        year: clsData.year,
+        department: clsData.department,
+        totalStudents: 60,
+        presentStudents: 0,
+        absentStudents: 0,
+        odStudents: 0,
+        othersStudents: 0,
+        attendancePercentage: 0,
+        morningPresent: 0,
+        morningAbsent: 0,
+        morningOd: 0,
+        morningOthers: 0,
+        morningPercentage: 0,
+        eveningPresent: 0,
+        eveningAbsent: 0,
+        eveningOd: 0,
+        eveningOthers: 0,
+        eveningPercentage: 0,
+        variation: 0,
+      };
+      updateDailyReport({ studentAttendanceSummaries: [...summaries, newSummary] });
+    }
   };
 
   const updateClass = (id: string, updates: Partial<ClassRoom>) => {
     setClassList((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)));
     const existing = classList.find((c) => c.id === id);
     if (existing) {
-      syncDocToFirestore('classes', id, { ...existing, ...updates });
+      const updatedClass = { ...existing, ...updates };
+      syncDocToFirestore('classes', id, updatedClass);
+
+      // Also sync updates to dailyReport studentAttendanceSummaries
+      const summaries = dailyReport.studentAttendanceSummaries || [];
+      const updatedSummaries = summaries.map((s) => {
+        if (s.classId === id) {
+          const secTag = updatedClass.section.startsWith('Sec') ? updatedClass.section : `Sec ${updatedClass.section}`;
+          const cName = `${updatedClass.year} ${getDeptTag(updatedClass.department)} - ${secTag}`;
+          return {
+            ...s,
+            className: cName,
+            year: updatedClass.year,
+            department: updatedClass.department,
+          };
+        }
+        return s;
+      });
+      updateDailyReport({ studentAttendanceSummaries: updatedSummaries });
     }
   };
 
   const deleteClass = (id: string) => {
     setClassList((prev) => prev.filter((c) => c.id !== id));
     deleteDocFromFirestore('classes', id);
+
+    // Also remove from dailyReport studentAttendanceSummaries
+    const summaries = dailyReport.studentAttendanceSummaries || [];
+    const filteredSummaries = summaries.filter((s) => s.classId !== id);
+    updateDailyReport({ studentAttendanceSummaries: filteredSummaries });
   };
 
   // CRUD Tasks
@@ -1049,6 +1159,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (t.id === id) {
           const isCompleting = status === 'Completed';
           const isSubmitting = status === 'Submitted';
+          const approverTitle = currentUser?.role === 'principal'
+            ? `${currentUser.name || 'Prof. Dr. Kiruba Shankar R'} (Principal)`
+            : `${currentUser?.name || 'HOD'} (HOD)`;
+
           const updatedTask: Task = {
             ...t,
             status,
@@ -1056,7 +1170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             completionRemarks: (isCompleting || isSubmitting) ? (remarks || t.completionRemarks) : t.completionRemarks,
             completionDate: isCompleting ? (t.completionDate || todayStr) : t.completionDate,
             submittedDate: isSubmitting ? todayStr : t.submittedDate,
-            approvedBy: isCompleting ? (currentUser?.name || 'HOD') : t.approvedBy,
+            approvedBy: isCompleting ? approverTitle : t.approvedBy,
             approvedDate: isCompleting ? todayStr : t.approvedDate,
             attachmentUrl: attachmentUrl || t.attachmentUrl,
             attachmentName: attachmentName || t.attachmentName,
@@ -1078,8 +1192,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (status === 'Submitted') {
         const notif: AppNotification = {
           id: `NOT-${Date.now()}`,
-          title: 'Task Submitted for HOD Approval',
-          message: `${task.assignedToName} submitted task "${task.title}" for review.`,
+          title: 'Task Submitted for Principal / HOD Approval',
+          message: `${task.assignedToName} submitted task "${task.title}" for review & approval.`,
           date: todayStr,
           type: 'info',
           read: false,
@@ -1088,10 +1202,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNotifications((prev) => [notif, ...prev]);
         syncDocToFirestore('notifications', notif.id, notif);
       } else if (status === 'Completed') {
+        const approverLabel = currentUser?.role === 'principal' ? 'Principal' : 'HOD';
         const notif: AppNotification = {
           id: `NOT-${Date.now()}`,
-          title: 'Task Approved & Completed',
-          message: `HOD approved and marked task "${task.title}" as Completed.`,
+          title: `Task Approved by ${approverLabel}`,
+          message: `${approverLabel} approved and marked task "${task.title}" as Completed.`,
           date: todayStr,
           type: 'completed',
           read: false,
@@ -1287,17 +1402,130 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncDocToFirestore('skillBankStudents', docId, student);
   };
 
-  const deleteSkillBankStudent = (registerNumber: string) => {
-    const docId = registerNumber.replace(/\//g, '_');
-    setSkillBankStudents((prev) => prev.filter((s) => s.studentProfile.registerNumber !== registerNumber));
-    deleteDocFromFirestore('skillBankStudents', docId);
+  const deleteSkillBankStudent = async (registerNumber: string) => {
+    const cleanReg = (registerNumber || '').trim().toLowerCase();
+    if (!cleanReg) return;
+
+    setSkillBankStudents((prev) => {
+      const updated = prev.filter((s) => (s.studentProfile?.registerNumber || '').trim().toLowerCase() !== cleanReg);
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(updated));
+      return updated;
+    });
+
+    const docId = (registerNumber || '').trim().replace(/\//g, '_');
+    if (docId) deleteDocFromFirestore('skillBankStudents', docId);
+    if (registerNumber) deleteDocFromFirestore('skillBankStudents', registerNumber.trim());
+
+    try {
+      const snap = await getDocs(collection(db, 'skillBankStudents'));
+      snap.docs.forEach((d) => {
+        const data = d.data() as StudentSkillBankData;
+        const reg = (data.studentProfile?.registerNumber || '').trim().toLowerCase();
+        const docIdLower = d.id.toLowerCase();
+        const cleanRegSanitized = cleanReg.replace(/[^a-z0-9]/g, '');
+        const docIdSanitized = docIdLower.replace(/[^a-z0-9]/g, '');
+
+        if (
+          reg === cleanReg ||
+          docIdLower === cleanReg ||
+          docIdLower === docId.toLowerCase() ||
+          (cleanRegSanitized && docIdSanitized.includes(cleanRegSanitized)) ||
+          (cleanRegSanitized && cleanRegSanitized.includes(docIdSanitized))
+        ) {
+          deleteDocFromFirestore('skillBankStudents', d.id);
+        }
+      });
+    } catch (err) {
+      console.error('Error deleting student from Firestore:', err);
+    }
+  };
+
+  const deleteSkillBankStudents = async (registerNumbers: string[]) => {
+    const cleanRegs = registerNumbers.map((r) => (r || '').trim().toLowerCase()).filter(Boolean);
+    if (cleanRegs.length === 0) return;
+
+    setSkillBankStudents((prev) => {
+      const updated = prev.filter((s) => !cleanRegs.includes((s.studentProfile?.registerNumber || '').trim().toLowerCase()));
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(updated));
+      return updated;
+    });
+
+    registerNumbers.forEach((r) => {
+      const docId = (r || '').trim().replace(/\//g, '_');
+      if (docId) deleteDocFromFirestore('skillBankStudents', docId);
+      if (r) deleteDocFromFirestore('skillBankStudents', r.trim());
+    });
+
+    try {
+      const snap = await getDocs(collection(db, 'skillBankStudents'));
+      snap.docs.forEach((d) => {
+        const data = d.data() as StudentSkillBankData;
+        const reg = (data.studentProfile?.registerNumber || '').trim().toLowerCase();
+        const docIdLower = d.id.toLowerCase();
+        const docIdSanitized = docIdLower.replace(/[^a-z0-9]/g, '');
+
+        const isMatch = cleanRegs.some((cr) => {
+          const crSanitized = cr.replace(/[^a-z0-9]/g, '');
+          return (
+            reg === cr ||
+            docIdLower === cr ||
+            (crSanitized && docIdSanitized.includes(crSanitized)) ||
+            (crSanitized && crSanitized.includes(docIdSanitized))
+          );
+        });
+
+        if (isMatch) {
+          deleteDocFromFirestore('skillBankStudents', d.id);
+        }
+      });
+    } catch (err) {
+      console.error('Error deleting students from Firestore:', err);
+    }
+  };
+
+  const clearDepartmentSkillBankStudents = async (departmentName: string) => {
+    setSkillBankStudents((prev) => {
+      const toKeep = prev.filter((s) => !isSameDept(s.studentProfile?.department || '', departmentName));
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(toKeep));
+      return toKeep;
+    });
+
+    try {
+      const snap = await getDocs(collection(db, 'skillBankStudents'));
+      snap.docs.forEach((d) => {
+        const data = d.data() as StudentSkillBankData;
+        if (!departmentName || isSameDept(data.studentProfile?.department || '', departmentName)) {
+          deleteDocFromFirestore('skillBankStudents', d.id);
+        }
+      });
+    } catch (err) {
+      console.error('Error clearing department students from Firestore:', err);
+    }
+  };
+
+  const clearAllSkillBankStudents = async () => {
+    setSkillBankStudents([]);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify([]));
+
+    try {
+      const snap = await getDocs(collection(db, 'skillBankStudents'));
+      snap.docs.forEach((d) => {
+        deleteDocFromFirestore('skillBankStudents', d.id);
+      });
+    } catch (err) {
+      console.error('Error clearing all skillBankStudents from Firestore:', err);
+    }
   };
 
   const bulkMapStudentsToMentor = (registerNumbers: string[], staffId: string, mentorName: string) => {
+    const cleanRegs = registerNumbers.map((r) => (r || '').trim()).filter(Boolean);
+    if (cleanRegs.length === 0) return;
+
     setSkillBankStudents((prev) =>
       prev.map((s) => {
-        if (registerNumbers.includes(s.studentProfile.registerNumber)) {
-          return {
+        const reg = (s.studentProfile.registerNumber || '').trim();
+        if (cleanRegs.includes(reg)) {
+          const updated = {
             ...s,
             studentProfile: {
               ...s.studentProfile,
@@ -1305,6 +1533,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               mentorStaffId: staffId,
             },
           };
+          const docId = reg.replace(/\//g, '_');
+          syncDocToFirestore('skillBankStudents', docId, updated);
+          return updated;
         }
         return s;
       })
@@ -1315,7 +1546,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSkillBankStudents((prev) => {
       const map = new Map<string, StudentSkillBankData>();
       prev.forEach((s) => map.set(s.studentProfile.registerNumber, s));
-      newStudents.forEach((ns) => map.set(ns.studentProfile.registerNumber, ns));
+      newStudents.forEach((ns) => {
+        map.set(ns.studentProfile.registerNumber, ns);
+        const docId = ns.studentProfile.registerNumber.replace(/\//g, '_');
+        syncDocToFirestore('skillBankStudents', docId, ns);
+      });
       return Array.from(map.values());
     });
   };
@@ -1373,6 +1608,141 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Event Management Handlers
+  const addEvent = (eventData: Omit<EventRecord, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const nowStr = new Date().toISOString().split('T')[0];
+    const newId = `EVT-${new Date().getFullYear()}-${String(eventsList.length + 1).padStart(3, '0')}`;
+    const newEvent: EventRecord = {
+      ...eventData,
+      id: newId,
+      createdAt: nowStr,
+      updatedAt: nowStr,
+      participants: eventData.participants || [],
+      documents: eventData.documents || [],
+      feedbackResponses: eventData.feedbackResponses || [],
+    };
+    setEventsList((prev) => [newEvent, ...prev]);
+    syncDocToFirestore('events', newId, newEvent);
+  };
+
+  const updateEvent = (id: string, updates: Partial<EventRecord>) => {
+    const nowStr = new Date().toISOString().split('T')[0];
+    setEventsList((prev) =>
+      prev.map((ev) => {
+        if (ev.id === id) {
+          const updated = { ...ev, ...updates, updatedAt: nowStr };
+          syncDocToFirestore('events', id, updated);
+          return updated;
+        }
+        return ev;
+      })
+    );
+  };
+
+  const deleteEvent = (id: string) => {
+    setEventsList((prev) => prev.filter((ev) => ev.id !== id));
+    deleteDocFromFirestore('events', id);
+  };
+
+  const addEventParticipant = (eventId: string, participant: Omit<EventParticipant, 'id'>) => {
+    const pId = `P_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+    const newParticipant: EventParticipant = { ...participant, id: pId };
+    setEventsList((prev) =>
+      prev.map((ev) => {
+        if (ev.id === eventId) {
+          const updated = {
+            ...ev,
+            participants: [...(ev.participants || []), newParticipant],
+            updatedAt: new Date().toISOString().split('T')[0],
+          };
+          syncDocToFirestore('events', eventId, updated);
+          return updated;
+        }
+        return ev;
+      })
+    );
+  };
+
+  const importEventParticipants = (eventId: string, newParticipants: Omit<EventParticipant, 'id'>[]) => {
+    setEventsList((prev) =>
+      prev.map((ev) => {
+        if (ev.id === eventId) {
+          const pList: EventParticipant[] = newParticipants.map((p, idx) => ({
+            ...p,
+            id: `P_${Date.now()}_${idx}`,
+          }));
+          const updated = {
+            ...ev,
+            participants: [...(ev.participants || []), ...pList],
+            updatedAt: new Date().toISOString().split('T')[0],
+          };
+          syncDocToFirestore('events', eventId, updated);
+          return updated;
+        }
+        return ev;
+      })
+    );
+  };
+
+  const addEventDocument = (eventId: string, docData: Omit<EventDocument, 'id'>) => {
+    const dId = `DOC_${Date.now().toString(36)}`;
+    const newDoc: EventDocument = { ...docData, id: dId };
+    setEventsList((prev) =>
+      prev.map((ev) => {
+        if (ev.id === eventId) {
+          const updated = {
+            ...ev,
+            documents: [...(ev.documents || []), newDoc],
+            updatedAt: new Date().toISOString().split('T')[0],
+          };
+          syncDocToFirestore('events', eventId, updated);
+          return updated;
+        }
+        return ev;
+      })
+    );
+  };
+
+  const deleteEventDocument = (eventId: string, docId: string) => {
+    setEventsList((prev) =>
+      prev.map((ev) => {
+        if (ev.id === eventId) {
+          const updated = {
+            ...ev,
+            documents: (ev.documents || []).filter((d) => d.id !== docId),
+            updatedAt: new Date().toISOString().split('T')[0],
+          };
+          syncDocToFirestore('events', eventId, updated);
+          return updated;
+        }
+        return ev;
+      })
+    );
+  };
+
+  const addEventFeedback = (eventId: string, feedback: Omit<EventFeedbackResponse, 'id' | 'submittedAt'>) => {
+    const fbId = `FB_${Date.now().toString(36)}`;
+    const newFb: EventFeedbackResponse = {
+      ...feedback,
+      id: fbId,
+      submittedAt: new Date().toISOString().split('T')[0],
+    };
+    setEventsList((prev) =>
+      prev.map((ev) => {
+        if (ev.id === eventId) {
+          const updated = {
+            ...ev,
+            feedbackResponses: [...(ev.feedbackResponses || []), newFb],
+            updatedAt: new Date().toISOString().split('T')[0],
+          };
+          syncDocToFirestore('events', eventId, updated);
+          return updated;
+        }
+        return ev;
+      })
+    );
+  };
+
   // Export full database to JSON file
   const exportFullDatabase = () => {
     const backupData = {
@@ -1388,6 +1758,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       dailyReport,
       attendanceRecords,
       skillBankStudents,
+      eventsList,
       googleSheetsConfig,
       notifications,
     };
@@ -1449,6 +1820,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setNotifications(parsed.notifications);
         parsed.notifications.forEach((n: AppNotification) => syncDocToFirestore('notifications', n.id, n));
       }
+      if (parsed.eventsList && Array.isArray(parsed.eventsList)) {
+        setEventsList(parsed.eventsList);
+        parsed.eventsList.forEach((ev: EventRecord) => syncDocToFirestore('events', ev.id, ev));
+      }
       return true;
     } catch (err) {
       console.error('Failed to parse database backup JSON:', err);
@@ -1470,6 +1845,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     syncDocToFirestore('settings', 'dailyReport', dailyReport);
     notifications.forEach((n) => syncDocToFirestore('notifications', n.id, n));
+    eventsList.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
   };
 
   // Reset to seed data
@@ -1484,6 +1860,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK);
     setDailyReport(INITIAL_HOD_REPORT);
     setNotifications(INITIAL_NOTIFICATIONS);
+    setEventsList(INITIAL_EVENTS);
 
     // Sync reset to Firestore
     INITIAL_STAFF.forEach((s) => syncDocToFirestore('staff', s.id, s));
@@ -1499,6 +1876,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     syncDocToFirestore('settings', 'dailyReport', INITIAL_HOD_REPORT);
     INITIAL_NOTIFICATIONS.forEach((n) => syncDocToFirestore('notifications', n.id, n));
+    INITIAL_EVENTS.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
 
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`);
@@ -1510,6 +1888,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}report`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`);
+    localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}events`);
   };
 
   return (
@@ -1531,6 +1910,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addStaff,
         updateStaff,
         deleteStaff,
+        clearAllStaff,
         classList,
         addClass,
         updateClass,
@@ -1558,12 +1938,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notifications,
         markNotificationRead,
         clearAllNotifications,
+        eventsList,
+        addEvent,
+        updateEvent,
+        deleteEvent,
+        addEventParticipant,
+        importEventParticipants,
+        addEventDocument,
+        deleteEventDocument,
+        addEventFeedback,
         filterState,
         setFilterState,
         skillBankStudents,
         updateSkillBankStudent,
         addSkillBankStudent,
         deleteSkillBankStudent,
+        deleteSkillBankStudents,
+        clearDepartmentSkillBankStudents,
+        clearAllSkillBankStudents,
         bulkMapStudentsToMentor,
         importBulkSkillBankStudents,
         googleSheetsConfig,

@@ -150,10 +150,25 @@ export const StudentAttendanceView: React.FC = () => {
     setEditingRecord(null);
   };
 
-  // Daily Mode: Filter records for selected entry date
+  // User Department Scoping
+  const userDept = currentUser?.department;
+  const isFacultyOrHod = currentUser?.role === 'staff' || currentUser?.role === 'admin';
+
+  // Daily Mode: Filter records for selected entry date and department
   const dailyRecords = useMemo(() => {
-    return attendanceRecords.filter((r) => r.date === entryDate);
-  }, [attendanceRecords, entryDate]);
+    return attendanceRecords.filter((r) => {
+      if (r.date !== entryDate) return false;
+      // Role scoping: HOD/Faculty see only their department
+      if (isFacultyOrHod && userDept) {
+        if (!isSameDept(r.department, userDept)) return false;
+      }
+      // Department filter dropdown selection
+      if (selectedDepartmentFilter !== 'all') {
+        if (!isSameDept(r.department, selectedDepartmentFilter)) return false;
+      }
+      return true;
+    });
+  }, [attendanceRecords, entryDate, isFacultyOrHod, userDept, selectedDepartmentFilter]);
 
   // Date-Range Report Filtered Records
   const rangeRecords = useMemo(() => {
@@ -162,13 +177,14 @@ export const StudentAttendanceView: React.FC = () => {
       if (fromDate && r.date < fromDate) return false;
       if (toDate && r.date > toDate) return false;
 
-      // Department check
+      // Role scoping: HOD/Faculty see only their department
+      if (isFacultyOrHod && userDept) {
+        if (!isSameDept(r.department, userDept)) return false;
+      }
+
+      // Department filter check
       if (selectedDepartmentFilter !== 'all') {
-        const rDept = r.department.toLowerCase();
-        const fDept = selectedDepartmentFilter.toLowerCase();
-        if (!rDept.includes(fDept) && !fDept.includes(rDept) && !(rDept.includes('ai & ds') && fDept.includes('ai & ds'))) {
-          return false;
-        }
+        if (!isSameDept(r.department, selectedDepartmentFilter)) return false;
       }
 
       // Class check
@@ -180,16 +196,16 @@ export const StudentAttendanceView: React.FC = () => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const match =
-          r.className.toLowerCase().includes(q) ||
-          r.department.toLowerCase().includes(q) ||
-          (r.markedBy && r.markedBy.toLowerCase().includes(q)) ||
-          r.date.includes(q);
+          (r.className || '').toLowerCase().includes(q) ||
+          (r.department || '').toLowerCase().includes(q) ||
+          (r.markedBy ? r.markedBy.toLowerCase().includes(q) : false) ||
+          (r.date || '').includes(q);
         if (!match) return false;
       }
 
       return true;
     });
-  }, [attendanceRecords, fromDate, toDate, selectedDepartmentFilter, selectedClassFilter, searchQuery]);
+  }, [attendanceRecords, fromDate, toDate, isFacultyOrHod, userDept, selectedDepartmentFilter, selectedClassFilter, searchQuery]);
 
   // Aggregated Department-wise Summary for Date Range
   const departmentWiseReport = useMemo(() => {
@@ -399,20 +415,40 @@ export const StudentAttendanceView: React.FC = () => {
         <div className="space-y-6">
           {/* Entry Date Selector Card */}
           <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
-                <Calendar className="w-5 h-5" />
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center shrink-0">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Select Attendance Date
+                  </label>
+                  <input
+                    type="date"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    className="mt-0.5 px-3 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Select Attendance Date
+                  Filter Department
                 </label>
-                <input
-                  type="date"
-                  value={entryDate}
-                  onChange={(e) => setEntryDate(e.target.value)}
+                <select
+                  value={selectedDepartmentFilter}
+                  onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
                   className="mt-0.5 px-3 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="all">All Departments</option>
+                  {DEPARTMENTS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -648,11 +684,13 @@ export const StudentAttendanceView: React.FC = () => {
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Classes</option>
-                  {classList.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.year} {c.department} - Sec {c.section}
-                    </option>
-                  ))}
+                  {classList
+                    .filter((c) => selectedDepartmentFilter === 'all' || isSameDept(c.department, selectedDepartmentFilter))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.year} {c.department} - Sec {c.section}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -1037,7 +1075,7 @@ export const StudentAttendanceView: React.FC = () => {
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   required
                 >
-                  {classList.map((c) => (
+                  {modalClasses.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.year} {c.department} - Sec {c.section} (Room: {c.roomNumber})
                     </option>

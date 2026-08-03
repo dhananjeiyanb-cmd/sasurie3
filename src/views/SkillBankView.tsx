@@ -13,6 +13,8 @@ import {
 import {
   downloadHODStudentTemplate,
   parseExcelStudentFile,
+  createDefaultStudentSkillBankRecord,
+  isStudentInCohortYear,
 } from '../utils/excelSkillBank';
 import {
   validateSkillBankRecord,
@@ -42,6 +44,7 @@ import {
   ChevronRight,
   TrendingUp,
   RefreshCw,
+  RotateCcw,
   FileText,
   UserCheck,
   Building,
@@ -71,6 +74,8 @@ export const SkillBankView: React.FC = () => {
     updateSkillBankStudent,
     addSkillBankStudent,
     deleteSkillBankStudent,
+    clearAllSkillBankStudents,
+    clearDepartmentSkillBankStudents,
     googleSheetsConfig,
     updateGoogleSheetsConfig,
     syncSkillBankToGoogleSheets,
@@ -100,6 +105,7 @@ export const SkillBankView: React.FC = () => {
   const [selectedDeptFilter, setSelectedDeptFilter] = useState('all');
   const [selectedYearFilter, setSelectedYearFilter] = useState<string>('all');
   const [selectedMentorFilter, setSelectedMentorFilter] = useState<string>('all');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   
   // Mentor Scoping & User Access Role
   const [userScopeMode, setUserScopeMode] = useState<'hod' | 'mentor'>(
@@ -109,7 +115,7 @@ export const SkillBankView: React.FC = () => {
     currentUser?.name || 'M. Kaviyarasu (Asst. Prof / III Year Mentor)'
   );
 
-  const showDataEntryTabs = isStaff;
+  const showDataEntryTabs = true;
 
   // Synchronize Staff mode restrictions whenever currentUser changes
   React.useEffect(() => {
@@ -120,18 +126,13 @@ export const SkillBankView: React.FC = () => {
       if (activeMainTab === 'hod_overview') {
         setActiveMainTab('profile');
       }
-      if (currentUser?.name && !activeMentorName.toLowerCase().includes(currentUser.name.toLowerCase().split(' ')[0])) {
+      if (currentUser?.name && !(activeMentorName || '').toLowerCase().includes((currentUser.name || '').toLowerCase().split(' ')[0])) {
         setActiveMentorName(currentUser.name);
       }
     }
   }, [currentUser, isStaff, activeMainTab, userScopeMode, activeMentorName]);
 
-  // Synchronize HOD mode restrictions so HOD doesn't access data entry tabs (Dim 1 to Transformation Logs)
-  React.useEffect(() => {
-    if (!isStaff && activeMainTab !== 'hod_overview' && activeMainTab !== 'profile' && activeMainTab !== 'leaderboard') {
-      setActiveMainTab('hod_overview');
-    }
-  }, [isStaff, activeMainTab]);
+  // Allow HOD / Principal to navigate all categories freely
 
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
@@ -256,24 +257,23 @@ export const SkillBankView: React.FC = () => {
   // Filtered Students List with Role & Department Scoping
   const filteredStudents = scopedStudents.filter((s) => {
     const term = searchTerm.trim().toLowerCase();
+    const studentName = s.studentProfile?.studentName || '';
+    const registerNumber = s.studentProfile?.registerNumber || '';
     const matchesSearch =
       term === '' ||
-      s.studentProfile.studentName.toLowerCase().includes(term) ||
-      s.studentProfile.registerNumber.toLowerCase().includes(term);
+      studentName.toLowerCase().includes(term) ||
+      registerNumber.toLowerCase().includes(term);
 
     const matchesDept =
-      selectedDeptFilter === 'all' || s.studentProfile.department === selectedDeptFilter;
+      selectedDeptFilter === 'all' || s.studentProfile?.department === selectedDeptFilter;
 
     const matchesYear =
       selectedYearFilter === 'all' ||
-      (selectedYearFilter === 'III Year' && (s.studentProfile.batch === '2023-2027' || s.studentProfile.semester.includes('Sem V') || s.studentProfile.semester.includes('Sem VI'))) ||
-      (selectedYearFilter === 'II Year' && (s.studentProfile.batch === '2024-2028' || s.studentProfile.semester.includes('Sem III') || s.studentProfile.semester.includes('Sem IV'))) ||
-      (selectedYearFilter === 'IV Year' && (s.studentProfile.batch === '2022-2026' || s.studentProfile.semester.includes('Sem VII') || s.studentProfile.semester.includes('Sem VIII'))) ||
-      (selectedYearFilter === 'I Year' && (s.studentProfile.batch === '2025-2029' || s.studentProfile.semester.includes('Sem I') || s.studentProfile.semester.includes('Sem II')));
+      isStudentInCohortYear(s.studentProfile, selectedYearFilter);
 
     let matchesMentor = true;
     if (selectedMentorFilter !== 'all') {
-      matchesMentor = (s.studentProfile.mentorFaculty || '').toLowerCase().includes(selectedMentorFilter.toLowerCase());
+      matchesMentor = (s.studentProfile?.mentorFaculty || '').toLowerCase().includes(selectedMentorFilter.toLowerCase());
     }
 
     return matchesSearch && matchesDept && matchesYear && matchesMentor;
@@ -289,22 +289,34 @@ export const SkillBankView: React.FC = () => {
   React.useEffect(() => {
     if (dropdownStudents.length > 0) {
       const existsInDropdown = dropdownStudents.some(
-        (s) => s.studentProfile.registerNumber.trim().toLowerCase() === selectedRegisterNo?.trim().toLowerCase()
+        (s) => (s.studentProfile?.registerNumber || '').trim().toLowerCase() === (selectedRegisterNo || '').trim().toLowerCase()
       );
       if (!existsInDropdown) {
-        setSelectedRegisterNo(dropdownStudents[0].studentProfile.registerNumber);
+        setSelectedRegisterNo(dropdownStudents[0].studentProfile?.registerNumber || '');
       }
     }
   }, [dropdownStudents, selectedRegisterNo]);
 
   // Selected Student Record
   const currentStudent =
-    dropdownStudents.find((s) => s.studentProfile.registerNumber.trim().toLowerCase() === selectedRegisterNo?.trim().toLowerCase()) ||
+    dropdownStudents.find((s) => (s.studentProfile?.registerNumber || '').trim().toLowerCase() === (selectedRegisterNo || '').trim().toLowerCase()) ||
     dropdownStudents[0] ||
     scopedStudents[0] ||
     skillBankStudents[0];
 
-  const totals = currentStudent ? calculateStudentTotals(currentStudent) : null;
+  const defaultTotals = {
+    d1: { attendanceCoins: 0, libraryCoins: 0, libraryUtilCoins: 0, feeCoins: 0, miniProjectCoins: 0, ictToolsCoins: 0, examCoins: 0, learnerCatCoins: 0, endSemCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false },
+    d2: { nptelCoins: 0, leetCodeCoins: 0, onlineBasicCoins: 0, advancedCourseCoins: 0, paperCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false },
+    d3: { aptitudeCoins: 0, resumeCoins: 0, mockInterviewCoins: 0, linkedInCoins: 0, gitHubCoins: 0, socialMediaCoins: 0, hackathonCoins: 0, internshipCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false },
+    d4: { workshopCoins: 0, eventCoins: 0, volunteeringCoins: 0, membershipCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false },
+    d5: { sportsCoins: 0, artsCoins: 0, clubCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false },
+    totalGrossEarned: 0,
+    totalDeductions: 0,
+    grandTotalNetCoins: 0,
+    percentageOfTarget: 0,
+  };
+
+  const totals = currentStudent ? calculateStudentTotals(currentStudent) : defaultTotals;
 
   // Real-Time Skill Bank Validation Result
   const validationResult: SkillBankValidationResult | null = currentStudent
@@ -366,15 +378,16 @@ export const SkillBankView: React.FC = () => {
     }, 300);
   };
 
-  if (!currentStudent || !totals) {
-    return (
-      <div className="p-8 text-center text-slate-500 dark:text-slate-400">
-        No student record found. Click "Add Student" to create a new profile.
-      </div>
-    );
-  }
+  // Reset current student to 0 default coins across all 5 dimensions
+  const handleResetCoinsToZero = () => {
+    if (!currentStudent) return;
+    if (window.confirm(`Are you sure you want to reset ALL 5-Dimension Skill Bank coins to 0 for ${currentStudent.studentProfile.studentName}? (Mentor can add points afterwards)`)) {
+      const freshZeroRecord = createDefaultStudentSkillBankRecord(currentStudent.studentProfile);
+      updateSkillBankStudent(freshZeroRecord);
+    }
+  };
 
-  const libChecklistData = currentStudent.libraryChecklist || {
+  const libChecklistData = currentStudent?.libraryChecklist || {
     min5BooksBorrowed: true,
     onTimeReturnVerified: true,
     referenceAndJournalsBorrowed: false,
@@ -386,6 +399,7 @@ export const SkillBankView: React.FC = () => {
   const handleLibraryChecklistToggle = (
     field: 'min5BooksBorrowed' | 'onTimeReturnVerified' | 'referenceAndJournalsBorrowed' | 'digitalLibraryAccess' | 'bookReviewSubmitted'
   ) => {
+    if (!currentStudent) return;
     if (currentUser?.role !== 'librarian' && currentUser?.role !== 'admin' && currentUser?.role !== 'principal') {
       alert('🔒 DIM 4.2 & DIM 4.3 entries are managed exclusively by the Central Librarian. Mentors cannot modify these records.');
       return;
@@ -547,6 +561,98 @@ export const SkillBankView: React.FC = () => {
               </select>
             </div>
           )}
+
+          {/* Skill Bank Category & Sub-Category Dropdown */}
+          <div className="flex items-center gap-1.5 bg-blue-50 dark:bg-blue-950/60 px-3 py-1.5 border border-blue-200 dark:border-blue-800 rounded-xl">
+            <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="text-[11px] font-bold text-blue-800 dark:text-blue-300">Category:</span>
+            <select
+              value={selectedCategoryFilter}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedCategoryFilter(val);
+                if (val === 'hod_overview') setActiveMainTab('hod_overview');
+                else if (val === 'profile') setActiveMainTab('profile');
+                else if (
+                  val.startsWith('dim1') ||
+                  val === 'internal_exams' ||
+                  val === 'learners' ||
+                  val === 'semester' ||
+                  val === 'end_semester' ||
+                  val === 'class_attendance' ||
+                  val === 'library' ||
+                  val === 'fee_discipline' ||
+                  val === 'ict_checklists'
+                ) {
+                  setActiveMainTab('dim1');
+                } else if (
+                  val.startsWith('dim2') ||
+                  val === 'nptel' ||
+                  val === 'leetcode' ||
+                  val === 'certifications' ||
+                  val === 'paper' ||
+                  val === 'hackathon'
+                ) {
+                  setActiveMainTab('dim2');
+                } else if (
+                  val.startsWith('dim3') ||
+                  val === 'placement' ||
+                  val === 'internship' ||
+                  val === 'resume'
+                ) {
+                  setActiveMainTab('dim3');
+                } else if (val.startsWith('dim4') || val === 'cocurricular' || val === 'symposium') {
+                  setActiveMainTab('dim4');
+                } else if (val.startsWith('dim5') || val === 'sports' || val === 'talent' || val === 'higher_studies') {
+                  setActiveMainTab('dim5');
+                } else if (val === 'retraction') {
+                  setActiveMainTab('retraction');
+                } else if (val === 'journey') {
+                  setActiveMainTab('journey');
+                } else if (val === 'leaderboard') {
+                  setActiveMainTab('leaderboard');
+                }
+              }}
+              className="text-xs font-bold bg-transparent border-none focus:outline-none text-blue-900 dark:text-blue-200 cursor-pointer"
+            >
+              <option value="all">All Categories / Overview</option>
+              <option value="profile">1. Student Profile</option>
+              <optgroup label="Dimension 1: Academic Performance">
+                <option value="class_attendance">4.1 Class Attendance</option>
+                <option value="library">4.2 Central Library Utilization</option>
+                <option value="fee_discipline">4.3 Fee Discipline & Guidelines</option>
+                <option value="ict_checklists">4.4 Checklists / ICT Tools</option>
+                <option value="internal_exams">4.5 Internal Exams (CIAT 1 & CIAT 2)</option>
+                <option value="learners">4.6 Learner Category (Slow, Moderate, Fast)</option>
+                <option value="semester">4.7 Semester Performance</option>
+                <option value="end_semester">4.8 End Semester Exam Results</option>
+              </optgroup>
+              <optgroup label="Dimension 2: Skill & Certifications">
+                <option value="nptel">NPTEL Courses</option>
+                <option value="leetcode">LeetCode / Coding Practice</option>
+                <option value="certifications">Online Certifications</option>
+                <option value="paper">Paper Presentation / Journal</option>
+                <option value="hackathon">Hackathons & Projects</option>
+              </optgroup>
+              <optgroup label="Dimension 3: Career Prep">
+                <option value="placement">Placement Training</option>
+                <option value="internship">Internships</option>
+                <option value="resume">Resume & Portfolio</option>
+              </optgroup>
+              <optgroup label="Dimension 4: Co-Curricular">
+                <option value="cocurricular">Club Activities & Symposiums</option>
+              </optgroup>
+              <optgroup label="Dimension 5: Talent & Sports">
+                <option value="sports">Sports & Fine Arts</option>
+                <option value="higher_studies">Higher Studies / Competitive Exams</option>
+              </optgroup>
+              <optgroup label="System / Discipline">
+                <option value="retraction">Code of Conduct / Retraction</option>
+                <option value="journey">Transformation Journey</option>
+                <option value="leaderboard">Class Leaderboard</option>
+              </optgroup>
+            </select>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-1 lg:pb-0">
@@ -588,11 +694,50 @@ export const SkillBankView: React.FC = () => {
             <Plus className="w-3.5 h-3.5 text-amber-400" />
             <span>Add Student</span>
           </button>
+
+          {isHodOrPrincipal && (
+            <button
+              onClick={() => {
+                if (skillBankStudents.length === 0) {
+                  alert('There are no student or Skill Bank records to delete.');
+                  return;
+                }
+                if (window.confirm(`Are you sure you want to PERMANENTLY CLEAR ALL ${skillBankStudents.length} Skill Bank student records from the database? This will clear all data so HOD can enter fresh new student records.`)) {
+                  clearAllSkillBankStudents();
+                }
+              }}
+              className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
+              title="Clear all student records from database"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear All Data ({skillBankStudents.length})</span>
+            </button>
+          )}
+
+          {isHodOrPrincipal && selectedRegisterNo && (
+            <button
+              onClick={() => {
+                const studentToDelete = skillBankStudents.find(
+                  (s) => s.studentProfile.registerNumber === selectedRegisterNo
+                );
+                const name = studentToDelete?.studentProfile.studentName || selectedRegisterNo;
+                if (window.confirm(`Are you sure you want to delete student "${name}" (${selectedRegisterNo}) from the database?`)) {
+                  deleteSkillBankStudent(selectedRegisterNo);
+                  setSelectedRegisterNo('');
+                }
+              }}
+              className="px-3 py-2 bg-rose-600/90 hover:bg-rose-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
+              title="Delete selected student record (HOD)"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Delete Student</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Individual Student Header, Net Coins & Validation Engine (Staff Mentor Mode Only) */}
-      {isStaff && (
+      {isStaff && currentStudent && (
         <>
           {/* Selected Student Active Profile Banner */}
           <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -708,6 +853,16 @@ export const SkillBankView: React.FC = () => {
                   >
                     <Lock className="w-3.5 h-3.5" />
                     <span>{strictEnforcementMode ? 'Strict Auto-Clamp: ON' : 'Warning Audit: ON'}</span>
+                  </button>
+
+                  {/* Reset to 0 Coins Button */}
+                  <button
+                    onClick={handleResetCoinsToZero}
+                    className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-xl text-xs border border-amber-500/30 shadow transition-all flex items-center gap-1.5 cursor-pointer"
+                    title="Reset all 5 dimension skill bank entries to 0 default coins"
+                  >
+                    <RotateCcw className="w-4 h-4 text-amber-400" />
+                    <span>Reset to 0 Coins</span>
                   </button>
 
                   {/* View Diagnostics Button */}
@@ -1037,7 +1192,7 @@ export const SkillBankView: React.FC = () => {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => {
-                    const targetReg = selectedReportRegisterNo || currentStudent.studentProfile.registerNumber;
+                    const targetReg = selectedReportRegisterNo || currentStudent?.studentProfile?.registerNumber || scopedStudents[0]?.studentProfile?.registerNumber || '';
                     setSelectedReportRegisterNo(targetReg);
                     setIsStudentReportModalOpen(true);
                   }}
@@ -1057,14 +1212,7 @@ export const SkillBankView: React.FC = () => {
                 Select Year:
               </span>
               {(['all', 'I Year', 'II Year', 'III Year', 'IV Year'] as const).map((yr) => {
-                const count = scopedStudents.filter((s) => {
-                  if (yr === 'all') return true;
-                  if (yr === 'I Year') return s.studentProfile.batch === '2025-2029' || s.studentProfile.semester.includes('Sem I') || s.studentProfile.semester.includes('Sem II');
-                  if (yr === 'II Year') return s.studentProfile.batch === '2024-2028' || s.studentProfile.semester.includes('Sem III') || s.studentProfile.semester.includes('Sem IV');
-                  if (yr === 'III Year') return s.studentProfile.batch === '2023-2027' || s.studentProfile.semester.includes('Sem V') || s.studentProfile.semester.includes('Sem VI');
-                  if (yr === 'IV Year') return s.studentProfile.batch === '2022-2026' || s.studentProfile.semester.includes('Sem VII') || s.studentProfile.semester.includes('Sem VIII');
-                  return true;
-                }).length;
+                const count = scopedStudents.filter((s) => isStudentInCohortYear(s.studentProfile, yr)).length;
 
                 return (
                   <button
@@ -1096,14 +1244,7 @@ export const SkillBankView: React.FC = () => {
 
           {/* Year Cohort 5-Dimension Aggregate Cards */}
           {(() => {
-            const cohortStudents = scopedStudents.filter((s) => {
-              if (hodYearFilterTab === 'all') return true;
-              if (hodYearFilterTab === 'I Year') return s.studentProfile.batch === '2025-2029' || s.studentProfile.semester.includes('Sem I') || s.studentProfile.semester.includes('Sem II');
-              if (hodYearFilterTab === 'II Year') return s.studentProfile.batch === '2024-2028' || s.studentProfile.semester.includes('Sem III') || s.studentProfile.semester.includes('Sem IV');
-              if (hodYearFilterTab === 'III Year') return s.studentProfile.batch === '2023-2027' || s.studentProfile.semester.includes('Sem V') || s.studentProfile.semester.includes('Sem VI');
-              if (hodYearFilterTab === 'IV Year') return s.studentProfile.batch === '2022-2026' || s.studentProfile.semester.includes('Sem VII') || s.studentProfile.semester.includes('Sem VIII');
-              return true;
-            });
+            const cohortStudents = scopedStudents.filter((s) => isStudentInCohortYear(s.studentProfile, hodYearFilterTab));
 
             const cohortTotals = cohortStudents.map((s) => calculateStudentTotals(s));
             const totalCount = cohortTotals.length || 1;
@@ -1202,7 +1343,7 @@ export const SkillBankView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    setSelectedReportRegisterNo(currentStudent.studentProfile.registerNumber);
+                    setSelectedReportRegisterNo(currentStudent?.studentProfile?.registerNumber || scopedStudents[0]?.studentProfile?.registerNumber || '');
                     setIsStudentReportModalOpen(true);
                   }}
                   className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow flex items-center gap-1.5 cursor-pointer"
@@ -1243,7 +1384,7 @@ export const SkillBankView: React.FC = () => {
                     })
                     .map((st) => {
                       const stTotals = calculateStudentTotals(st);
-                      const isSelected = st.studentProfile.registerNumber === currentStudent.studentProfile.registerNumber;
+                      const isSelected = st.studentProfile.registerNumber === currentStudent?.studentProfile?.registerNumber;
 
                       let gradeBadge = 'A Grade';
                       let gradeColor = 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20';
@@ -1347,8 +1488,39 @@ export const SkillBankView: React.FC = () => {
         </div>
       )}
 
+      {/* Empty State Banner when Database is Empty and Student-specific Tab is Selected */}
+      {['profile', 'dim1', 'dim2', 'dim3', 'dim4', 'dim5', 'retraction', 'journey'].includes(activeMainTab) && !currentStudent && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-10 border border-slate-200 dark:border-slate-800 text-center shadow-sm my-6 space-y-4">
+          <div className="w-16 h-16 bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto border border-blue-200 dark:border-slate-700 shadow-sm">
+            <GraduationCap className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-lg font-black text-slate-900 dark:text-white">No Student Skill Bank Data Available</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+              The Sasurie Skill Bank database is currently empty. Click <strong className="text-slate-900 dark:text-white">"Add Student"</strong> or <strong className="text-slate-900 dark:text-white">"Import Excel"</strong> above to enter fresh new student records.
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => setIsAddStudentModalOpen(true)}
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Student</span>
+            </button>
+            <button
+              onClick={() => setIsExcelUploadModalOpen(true)}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Import Excel</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ----------------- TAB 1: STUDENT PROFILE MASTER ----------------- */}
-      {activeMainTab === 'profile' && (
+      {activeMainTab === 'profile' && currentStudent && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
             <div>
@@ -1667,7 +1839,7 @@ export const SkillBankView: React.FC = () => {
       )}
 
       {/* ----------------- TAB 2: DIMENSION 1 — ACADEMIC PERFORMANCE (Cap 40k) ----------------- */}
-      {activeMainTab === 'dim1' && (
+      {activeMainTab === 'dim1' && currentStudent && (
         <div className="space-y-6">
           {/* Dimension 1 Cap Banner */}
           <div className="bg-gradient-to-r from-blue-900 to-slate-900 text-white rounded-2xl p-4 border border-blue-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -2190,11 +2362,567 @@ export const SkillBankView: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* 4.5 Internal Exams Performance (CIAT 1 & CIAT 2) — Max 12,000 Coins */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Award className="w-4 h-4 text-purple-600" />
+                  <span>4.5 Internal Exams Performance (CIAT 1 &amp; CIAT 2) — Mentor Data Entry (Max 12,000 Coins)</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Enter CIAT-1, CIAT-2 exam performance, attendance &amp; subject marks breakdown.
+                </p>
+              </div>
+              <span className="px-3 py-1 bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 font-black text-xs rounded-xl border border-purple-200 dark:border-purple-800">
+                Earned: {totals.d1.examCoins.toLocaleString()} / 12,000 Coins
+              </span>
+            </div>
+
+            {/* Exam Summary Controls */}
+            {(() => {
+              const ep = currentStudent.examPerformance || {
+                ciat1Appeared: true,
+                ciat1Pct: 85,
+                ciat2Appeared: true,
+                ciat2Pct: 88,
+                endSemAllPass: true,
+                arrearCount: 0,
+                coinsEarned: 10000,
+              };
+
+              const handleExamPerfUpdate = (field: string, value: any) => {
+                const updated = { ...ep, [field]: value };
+                let coins = 0;
+                if (updated.ciat1Appeared) {
+                  if (updated.ciat1Pct >= 90) coins += 5000;
+                  else if (updated.ciat1Pct >= 80) coins += 4000;
+                  else if (updated.ciat1Pct >= 70) coins += 3000;
+                  else if (updated.ciat1Pct >= 60) coins += 2000;
+                  else if (updated.ciat1Pct > 0) coins += 1000;
+                }
+                if (updated.ciat2Appeared) {
+                  if (updated.ciat2Pct >= 90) coins += 5000;
+                  else if (updated.ciat2Pct >= 80) coins += 4000;
+                  else if (updated.ciat2Pct >= 70) coins += 3000;
+                  else if (updated.ciat2Pct >= 60) coins += 2000;
+                  else if (updated.ciat2Pct > 0) coins += 1000;
+                }
+                if (updated.ciat1Appeared && updated.ciat2Appeared && (updated.arrearCount === 0 || updated.endSemAllPass)) {
+                  coins += 2000;
+                }
+                updated.coinsEarned = Math.min(12000, coins);
+
+                updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                  examPerformance: updated,
+                });
+              };
+
+              return (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={ep.ciat1Appeared}
+                          onChange={(e) => handleExamPerfUpdate('ciat1Appeared', e.target.checked)}
+                          className="w-4 h-4 text-purple-600 rounded"
+                        />
+                        <span>CIAT-1 Appeared</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400">Exam attendance status</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                        CIAT-1 Aggregate %
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={ep.ciat1Pct}
+                        onChange={(e) => handleExamPerfUpdate('ciat1Pct', Number(e.target.value))}
+                        className="w-full p-1.5 bg-white dark:bg-slate-900 border rounded-lg text-xs font-bold"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={ep.ciat2Appeared}
+                          onChange={(e) => handleExamPerfUpdate('ciat2Appeared', e.target.checked)}
+                          className="w-4 h-4 text-purple-600 rounded"
+                        />
+                        <span>CIAT-2 Appeared</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400">Exam attendance status</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                        CIAT-2 Aggregate %
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={ep.ciat2Pct}
+                        onChange={(e) => handleExamPerfUpdate('ciat2Pct', Number(e.target.value))}
+                        className="w-full p-1.5 bg-white dark:bg-slate-900 border rounded-lg text-xs font-bold"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                      <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={ep.endSemAllPass}
+                          onChange={(e) => handleExamPerfUpdate('endSemAllPass', e.target.checked)}
+                          className="w-4 h-4 text-purple-600 rounded"
+                        />
+                        <span>All Pass Status</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400">+2k Model Exam Bonus</p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                        Standing Arrears
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={ep.arrearCount}
+                        onChange={(e) => handleExamPerfUpdate('arrearCount', Number(e.target.value))}
+                        className="w-full p-1.5 bg-white dark:bg-slate-900 border rounded-lg text-xs font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Subject Wise Marks Entry Table */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-purple-600" />
+                        <span>Subject-wise Marks Breakdown:</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const subjects = currentStudent.subjectMarkDetails || [];
+                          const newSub = {
+                            id: `SM-${Date.now()}`,
+                            subjectCode: `CS${3000 + subjects.length + 1}`,
+                            subjectName: 'New Subject',
+                            ciat1Marks: 80,
+                            ciat2Marks: 85,
+                            assignment1Marks: 10,
+                            assignment2Marks: 10,
+                            modelLabMarks: 90,
+                          };
+                          updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                            subjectMarkDetails: [...subjects, newSub],
+                          });
+                        }}
+                        className="px-2.5 py-1 text-xs font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-950 dark:text-purple-300 dark:hover:bg-purple-900 rounded-lg border border-purple-200 dark:border-purple-800 flex items-center gap-1 transition-colors"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Subject</span>
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                            <th className="p-2">Code</th>
+                            <th className="p-2">Subject Name</th>
+                            <th className="p-2">CIAT-1 (/100)</th>
+                            <th className="p-2">CIAT-2 (/100)</th>
+                            <th className="p-2">Assgn 1 (/10)</th>
+                            <th className="p-2">Assgn 2 (/10)</th>
+                            <th className="p-2">Model Lab (/100)</th>
+                            <th className="p-2 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                          {(currentStudent.subjectMarkDetails || []).map((sub, idx) => (
+                            <tr key={sub.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                              <td className="p-2">
+                                <input
+                                  type="text"
+                                  value={sub.subjectCode}
+                                  onChange={(e) => {
+                                    const updated = [...(currentStudent.subjectMarkDetails || [])];
+                                    updated[idx] = { ...sub, subjectCode: e.target.value };
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="w-20 p-1 bg-white dark:bg-slate-900 border rounded font-mono uppercase text-[11px]"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="text"
+                                  value={sub.subjectName}
+                                  onChange={(e) => {
+                                    const updated = [...(currentStudent.subjectMarkDetails || [])];
+                                    updated[idx] = { ...sub, subjectName: e.target.value };
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="w-full min-w-[140px] p-1 bg-white dark:bg-slate-900 border rounded font-semibold text-[11px]"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={sub.ciat1Marks}
+                                  onChange={(e) => {
+                                    const updated = [...(currentStudent.subjectMarkDetails || [])];
+                                    updated[idx] = { ...sub, ciat1Marks: Number(e.target.value) };
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="w-16 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={sub.ciat2Marks}
+                                  onChange={(e) => {
+                                    const updated = [...(currentStudent.subjectMarkDetails || [])];
+                                    updated[idx] = { ...sub, ciat2Marks: Number(e.target.value) };
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="w-16 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={10}
+                                  value={sub.assignment1Marks}
+                                  onChange={(e) => {
+                                    const updated = [...(currentStudent.subjectMarkDetails || [])];
+                                    updated[idx] = { ...sub, assignment1Marks: Number(e.target.value) };
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="w-14 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={10}
+                                  value={sub.assignment2Marks}
+                                  onChange={(e) => {
+                                    const updated = [...(currentStudent.subjectMarkDetails || [])];
+                                    updated[idx] = { ...sub, assignment2Marks: Number(e.target.value) };
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="w-14 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={sub.modelLabMarks}
+                                  onChange={(e) => {
+                                    const updated = [...(currentStudent.subjectMarkDetails || [])];
+                                    updated[idx] = { ...sub, modelLabMarks: Number(e.target.value) };
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="w-16 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
+                                />
+                              </td>
+                              <td className="p-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updated = (currentStudent.subjectMarkDetails || []).filter((_, i) => i !== idx);
+                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                                      subjectMarkDetails: updated,
+                                    });
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                                  title="Delete subject"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {(currentStudent.subjectMarkDetails || []).length === 0 && (
+                            <tr>
+                              <td colSpan={8} className="p-3 text-center text-slate-400 italic text-[11px]">
+                                No subject mark details logged yet. Click "+ Add Subject" to begin entering marks.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* 4.6 Learner Category (Slow, Moderate, Fast) & 4.7 End Semester Exam Results */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* 4.6 Learner Category (Max 3,000 Coins) */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b pb-2.5">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider flex items-center gap-1.5">
+                    <GraduationCap className="w-4 h-4 text-amber-600" />
+                    <span>4.6 Learner Category — Mentor Entry (Max 3,000)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Classification based on CIAT performance &amp; remedial class attendance.
+                  </p>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                  {totals.d1.learnerCatCoins} / 3,000 Coins
+                </span>
+              </div>
+
+              {(() => {
+                const lc = currentStudent.learnerCategory || {
+                  ciat1Category: 'Moderate',
+                  ciat2Category: 'Fast',
+                  remedialAttendancePct: 92,
+                  remedialBonusEarned: false,
+                  coinsEarned: 2500,
+                };
+
+                const handleLearnerCatUpdate = (field: string, value: any) => {
+                  const updated = { ...lc, [field]: value };
+                  let coins = 0;
+                  if (updated.ciat1Category === 'Fast' && updated.ciat2Category === 'Fast') {
+                    coins = 3000;
+                  } else if (updated.ciat1Category === 'Moderate' || updated.ciat2Category === 'Moderate') {
+                    coins = 1500;
+                    if (updated.remedialAttendancePct >= 90) coins += 1000;
+                  } else {
+                    coins = 1000;
+                    if (updated.remedialAttendancePct >= 90) coins += 1000;
+                  }
+                  if (updated.remedialBonusEarned) {
+                    coins += 1500;
+                  }
+                  updated.coinsEarned = Math.min(3000, coins);
+
+                  updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                    learnerCategory: updated,
+                  });
+                };
+
+                return (
+                  <div className="space-y-3 text-xs">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          CIAT-1 Learner Band
+                        </label>
+                        <select
+                          value={lc.ciat1Category}
+                          onChange={(e) => handleLearnerCatUpdate('ciat1Category', e.target.value)}
+                          className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold"
+                        >
+                          <option value="Slow">Slow Learner (&lt;60%)</option>
+                          <option value="Moderate">Moderate Learner (60-79%)</option>
+                          <option value="Fast">Fast Learner (&ge;80%)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          CIAT-2 Learner Band
+                        </label>
+                        <select
+                          value={lc.ciat2Category}
+                          onChange={(e) => handleLearnerCatUpdate('ciat2Category', e.target.value)}
+                          className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold"
+                        >
+                          <option value="Slow">Slow Learner (&lt;60%)</option>
+                          <option value="Moderate">Moderate Learner (60-79%)</option>
+                          <option value="Fast">Fast Learner (&ge;80%)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                        Remedial Class Attendance %
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={lc.remedialAttendancePct}
+                        onChange={(e) => handleLearnerCatUpdate('remedialAttendancePct', Number(e.target.value))}
+                        className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold"
+                      />
+                    </div>
+
+                    <label className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700/80">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={lc.remedialBonusEarned}
+                          onChange={(e) => handleLearnerCatUpdate('remedialBonusEarned', e.target.checked)}
+                          className="w-4 h-4 text-amber-600 rounded"
+                        />
+                        <span className="font-semibold text-[11px]">Remedial Improvement Bonus (&ge;95% Remedial)</span>
+                      </div>
+                      <span className="font-black text-amber-600">+1,500</span>
+                    </label>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* 4.7 End Semester Exam Results (Max 8,000 Coins) */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b pb-2.5">
+                <div>
+                  <h4 className="text-xs font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                    <span>4.7 End Semester Exam Results — Mentor Entry (Max 8,000)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Semester pass status, standing arrears &amp; GPA/CGPA weightage.
+                  </p>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
+                  {totals.d1.endSemCoins} / 8,000 Coins
+                </span>
+              </div>
+
+              {(() => {
+                const es = currentStudent.endSemResults || {
+                  allPass: true,
+                  arrearsCount: 0,
+                  gpa: 8.5,
+                  cgpa: 8.4,
+                  coinsEarned: 5000,
+                };
+
+                const handleEndSemUpdate = (field: string, value: any) => {
+                  const updated = { ...es, [field]: value };
+                  let coins = 0;
+                  if (updated.allPass && updated.arrearsCount === 0) {
+                    coins += 5000;
+                  }
+                  if (updated.gpa >= 9.0) coins += 3000;
+                  else if (updated.gpa >= 8.0) coins += 2000;
+                  else if (updated.gpa >= 7.0) coins += 1000;
+
+                  if (updated.arrearsCount > 0) {
+                    coins = Math.max(0, coins - updated.arrearsCount * 1000);
+                  }
+                  updated.coinsEarned = Math.min(8000, coins);
+
+                  updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                    endSemResults: updated,
+                  });
+                };
+
+                return (
+                  <div className="space-y-3 text-xs">
+                    <label className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700/80">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={es.allPass}
+                          onChange={(e) => handleEndSemUpdate('allPass', e.target.checked)}
+                          className="w-4 h-4 text-indigo-600 rounded"
+                        />
+                        <span className="font-bold">Passed All Subjects in First Attempt</span>
+                      </div>
+                      <span className="font-black text-indigo-600">+5,000</span>
+                    </label>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          Arrears Count
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={es.arrearsCount}
+                          onChange={(e) => handleEndSemUpdate('arrearsCount', Number(e.target.value))}
+                          className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold text-center"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          GPA
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          max={10}
+                          value={es.gpa}
+                          onChange={(e) => handleEndSemUpdate('gpa', Number(e.target.value))}
+                          className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold text-center"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          CGPA
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          max={10}
+                          value={es.cgpa}
+                          onChange={(e) => handleEndSemUpdate('cgpa', Number(e.target.value))}
+                          className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold text-center"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       )}
 
       {/* ----------------- TAB 3: DIMENSION 2 — SKILL DEVELOPMENT (Cap 15k) ----------------- */}
-      {activeMainTab === 'dim2' && (
+      {activeMainTab === 'dim2' && currentStudent && (
         <div className="space-y-6">
           {/* Dimension 2 Cap Banner */}
           <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl p-4 border border-indigo-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -2487,7 +3215,7 @@ export const SkillBankView: React.FC = () => {
                   <span className="text-slate-500 font-medium">LeetCode Handle:</span>
                   <input
                     type="text"
-                    defaultValue={`leetcode.com/u/${currentStudent.studentProfile.registerNumber.toLowerCase()}`}
+                    defaultValue={`leetcode.com/u/${(currentStudent?.studentProfile?.registerNumber || '').toLowerCase()}`}
                     className="px-2 py-1 bg-white dark:bg-slate-900 border rounded text-[11px] font-mono font-bold w-48 text-right"
                   />
                 </div>
@@ -2804,7 +3532,7 @@ export const SkillBankView: React.FC = () => {
       )}
 
       {/* ----------------- TAB 4: DIMENSION 3 — CAREER PREP (Cap 15k) ----------------- */}
-      {activeMainTab === 'dim3' && (
+      {activeMainTab === 'dim3' && currentStudent && (
         <div className="space-y-6">
           {/* Dimension 3 Cap Banner */}
           <div className="bg-gradient-to-r from-emerald-900 to-slate-900 text-white rounded-2xl p-4 border border-emerald-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -3747,7 +4475,7 @@ export const SkillBankView: React.FC = () => {
       )}
 
       {/* ----------------- TAB 5: DIMENSION 4 — CO-CURRICULAR (Cap 15k) ----------------- */}
-      {activeMainTab === 'dim4' && (
+      {activeMainTab === 'dim4' && currentStudent && (
         <div className="space-y-6">
           {/* Dimension 4 Cap Banner */}
           <div className="bg-gradient-to-r from-amber-900 via-slate-900 to-amber-950 text-white rounded-2xl p-5 border border-amber-800/80 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -4429,7 +5157,7 @@ export const SkillBankView: React.FC = () => {
       )}
 
       {/* ----------------- TAB 6: DIMENSION 5 — TALENT & SPORTS (Cap 15k) ----------------- */}
-      {activeMainTab === 'dim5' && (
+      {activeMainTab === 'dim5' && currentStudent && (
         <div className="space-y-6">
           {/* Dimension 5 Cap Banner */}
           <div className="bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 text-white rounded-2xl p-5 border border-purple-800/80 shadow-md flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -4760,7 +5488,7 @@ export const SkillBankView: React.FC = () => {
       )}
 
       {/* ----------------- TAB 7: CODE OF CONDUCT & RETRACTIONS ----------------- */}
-      {activeMainTab === 'retraction' && (
+      {activeMainTab === 'retraction' && currentStudent && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b pb-4">
             <div>
@@ -4931,7 +5659,7 @@ export const SkillBankView: React.FC = () => {
       )}
 
       {/* ----------------- TAB 8: TRANSFORMATION JOURNEY & LOGS ----------------- */}
-      {activeMainTab === 'journey' && (
+      {activeMainTab === 'journey' && currentStudent && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
           <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-amber-500" />
@@ -5141,164 +5869,22 @@ export const SkillBankView: React.FC = () => {
 
                 if (!regNo || !name) return;
 
-                const newStudent: StudentSkillBankData = {
-                  studentProfile: {
-                    id: `STU-${Date.now()}`,
-                    registerNumber: regNo,
-                    studentName: name,
-                    skillBankAccountNo: `SSB-2026-CS-${Math.floor(100 + Math.random() * 900)}`,
-                    degreeBranch: 'B.E. Computer Science & Engineering',
-                    department: 'Computer Science & Engineering',
-                    batch: '2023-2027',
-                    academicYear: '2026-2027',
-                    semester: 'Odd Semester (Sem V)',
-                    section: section || 'A',
-                    admissionNumber: `SCE2023CS${Math.floor(100 + Math.random() * 900)}`,
-                    gender: 'Male',
-                    age: 20,
-                    bloodGroup: 'O+',
-                    motherTongue: 'Tamil',
-                    nationality: 'Indian',
-                    aadhaarNo: 'XXXX-XXXX-XXXX',
-                    dateOfBirth: '2005-01-01',
-                    communicationAddress: 'Tirupur, Tamil Nadu',
-                    pinCode: '638056',
-                    studentMobile: '9000000000',
-                    studentEmail: `${name.toLowerCase().replace(/\s+/g, '.')}@sasurie.ac.in`,
-                    personalEmail: `${name.toLowerCase().replace(/\s+/g, '')}@gmail.com`,
-                    fatherName: 'Parent Name',
-                    fatherOccupation: 'Business',
-                    fatherMobile: '9000000001',
-                    fatherEmail: 'parent@gmail.com',
-                    motherName: 'Mother Name',
-                    motherOccupation: 'Homemaker',
-                    motherMobile: '9000000002',
-                    motherEmail: 'mother@gmail.com',
-                    sslcSchool: 'School Name',
-                    hscSchool: 'Higher Sec School',
-                    yearOfPassing: '2023',
-                    admissionCategory: 'Government Quota',
-                    mentorFaculty: 'Dr. M. Karthikeyan',
-                    dreamCompany: 'Zoho / TCS',
-                    careerGoal: 'Software Development Engineer',
-                    studentSigned: true,
-                    studentSignedDate: new Date().toISOString().split('T')[0],
-                    mentorSigned: true,
-                    mentorSignedDate: new Date().toISOString().split('T')[0],
-                    hodSigned: true,
-                    hodSignedDate: new Date().toISOString().split('T')[0],
-                  },
-                  attendanceMonths: {
-                    Jul: { totalDays: 20, daysAttended: 18, attendancePct: 90, additionalRemedialDays: 0, coinsEarned: 3000 },
-                    Aug: { totalDays: 20, daysAttended: 19, attendancePct: 95, additionalRemedialDays: 0, coinsEarned: 5000 },
-                    Sep: { totalDays: 20, daysAttended: 19, attendancePct: 95, additionalRemedialDays: 0, coinsEarned: 5000 },
-                    Oct: { totalDays: 20, daysAttended: 18, attendancePct: 90, additionalRemedialDays: 0, coinsEarned: 3000 },
-                    Nov: { totalDays: 20, daysAttended: 18, attendancePct: 90, additionalRemedialDays: 0, coinsEarned: 3000 },
-                    Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
-                  },
-                  libraryBooks: [],
-                  libraryVisits: [],
-                  feePayment: {
-                    tuitionFeePaid: true,
-                    hostelFeePaid: false,
-                    transportFeePaid: true,
-                    scholarshipReceived: false,
-                    examFeePaid: true,
-                    dateOfPayment: '2026-07-20',
-                    paymentBand: 'before_due',
-                    coinsEarned: 5000,
-                    signedByStaff: true,
-                  },
-                  miniProjectChecklist: {
-                    topicSelectionApproved: true,
-                    proposalPrepared: true,
-                    literatureReview: true,
-                    developmentPlagiarismCheck: true,
-                    verificationDone: true,
-                    presentationVivaIPR: true,
-                    coinsEarned: 2500,
-                  },
-                  miniProjectDetails: [],
-                  ictToolsChecklist: {
-                    joiningClassroom: true,
-                    submittingAssignmentOnTime: true,
-                    completingQuizTest: true,
-                    activeParticipation: true,
-                    disciplineEngagement: true,
-                    coinsEarned: 2500,
-                  },
-                  examPerformance: {
-                    ciat1Appeared: true,
-                    ciat1Pct: 80,
-                    ciat2Appeared: true,
-                    ciat2Pct: 82,
-                    endSemAllPass: true,
-                    arrearCount: 0,
-                    coinsEarned: 8000,
-                  },
-                  subjectMarkDetails: [],
-                  learnerCategory: { ciat1Category: 'Moderate', ciat2Category: 'Fast', remedialAttendancePct: 90, remedialBonusEarned: false, coinsEarned: 2500 },
-                  endSemResults: { allPass: true, arrearsCount: 0, gpa: 8.2, cgpa: 8.1, coinsEarned: 5000 },
-                  nptelMonths: {
-                    Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Pass', coinsEarned: 2000 },
-                    Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
-                    Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
-                    Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
-                    Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
-                    Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
-                  },
-                  leetCodeMonths: {
-                    Jul: { taskCompleted: true, attendanceBand: '70-79%', coinsEarned: 1500 },
-                    Aug: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
-                    Sep: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
-                    Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
-                    Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
-                    Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
-                  },
-                  onlineCertBasic: [],
-                  advancedCourses: [],
-                  paperPresentations: [],
-                  aptitudeMonths: {
-                    Jul: { attended: true, scoreBand: 'Score >= 60', coinsEarned: 2500 },
-                    Aug: { attended: false, scoreBand: 'None', coinsEarned: 0 },
-                    Sep: { attended: false, scoreBand: 'None', coinsEarned: 0 },
-                    Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
-                    Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
-                    Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
-                  },
-                  resume: { workshopAttended: true, atsScorePct: 85, enteredByCDC: true, coinsEarned: 2000 },
-                  mockInterview: { attended: true, performanceBand: 'Moderate', enteredByCDC: true, coinsEarned: 1250 },
-                  linkedIn: { profileCreated: true, originalPostCount: 2, repostCount: 2, coinsEarned: 800 },
-                  gitHub: { portfolioCompleted: true, assessmentBand: '50-74', coinsEarned: 450 },
-                  socialMedia: { profileCreated: true, originalPostCount: 1, repostCount: 1, coinsEarned: 400 },
-                  hackathons: [],
-                  internship: { industryName: 'TCS Internship', fromDate: '2026-06-01', toDate: '2026-06-15', totalDays: 15, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: false, startupActivity: false, coinsEarned: 1000 },
-                  workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
-                  collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: false, coinsEarned: 3000 },
-                  volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: false, coinsEarned: 3000 },
-                  professionalMemberships: [],
-                  sportsLogs: [],
-                  artsLogs: [],
-                  clubLogs: [],
-                  violations: [],
-                  counsellingLogs: [],
-                  parentMeetingLogs: [],
-                  transformationJourney: {
-                    academicReflection: 'Good performance.',
-                    skillReflection: 'Improving coding skills.',
-                    careerReflection: 'Targeting campus placements.',
-                    coCurricularReflection: 'Active participation.',
-                    extraCurricularReflection: 'Member of sports team.',
-                    checkpoint1Date: '2026-08-30',
-                    checkpoint1Coins: 35000,
-                    checkpoint1Grade: 'A',
-                    checkpoint2Date: '2026-11-30',
-                    checkpoint2Coins: 65000,
-                    checkpoint2Grade: 'A+',
-                    finalGradeCoin: 72000,
-                    finalGradeLetter: 'A+',
-                  },
-                };
+                const newStudent = createDefaultStudentSkillBankRecord({
+                  registerNumber: regNo,
+                  studentName: name,
+                  section: section || 'A',
+                  skillBankAccountNo: `SSB-2026-CS-${Math.floor(100 + Math.random() * 900)}`,
+                  degreeBranch: 'B.E. Computer Science & Engineering',
+                  department: currentUser?.department || 'Computer Science & Engineering',
+                  batch: '2023-2027',
+                  academicYear: '2026-2027',
+                  semester: 'Odd Semester (Sem V)',
+                  admissionNumber: `SCE2023CS${Math.floor(100 + Math.random() * 900)}`,
+                  studentEmail: `${(name || '').toLowerCase().replace(/\s+/g, '.')}@sasurie.ac.in`,
+                  personalEmail: `${(name || '').toLowerCase().replace(/\s+/g, '')}@gmail.com`,
+                  mentorFaculty: currentUser?.facultyName || 'Dr. M. Karthikeyan',
+                  mentorStaffId: currentUser?.id || 'STF001',
+                });
 
                 addSkillBankStudent(newStudent);
                 setSelectedRegisterNo(regNo);
@@ -7218,7 +7804,7 @@ export const SkillBankView: React.FC = () => {
               <div className="flex items-center gap-3">
                 {/* Select Student Selector in Modal */}
                 <select
-                  value={selectedReportRegisterNo || currentStudent.studentProfile.registerNumber}
+                  value={selectedReportRegisterNo || currentStudent?.studentProfile?.registerNumber || ''}
                   onChange={(e) => setSelectedReportRegisterNo(e.target.value)}
                   className="px-3 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-xl cursor-pointer"
                 >
@@ -7249,9 +7835,10 @@ export const SkillBankView: React.FC = () => {
             {/* Printable Report Content Body */}
             {(() => {
               const repStudent =
-                scopedStudents.find((s) => s.studentProfile.registerNumber === (selectedReportRegisterNo || currentStudent.studentProfile.registerNumber)) ||
-                currentStudent;
-              const repTotals = calculateStudentTotals(repStudent);
+                scopedStudents.find((s) => s.studentProfile.registerNumber === (selectedReportRegisterNo || currentStudent?.studentProfile?.registerNumber)) ||
+                currentStudent ||
+                scopedStudents[0];
+              const repTotals = repStudent ? calculateStudentTotals(repStudent) : defaultTotals;
 
               let gradeTitle = 'A Grade (Very Good)';
               if (repTotals.grandTotalNetCoins >= 90000) gradeTitle = 'S Grade (Outstanding Performance)';
@@ -7259,6 +7846,14 @@ export const SkillBankView: React.FC = () => {
               else if (repTotals.grandTotalNetCoins >= 70000) gradeTitle = 'A Grade (Very Good Performance)';
               else if (repTotals.grandTotalNetCoins >= 60000) gradeTitle = 'B Grade (Good Performance)';
               else gradeTitle = 'C Grade (Progressing)';
+
+              if (!repStudent) {
+                return (
+                  <div className="p-8 text-center text-slate-500 font-bold bg-white rounded-2xl border border-slate-200">
+                    No student record selected or available in database. Please add or import student data first.
+                  </div>
+                );
+              }
 
               return (
                 <div className="p-6 bg-white text-black font-sans space-y-6 rounded-2xl border border-slate-200 shadow-inner text-xs">
@@ -7432,18 +8027,22 @@ export const SkillBankView: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 text-xs border p-3">
-          <div>
-            <div><strong>Student Name:</strong> {currentStudent.studentProfile.studentName}</div>
-            <div><strong>Register Number:</strong> {currentStudent.studentProfile.registerNumber}</div>
-            <div><strong>Degree & Branch:</strong> {currentStudent.studentProfile.degreeBranch}</div>
+        {currentStudent ? (
+          <div className="grid grid-cols-2 gap-4 text-xs border p-3">
+            <div>
+              <div><strong>Student Name:</strong> {currentStudent.studentProfile.studentName}</div>
+              <div><strong>Register Number:</strong> {currentStudent.studentProfile.registerNumber}</div>
+              <div><strong>Degree & Branch:</strong> {currentStudent.studentProfile.degreeBranch}</div>
+            </div>
+            <div>
+              <div><strong>SSB Account No:</strong> {currentStudent.studentProfile.skillBankAccountNo}</div>
+              <div><strong>Semester & Batch:</strong> {currentStudent.studentProfile.semester} ({currentStudent.studentProfile.batch})</div>
+              <div><strong>Faculty Mentor:</strong> {currentStudent.studentProfile.mentorFaculty}</div>
+            </div>
           </div>
-          <div>
-            <div><strong>SSB Account No:</strong> {currentStudent.studentProfile.skillBankAccountNo}</div>
-            <div><strong>Semester & Batch:</strong> {currentStudent.studentProfile.semester} ({currentStudent.studentProfile.batch})</div>
-            <div><strong>Faculty Mentor:</strong> {currentStudent.studentProfile.mentorFaculty}</div>
-          </div>
-        </div>
+        ) : (
+          <div className="text-xs italic p-3 border">No student profile selected.</div>
+        )}
 
         <div className="space-y-2">
           <h4 className="font-black text-xs uppercase border-b pb-1">5 Dimensions Summary & Caps</h4>

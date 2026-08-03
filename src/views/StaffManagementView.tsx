@@ -26,7 +26,7 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
   isAddModalOpen = false,
   onCloseAddModal,
 }) => {
-  const { staffList, addStaff, updateStaff, deleteStaff, currentUser, loginAsDemo, filterState, updateUserPassword } = useApp();
+  const { staffList, addStaff, updateStaff, deleteStaff, clearAllStaff, currentUser, loginAsDemo, filterState, updateUserPassword } = useApp();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive'>('all');
@@ -153,26 +153,26 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
   const filteredStaff = staffList.filter((s) => {
     // HOD Scope: Only see staff from their own department
     if (isHod) {
-      const staffDept = s.department.toLowerCase();
-      const userDept = hodDepartment.toLowerCase();
-      const isSameDept = staffDept === userDept || staffDept.includes('ai & ds') && userDept.includes('ai & ds');
+      const staffDept = (s.department || '').toLowerCase();
+      const userDept = (hodDepartment || '').toLowerCase();
+      const isSameDept = staffDept === userDept || (staffDept.includes('ai & ds') && userDept.includes('ai & ds'));
       if (!isSameDept) return false;
     }
 
-    const q = (search || filterState.searchQuery).toLowerCase();
+    const q = (search || filterState?.searchQuery || '').toLowerCase();
     const matchesSearch =
-      s.facultyName.toLowerCase().includes(q) ||
-      s.id.toLowerCase().includes(q) ||
-      s.designation.toLowerCase().includes(q) ||
-      s.department.toLowerCase().includes(q) ||
-      s.email.toLowerCase().includes(q);
+      (s.facultyName || '').toLowerCase().includes(q) ||
+      (s.id || '').toLowerCase().includes(q) ||
+      (s.designation || '').toLowerCase().includes(q) ||
+      (s.department || '').toLowerCase().includes(q) ||
+      (s.email || '').toLowerCase().includes(q);
 
     const matchesStatus = statusFilter === 'all' || s.status === statusFilter;
 
     const matchesDept =
       departmentFilter === 'all' ||
-      s.department.toLowerCase() === departmentFilter.toLowerCase() ||
-      s.department.toLowerCase().includes(departmentFilter.toLowerCase());
+      (s.department || '').toLowerCase() === (departmentFilter || '').toLowerCase() ||
+      (s.department || '').toLowerCase().includes((departmentFilter || '').toLowerCase());
 
     return matchesSearch && matchesStatus && matchesDept;
   });
@@ -192,13 +192,31 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
         </div>
 
         {(currentUser?.role === 'admin' || currentUser?.role === 'principal') && (
-          <button
-            onClick={openAddModal}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 shrink-0"
-          >
-            <UserPlus className="w-4 h-4" />
-            One-Click Add Staff
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {staffList.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Are you sure you want to clear all faculty members from the database? This action cannot be undone.')) {
+                    clearAllStaff();
+                  }
+                }}
+                className="px-3 py-2 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5"
+                title="Clear all faculty members"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear All Faculty
+              </button>
+            )}
+
+            <button
+              onClick={openAddModal}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-blue-600/20 transition-all flex items-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" />
+              One-Click Add Staff
+            </button>
+          </div>
         )}
       </div>
 

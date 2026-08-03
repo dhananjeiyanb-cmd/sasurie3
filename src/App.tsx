@@ -16,6 +16,7 @@ import { LessonPlanView } from './views/LessonPlanView';
 import { SkillBankView } from './views/SkillBankView';
 import { MentorMappingView } from './views/MentorMappingView';
 import { LibrarianPortalView } from './views/LibrarianPortalView';
+import { EventsView } from './views/EventsView';
 
 const MainContent: React.FC = () => {
   const { currentUser, activeTab, setActiveTab } = useApp();
@@ -35,7 +36,7 @@ const MainContent: React.FC = () => {
 
     if (isStaffUser && hodOnlyTabs.includes(activeTab)) {
       setActiveTab('dashboard');
-    } else if (isLibrarianUser && !['librarian_portal', 'skill_bank', 'dashboard'].includes(activeTab)) {
+    } else if (isLibrarianUser && !['librarian_portal', 'skill_bank', 'dashboard', 'events'].includes(activeTab)) {
       setActiveTab('librarian_portal');
     } else if (!isLibrarianUser && activeTab === 'librarian_portal') {
       setActiveTab('dashboard');
@@ -80,6 +81,8 @@ const MainContent: React.FC = () => {
               onOpenAddClass={handleOpenQuickAddClass}
             />
           )}
+
+          {activeTab === 'events' && <EventsView />}
 
           {activeTab === 'staff' && (
             <StaffManagementView

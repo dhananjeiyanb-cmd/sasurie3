@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { DEPARTMENTS } from '../types';
 import { SettingsModal } from './SettingsModal';
 import { ProfilePasswordModal } from './ProfilePasswordModal';
+import { AiHighThinkingAdvisor } from './AiHighThinkingAdvisor';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
 import {
   Bell,
@@ -21,6 +22,7 @@ import {
   Settings,
   Image as ImageIcon,
   Upload,
+  Brain,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -56,6 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showProfilePasswordModal, setShowProfilePasswordModal] = useState(false);
+  const [showAiAdvisorModal, setShowAiAdvisorModal] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -187,6 +190,16 @@ export const Header: React.FC<HeaderProps> = ({
               {new Date().toLocaleDateString('en-US', { weekday: 'long' })}
             </div>
           </div>
+
+          {/* AI High Thinking Advisor Button */}
+          <button
+            onClick={() => setShowAiAdvisorModal(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-xs transition-all border border-purple-500/30"
+            title="Launch Gemini 3.1 Pro High Thinking Advisor"
+          >
+            <Brain className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+            <span className="hidden sm:inline">AI Advisor</span>
+          </button>
 
           {/* Settings Button */}
           <button
@@ -409,6 +422,12 @@ export const Header: React.FC<HeaderProps> = ({
     <SettingsModal
       isOpen={showSettingsModal}
       onClose={() => setShowSettingsModal(false)}
+    />
+
+    {/* AI High Thinking Advisor Modal */}
+    <AiHighThinkingAdvisor
+      isOpen={showAiAdvisorModal}
+      onClose={() => setShowAiAdvisorModal(false)}
     />
 
     {/* Profile & Password Modal */}

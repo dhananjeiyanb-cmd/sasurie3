@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { exportElementToPDF, exportToExcel, triggerPrint } from '../utils/exportUtils';
-import { getDeptHodName, getScopedStaff } from '../utils/departmentUtils';
+import { getDeptHodName, getScopedStaff, getDepartmentAttendanceSummaries, isSameDept } from '../utils/departmentUtils';
 import { SettingsModal } from '../components/SettingsModal';
 import { StudentAttendanceModal } from '../components/StudentAttendanceModal';
 import { DailyRemarksModal } from '../components/DailyRemarksModal';
@@ -23,10 +23,43 @@ import {
 } from 'lucide-react';
 
 export const DailyReportView: React.FC = () => {
-  const { dailyReport, updateDailyReport, staffList, taskList, observationList, currentUser } = useApp();
+  const { dailyReport, updateDailyReport, staffList, taskList, observationList, currentUser, classList, attendanceRecords, filterState } = useApp();
 
-  const activeHodName = getDeptHodName(staffList, dailyReport.department, currentUser, dailyReport.hodName);
-  const scopedStaff = getScopedStaff(staffList, currentUser, dailyReport.department);
+  const selectedDept = filterState.department;
+  const hodDepartment = (selectedDept && selectedDept !== 'all' && selectedDept !== 'All Departments')
+    ? selectedDept
+    : (currentUser?.department && currentUser.department !== 'College Principal Office' ? currentUser.department : (dailyReport.department || 'Artificial Intelligence & Data Science (AI & DS)'));
+
+  const activeHodName = getDeptHodName(staffList, hodDepartment, currentUser, dailyReport.hodName);
+  const scopedStaff = getScopedStaff(staffList, currentUser, hodDepartment);
+
+  const scopedTasks = taskList.filter((task) => {
+    if (!hodDepartment) return true;
+    if (task.department) return isSameDept(task.department, hodDepartment);
+    const matchedStaff = staffList.find(
+      (s) => s.id === task.assignedToStaffId || (s.facultyName && task.assignedToName && s.facultyName.toLowerCase() === task.assignedToName.toLowerCase())
+    );
+    if (matchedStaff) return isSameDept(matchedStaff.department, hodDepartment);
+    return true;
+  });
+
+  const completedTasks = scopedTasks.filter((t) => t.status === 'Completed').length;
+  const pendingTasks = scopedTasks.filter((t) => t.status === 'Pending' || t.status === 'In Progress').length;
+  const overdueTasks = scopedTasks.filter((t) => t.status === 'Overdue').length;
+
+  const scopedObservations = observationList.filter((obs) => {
+    if (!hodDepartment) return true;
+    if (obs.department) return isSameDept(obs.department, hodDepartment);
+    const matchedStaff = staffList.find(
+      (s) => s.facultyName && obs.facultyName && s.facultyName.toLowerCase() === obs.facultyName.toLowerCase()
+    );
+    if (matchedStaff) return isSameDept(matchedStaff.department, hodDepartment);
+    const matchedClass = classList.find(
+      (c) => c.className && obs.className && c.className.toLowerCase() === obs.className.toLowerCase()
+    );
+    if (matchedClass) return isSameDept(matchedClass.department, hodDepartment);
+    return true;
+  });
 
   const [isEditing, setIsEditing] = useState(false);
 
@@ -40,6 +73,12 @@ export const DailyReportView: React.FC = () => {
   const [specialRemarks, setSpecialRemarks] = useState(dailyReport.specialRemarks);
   const [hodRemarks, setHodRemarks] = useState(dailyReport.hodRemarks);
 
+  const [reportType, setReportType] = useState<'daily' | 'weekly'>(dailyReport.reportType || 'weekly');
+  const [principalCommentInput, setPrincipalCommentInput] = useState(dailyReport.principalComments || '');
+
+  const isPrincipal = currentUser?.role === 'principal';
+  const isHodOrStaff = currentUser?.role === 'admin' || currentUser?.role === 'staff';
+
   const handleSave = () => {
     updateDailyReport({
       eventsConducted,
@@ -47,24 +86,44 @@ export const DailyReportView: React.FC = () => {
       disciplineIssues,
       specialRemarks,
       hodRemarks,
+      reportType,
     });
     setIsEditing(false);
   };
 
-  const completedTasks = taskList.filter((t) => t.status === 'Completed').length;
-  const pendingTasks = taskList.filter((t) => t.status === 'Pending' || t.status === 'In Progress').length;
-  const overdueTasks = taskList.filter((t) => t.status === 'Overdue').length;
+  const handleFridaySubmit = () => {
+    updateDailyReport({
+      reportType: 'weekly',
+      weeklyFridayDate: dailyReport.date,
+      weeklyReportStatus: 'Submitted to Principal',
+    });
+  };
+
+  const handlePrincipalApprove = () => {
+    updateDailyReport({
+      weeklyReportStatus: 'Approved by Principal',
+      principalComments: principalCommentInput,
+      principalApprovedDate: new Date().toISOString().split('T')[0],
+    });
+  };
+
+  const handlePrincipalRequestRevision = () => {
+    updateDailyReport({
+      weeklyReportStatus: 'Needs Revision',
+      principalComments: principalCommentInput,
+    });
+  };
 
   const handleExportExcel = () => {
     const excelData = [
-      { Category: 'Department', Details: dailyReport.department },
+      { Category: 'Department', Details: hodDepartment },
       { Category: 'HOD Name', Details: activeHodName },
       { Category: 'Report Date', Details: dailyReport.date },
-      { Category: 'Faculty Attendance', Details: `${dailyReport.facultyAttendanceCount.present}/${dailyReport.facultyAttendanceCount.total} Present` },
+      { Category: 'Faculty Attendance', Details: `${scopedStaff.filter((s) => s.status === 'Active').length}/${scopedStaff.length} Present` },
       { Category: 'Completed Tasks', Details: completedTasks },
       { Category: 'Pending Tasks', Details: pendingTasks },
       { Category: 'Overdue Tasks', Details: overdueTasks },
-      { Category: 'Class Observations', Details: observationList.length },
+      { Category: 'Class Observations', Details: scopedObservations.length },
       { Category: 'Events Conducted', Details: dailyReport.eventsConducted },
       { Category: 'NAAC / Accreditation Work', Details: dailyReport.naacWorkDone || 'None' },
       { Category: 'HOD Remarks', Details: dailyReport.hodRemarks },
@@ -74,7 +133,128 @@ export const DailyReportView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Control Bar */}
+      {/* Weekly Submission & Principal Approval Workflow Banner */}
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-lg border border-blue-800 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="space-y-1 text-center md:text-left">
+          <div className="flex items-center gap-2 justify-center md:justify-start">
+            <Calendar className="w-5 h-5 text-amber-400" />
+            <h3 className="font-bold text-sm text-white uppercase tracking-wider">
+              {reportType === 'weekly' ? 'Weekly Report Submission & Principal Approval Workflow' : 'Daily HOD Report Card'}
+            </h3>
+            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase ${
+              dailyReport.weeklyReportStatus === 'Approved by Principal'
+                ? 'bg-emerald-500 text-slate-950'
+                : dailyReport.weeklyReportStatus === 'Submitted to Principal'
+                ? 'bg-amber-400 text-slate-950'
+                : dailyReport.weeklyReportStatus === 'Needs Revision'
+                ? 'bg-rose-500 text-white'
+                : 'bg-slate-700 text-slate-200'
+            }`}>
+              {dailyReport.weeklyReportStatus || 'Draft'}
+            </span>
+          </div>
+          <p className="text-xs text-blue-200/90">
+            {reportType === 'weekly'
+              ? 'Converted to Friday Weekly Report. HODs submit report every Friday for Principal review and approval.'
+              : 'Daily department summary card formatted for printing.'}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Toggle Report Mode */}
+          <div className="bg-slate-800/80 p-1 rounded-xl border border-slate-700 flex items-center gap-1">
+            <button
+              onClick={() => {
+                setReportType('daily');
+                updateDailyReport({ reportType: 'daily' });
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                reportType === 'daily' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              Daily Mode
+            </button>
+            <button
+              onClick={() => {
+                setReportType('weekly');
+                updateDailyReport({ reportType: 'weekly' });
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                reportType === 'weekly' ? 'bg-amber-500 text-slate-950 font-black shadow-xs' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              Weekly Mode (Friday)
+            </button>
+          </div>
+
+          {/* Submit Action for HOD / Faculty */}
+          {isHodOrStaff && (
+            <button
+              onClick={handleFridaySubmit}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle className="w-4 h-4" /> Submit Weekly Report to Principal
+            </button>
+          )}
+
+          {/* Principal Approval Actions */}
+          {isPrincipal && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePrincipalApprove}
+                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckSquare className="w-4 h-4" /> Approve Weekly Report
+              </button>
+              <button
+                onClick={handlePrincipalRequestRevision}
+                className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                Request Revision
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Principal Comments Box (If Principal or when approved/commented) */}
+      {(isPrincipal || dailyReport.principalComments || dailyReport.weeklyReportStatus === 'Approved by Principal') && (
+        <div className="bg-amber-50/90 dark:bg-slate-900 border-2 border-amber-300 dark:border-amber-800/80 p-4 rounded-2xl shadow-sm space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Eye className="w-4 h-4 text-amber-600" /> Principal Comments & Review Remarks
+            </h4>
+            {dailyReport.principalApprovedDate && (
+              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                Approved on: {dailyReport.principalApprovedDate}
+              </span>
+            )}
+          </div>
+          {isPrincipal ? (
+            <div className="space-y-2">
+              <textarea
+                rows={2}
+                value={principalCommentInput}
+                onChange={(e) => setPrincipalCommentInput(e.target.value)}
+                placeholder="Enter Principal approval comments or review instructions for the HOD..."
+                className="w-full p-2.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-slate-700 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={handlePrincipalApprove}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1"
+                >
+                  <Save className="w-3.5 h-3.5" /> Save Principal Comments & Approve
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-800 dark:text-slate-200 font-medium italic bg-white/80 dark:bg-slate-800/80 p-3 rounded-xl border border-amber-200 dark:border-slate-700">
+              "{dailyReport.principalComments || 'Report reviewed and approved by Principal. Good department progress.'}"
+            </p>
+          )}
+        </div>
+      )}
       <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -164,7 +344,7 @@ export const DailyReportView: React.FC = () => {
             </div>
 
             <div className="bg-slate-100 py-1.5 px-4 rounded-md border border-slate-300 mt-2 font-sans flex items-center justify-between text-xs font-bold">
-              <span>{dailyReport.department}</span>
+              <span>{hodDepartment}</span>
               <span className="text-blue-900 uppercase">HOD DAILY REPORTING CARD</span>
               <span>DATE: {dailyReport.date}</span>
             </div>
@@ -174,7 +354,7 @@ export const DailyReportView: React.FC = () => {
           <div className="grid grid-cols-2 gap-4 text-xs font-sans mb-6 bg-slate-50 p-3 rounded-lg border border-slate-200">
             <div>
               <span className="font-bold text-slate-600">Department:</span>{' '}
-              <strong className="text-slate-900">{dailyReport.department}</strong>
+              <strong className="text-slate-900">{hodDepartment}</strong>
             </div>
             <div>
               <span className="font-bold text-slate-600">Total Department Staff:</span>{' '}
@@ -228,14 +408,22 @@ export const DailyReportView: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {taskList.slice(0, 5).map((task) => (
-                  <tr key={task.id}>
-                    <td className="p-2 border border-slate-300 font-medium">{task.title}</td>
-                    <td className="p-2 border border-slate-300">{task.assignedToName}</td>
-                    <td className="p-2 border border-slate-300">{task.targetDate}</td>
-                    <td className="p-2 border border-slate-300 font-bold">{task.status}</td>
+                {scopedTasks.length > 0 ? (
+                  scopedTasks.slice(0, 5).map((task) => (
+                    <tr key={task.id}>
+                      <td className="p-2 border border-slate-300 font-medium">{task.title}</td>
+                      <td className="p-2 border border-slate-300">{task.assignedToName}</td>
+                      <td className="p-2 border border-slate-300">{task.targetDate}</td>
+                      <td className="p-2 border border-slate-300 font-bold">{task.status}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="p-3 text-center text-slate-400 italic">
+                      No active tasks assigned for this department.
+                    </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -258,70 +446,86 @@ export const DailyReportView: React.FC = () => {
               <thead className="bg-slate-100 text-slate-800 font-bold">
                 <tr>
                   <th className="p-2 border border-slate-300">YEAR / CLASS SECTION</th>
-                  <th className="p-2 border border-slate-300 text-center">TOTAL STRENGTH</th>
-                  <th className="p-2 border border-slate-300 text-center text-emerald-800">PRESENT</th>
-                  <th className="p-2 border border-slate-300 text-center text-rose-700">ABSENT</th>
-                  <th className="p-2 border border-slate-300 text-center text-amber-800">OD</th>
-                  <th className="p-2 border border-slate-300 text-center text-purple-800">OTHERS</th>
+                  <th className="p-2 border border-slate-300 text-center">TOTAL STRENGTH (FIXED)</th>
+                  <th className="p-2 border border-slate-300 text-center text-emerald-800 bg-emerald-50/50">MORNING (PRES/ABS/OD)</th>
+                  <th className="p-2 border border-slate-300 text-center text-blue-800 bg-blue-50/50">EVENING (PRES/ABS/OD)</th>
+                  <th className="p-2 border border-slate-300 text-center text-amber-800">VARIATION</th>
                   <th className="p-2 border border-slate-300 text-center">ATTENDANCE %</th>
                 </tr>
               </thead>
               <tbody>
-                {dailyReport.studentAttendanceSummaries.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="p-4 text-center text-slate-400 italic">
-                      No attendance summaries added for today.{' '}
-                      <button
-                        onClick={() => setIsAttendanceModalOpen(true)}
-                        className="text-blue-600 font-bold underline"
-                      >
-                        Click to enter attendance for II, III, IV Year.
-                      </button>
-                    </td>
-                  </tr>
-                ) : (
-                  <>
-                    {dailyReport.studentAttendanceSummaries.map((sa) => {
-                      const absent = sa.absentStudents ?? Math.max(0, sa.totalStudents - sa.presentStudents);
-                      const od = sa.odStudents ?? 0;
-                      const others = sa.othersStudents ?? 0;
+                {(() => {
+                  const displayAttendanceSummaries = getDepartmentAttendanceSummaries(
+                    dailyReport.studentAttendanceSummaries || [],
+                    classList,
+                    hodDepartment,
+                    attendanceRecords
+                  );
 
-                      return (
-                        <tr key={sa.classId}>
-                          <td className="p-2 border border-slate-300 font-bold">{sa.className}</td>
-                          <td className="p-2 border border-slate-300 text-center font-semibold">{sa.totalStudents}</td>
-                          <td className="p-2 border border-slate-300 text-center text-emerald-700 font-bold">{sa.presentStudents}</td>
-                          <td className="p-2 border border-slate-300 text-center text-rose-600 font-medium">{absent}</td>
-                          <td className="p-2 border border-slate-300 text-center text-amber-600 font-medium">{od}</td>
-                          <td className="p-2 border border-slate-300 text-center text-purple-600 font-medium">{others}</td>
-                          <td className="p-2 border border-slate-300 text-center font-bold text-blue-900">{sa.attendancePercentage}%</td>
-                        </tr>
-                      );
-                    })}
+                  if (displayAttendanceSummaries.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={6} className="p-4 text-center text-slate-400 italic">
+                          No attendance summaries added for today.{' '}
+                          <button
+                            onClick={() => setIsAttendanceModalOpen(true)}
+                            className="text-blue-600 font-bold underline"
+                          >
+                            Click to enter attendance for II, III, IV Year.
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }
 
-                    {/* Total Summary Row */}
-                    {(() => {
-                      const totStr = dailyReport.studentAttendanceSummaries.reduce((a, b) => a + b.totalStudents, 0);
-                      const totPres = dailyReport.studentAttendanceSummaries.reduce((a, b) => a + b.presentStudents, 0);
-                      const totAbs = dailyReport.studentAttendanceSummaries.reduce((a, b) => a + (b.absentStudents ?? Math.max(0, b.totalStudents - b.presentStudents)), 0);
-                      const totOd = dailyReport.studentAttendanceSummaries.reduce((a, b) => a + (b.odStudents || 0), 0);
-                      const totOth = dailyReport.studentAttendanceSummaries.reduce((a, b) => a + (b.othersStudents || 0), 0);
-                      const overallPct = totStr > 0 ? Number((((totPres + totOd) / totStr) * 100).toFixed(1)) : 0;
+                  const totStr = displayAttendanceSummaries.reduce((a, b) => a + b.totalStudents, 0);
+                  const totMorPres = displayAttendanceSummaries.reduce((a, b) => a + (b.morningPresent ?? b.presentStudents ?? 0), 0);
+                  const totEvePres = displayAttendanceSummaries.reduce((a, b) => a + (b.eveningPresent ?? b.presentStudents ?? 0), 0);
+                  const totVar = displayAttendanceSummaries.reduce((a, b) => a + Math.abs((b.morningPresent ?? b.presentStudents ?? 0) - (b.eveningPresent ?? b.presentStudents ?? 0)), 0);
+                  const overallPct = totStr > 0 ? Number((((totEvePres) / totStr) * 100).toFixed(1)) : 0;
 
-                      return (
-                        <tr className="bg-slate-100 font-bold">
-                          <td className="p-2 border border-slate-300 text-slate-900 uppercase">OVERALL TOTAL</td>
-                          <td className="p-2 border border-slate-300 text-center text-slate-900">{totStr}</td>
-                          <td className="p-2 border border-slate-300 text-center text-emerald-800">{totPres}</td>
-                          <td className="p-2 border border-slate-300 text-center text-rose-700">{totAbs}</td>
-                          <td className="p-2 border border-slate-300 text-center text-amber-800">{totOd}</td>
-                          <td className="p-2 border border-slate-300 text-center text-purple-800">{totOth}</td>
-                          <td className="p-2 border border-slate-300 text-center text-blue-900">{overallPct}%</td>
-                        </tr>
-                      );
-                    })()}
-                  </>
-                )}
+                  return (
+                    <>
+                      {displayAttendanceSummaries.map((sa, idx) => {
+                        const mPres = sa.morningPresent ?? sa.presentStudents ?? 0;
+                        const ePres = sa.eveningPresent ?? sa.presentStudents ?? 0;
+                        const mAbs = sa.morningAbsent ?? (sa.totalStudents > 0 ? Math.max(0, sa.totalStudents - mPres) : 0);
+                        const eAbs = sa.eveningAbsent ?? (sa.totalStudents > 0 ? Math.max(0, sa.totalStudents - ePres) : 0);
+                        const mOd = sa.morningOd ?? sa.odStudents ?? 0;
+                        const eOd = sa.eveningOd ?? sa.odStudents ?? 0;
+                        const varVal = mPres - ePres;
+                        const pct = sa.totalStudents > 0 ? (sa.eveningPercentage || sa.attendancePercentage || 0) : 0;
+
+                        return (
+                          <tr key={sa.classId || idx}>
+                            <td className="p-2 border border-slate-300 font-bold">{sa.className}</td>
+                            <td className="p-2 border border-slate-300 text-center font-bold">{sa.totalStudents}</td>
+                            <td className="p-2 border border-slate-300 text-center text-emerald-800 font-bold bg-emerald-50/20">
+                              {mPres} P | {mAbs} A | {mOd} OD
+                            </td>
+                            <td className="p-2 border border-slate-300 text-center text-blue-800 font-bold bg-blue-50/20">
+                              {ePres} P | {eAbs} A | {eOd} OD
+                            </td>
+                            <td className="p-2 border border-slate-300 text-center font-bold text-amber-700">
+                              {varVal !== 0 ? (varVal > 0 ? `+${varVal}` : `${varVal}`) : '0'}
+                            </td>
+                            <td className="p-2 border border-slate-300 text-center font-bold text-blue-900">{pct}%</td>
+                          </tr>
+                        );
+                      })}
+
+                      {/* Total Summary Row */}
+                      <tr className="bg-slate-100 font-bold">
+                        <td className="p-2 border border-slate-300 text-slate-900 uppercase">OVERALL TOTAL</td>
+                        <td className="p-2 border border-slate-300 text-center text-slate-900">{totStr}</td>
+                        <td className="p-2 border border-slate-300 text-center text-emerald-800">{totMorPres} Pres</td>
+                        <td className="p-2 border border-slate-300 text-center text-blue-800">{totEvePres} Pres</td>
+                        <td className="p-2 border border-slate-300 text-center text-amber-800">{totVar} Diff</td>
+                        <td className="p-2 border border-slate-300 text-center text-blue-900">{overallPct}%</td>
+                      </tr>
+                    </>
+                  );
+                })()}
               </tbody>
             </table>
           </div>
@@ -341,16 +545,24 @@ export const DailyReportView: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {observationList.slice(0, 3).map((obs) => (
-                  <tr key={obs.id}>
-                    <td className="p-2 border border-slate-300 font-bold">{obs.facultyName}</td>
-                    <td className="p-2 border border-slate-300">{obs.className} ({obs.hour})</td>
-                    <td className="p-2 border border-slate-300">{obs.subject}</td>
-                    <td className="p-2 border border-slate-300">
-                      <strong>[{obs.observation}]</strong> {obs.remarks}
+                {scopedObservations.length > 0 ? (
+                  scopedObservations.slice(0, 3).map((obs) => (
+                    <tr key={obs.id}>
+                      <td className="p-2 border border-slate-300 font-bold">{obs.facultyName}</td>
+                      <td className="p-2 border border-slate-300">{obs.className} ({obs.hour})</td>
+                      <td className="p-2 border border-slate-300">{obs.subject}</td>
+                      <td className="p-2 border border-slate-300">
+                        <strong>[{obs.observation}]</strong> {obs.remarks}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="p-3 text-center text-slate-400 italic">
+                      No classroom observations recorded for this department today.
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

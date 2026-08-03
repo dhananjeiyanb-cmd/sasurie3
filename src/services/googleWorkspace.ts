@@ -51,7 +51,11 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'auth/popup-closed-by-user' || error?.message?.includes('popup-closed-by-user')) {
+      console.warn('Google Workspace sign-in popup was closed by user.');
+      throw new Error('Sign-in cancelled: The authentication popup was closed before completing.');
+    }
     console.error('Google Workspace sign in error:', error);
     throw error;
   } finally {

@@ -75,6 +75,9 @@ export interface Task {
   googleClassroomLink?: string;
   googleTasksId?: string;
   googleTasksLink?: string;
+  groupName?: string;
+  isGroupTask?: boolean;
+  department?: string;
 }
 
 export interface ClassObservation {
@@ -115,13 +118,32 @@ export interface FacultyDailyMonitoring {
 export interface StudentAttendanceSummary {
   classId: string;
   className: string;
+  department?: string;
   year?: string; // 'I Year', 'II Year', 'III Year', 'IV Year'
-  totalStudents: number;
-  presentStudents: number;
+  totalStudents: number; // Fixed Strength set by HOD
+  presentStudents: number; // Overall / Evening Present
   absentStudents?: number;
   odStudents?: number; // On Duty
   othersStudents?: number; // Leave / Suspended / Other
   attendancePercentage: number;
+  
+  // Morning Mentor Hour Attendance
+  morningPresent?: number;
+  morningAbsent?: number;
+  morningOd?: number;
+  morningOthers?: number;
+  morningPercentage?: number;
+
+  // Evening Mentor Hour Attendance
+  eveningPresent?: number;
+  eveningAbsent?: number;
+  eveningOd?: number;
+  eveningOthers?: number;
+  eveningPercentage?: number;
+
+  // Session Variation (Morning vs Evening Difference)
+  variation?: number; // Difference in present count (morningPresent - eveningPresent)
+  variationNote?: string;
 }
 
 export interface StudentAttendanceRecord {
@@ -151,7 +173,7 @@ export const DEPARTMENTS = [
   'Electrical & Electronics Engineering',
   'Mechanical Engineering',
   'Civil Engineering',
-  'Humanities & Sciences',
+  'Science and Humanities',
 ] as const;
 
 export type DepartmentType = typeof DEPARTMENTS[number];
@@ -176,6 +198,11 @@ export interface DailyHODReport {
   specialRemarks: string;
   hodRemarks: string;
   hodSignatureDate: string;
+  reportType?: 'daily' | 'weekly';
+  weeklyFridayDate?: string;
+  weeklyReportStatus?: 'Draft' | 'Submitted to Principal' | 'Approved by Principal' | 'Needs Revision';
+  principalComments?: string;
+  principalApprovedDate?: string;
 }
 
 export interface AppNotification {
@@ -221,3 +248,120 @@ export interface FilterState {
   facultyId?: string;
   classId?: string;
 }
+
+export type EventType =
+  | 'Workshop'
+  | 'Seminar'
+  | 'FDP'
+  | 'Guest Lecture'
+  | 'Hackathon'
+  | 'Competition'
+  | 'Club Activity'
+  | 'Industrial Visit'
+  | 'Other';
+
+export type EventAssociation =
+  | 'Department Association'
+  | 'IEEE Student Branch'
+  | 'CSI Student Chapter'
+  | 'Fine Arts Club'
+  | 'NSS (National Service Scheme)'
+  | 'YRC (Youth Red Cross)'
+  | 'Sports Club'
+  | 'Entrepreneurship Cell (E-Cell)'
+  | 'Women Empowerment Cell'
+  | 'Institution\'s Innovation Council (IIC)'
+  | 'Other';
+
+export interface EventParticipant {
+  id: string;
+  rollNo: string;
+  name: string;
+  department: string;
+  year: string;
+  section: string;
+  institution: string;
+  attendance: 'Present' | 'Absent';
+}
+
+export interface EventGuestDetails {
+  name: string;
+  designation: string;
+  organization: string;
+  email: string;
+  mobile: string;
+  profile: string;
+  photoUrl?: string;
+}
+
+export interface EventDocument {
+  id: string;
+  docType:
+    | 'Invitation'
+    | 'Brochure'
+    | 'Circular'
+    | 'Attendance Sheet'
+    | 'Geo-tagged Photos'
+    | 'Report PDF'
+    | 'Budget Bills'
+    | 'Certificate Sample'
+    | 'Feedback Report'
+    | 'Other';
+  title: string;
+  fileUrl: string;
+  fileName: string;
+  uploadedAt: string;
+}
+
+export interface EventFeedbackQuestionRatings {
+  overallRating: number;
+  courseDelivery: number;
+  communication: number;
+  courseMaterial: number;
+  arrangements: number;
+  doubtClarification: number;
+  practicalSessions: number;
+  hospitality: number;
+  examination: number;
+}
+
+export interface EventFeedbackResponse extends EventFeedbackQuestionRatings {
+  id: string;
+  participantRollNo?: string;
+  participantName?: string;
+  department?: string;
+  submittedAt: string;
+  suggestions?: string;
+}
+
+export interface EventRecord {
+  id: string; // Event ID e.g., EVT-2026-001
+  academicYear: string;
+  semester: 'Odd' | 'Even';
+  department: string;
+  association: string;
+  eventTitle: string;
+  eventType: EventType;
+  mode: 'Internal' | 'External';
+  plannedDate: string;
+  actualDate: string;
+  venue: string;
+  topic: string;
+  resourcePersonName: string;
+  organization: string;
+  fundingType: 'Sponsored' | 'Self Supported' | 'Institute';
+  budget: number;
+  facultyCoordinator: string;
+  hodApproval: 'Pending' | 'Approved' | 'Rejected';
+  principalApproval: 'Pending' | 'Approved' | 'Rejected';
+  eventStatus: 'Planned' | 'Completed' | 'Cancelled';
+  
+  guestDetails?: EventGuestDetails;
+  participants: EventParticipant[];
+  documents: EventDocument[];
+  feedbackResponses: EventFeedbackResponse[];
+
+  createdAt: string;
+  updatedAt: string;
+}
+

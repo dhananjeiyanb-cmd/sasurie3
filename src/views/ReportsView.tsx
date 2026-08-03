@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { exportElementToPDF, exportToExcel, triggerPrint } from '../utils/exportUtils';
-import { getDeptHodName, getScopedStaff } from '../utils/departmentUtils';
+import { getDeptHodName, getScopedStaff, isSameDept } from '../utils/departmentUtils';
 import { TaskStatusBadge, PriorityBadge, ObservationBadge } from '../components/StatusBadge';
 import {
   Printer,
@@ -21,11 +21,16 @@ import {
 } from 'lucide-react';
 
 export const ReportsView: React.FC = () => {
-  const { staffList, classList, taskList: rawTaskList, observationList, dailyReport, currentUser } = useApp();
+  const { staffList, classList, taskList: rawTaskList, observationList, dailyReport, currentUser, filterState } = useApp();
 
   const isStaff = currentUser?.role === 'staff';
-  const activeHodName = getDeptHodName(staffList, dailyReport.department, currentUser, dailyReport.hodName);
-  const scopedStaff = getScopedStaff(staffList, currentUser, dailyReport.department);
+  const selectedDept = filterState.department;
+  const hodDepartment = (selectedDept && selectedDept !== 'all' && selectedDept !== 'All Departments')
+    ? selectedDept
+    : (currentUser?.department && currentUser.department !== 'College Principal Office' ? currentUser.department : (dailyReport.department || 'Artificial Intelligence & Data Science (AI & DS)'));
+
+  const activeHodName = getDeptHodName(staffList, hodDepartment, currentUser, dailyReport.hodName);
+  const scopedStaff = getScopedStaff(staffList, currentUser, hodDepartment);
 
 
   // Filter taskList for staff role
@@ -55,14 +60,9 @@ export const ReportsView: React.FC = () => {
   const [filterPriority, setFilterPriority] = useState<string>('all');
   
   const isHod = currentUser?.role === 'admin';
-  const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
-  const availableStaffList = isHod
-    ? staffList.filter((s) => {
-        const staffDept = s.department.toLowerCase();
-        const userDept = hodDepartment.toLowerCase();
-        return staffDept === userDept || (staffDept.includes('ai & ds') && userDept.includes('ai & ds'));
-      })
+  const availableStaffList = (isHod || isStaff)
+    ? staffList.filter((s) => isSameDept(s.department, currentUser?.department))
     : staffList;
 
   const currentStaffObj = staffList.find(
@@ -253,7 +253,7 @@ export const ReportsView: React.FC = () => {
                     {dailyReport.collegeName || 'ST. APEX INSTITUTE OF ENGINEERING & TECHNOLOGY'}
                   </h1>
                   <p className="text-xs font-semibold text-slate-600">
-                    {dailyReport.department}
+                    {hodDepartment}
                   </p>
                 </div>
               </div>
@@ -268,7 +268,7 @@ export const ReportsView: React.FC = () => {
               <div className="space-y-4 font-sans text-xs">
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded">
                   <strong className="block text-blue-900 font-bold mb-1">HOD Summary Overview:</strong>
-                  <p>Department: {dailyReport.department}</p>
+                  <p>Department: {hodDepartment}</p>
                   <p>Faculty Attendance: {dailyReport.facultyAttendanceCount.present}/{scopedStaff.length} Present</p>
                 </div>
 

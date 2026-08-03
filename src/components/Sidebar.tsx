@@ -8,6 +8,7 @@ import {
   CheckSquare,
   Eye,
   CalendarCheck,
+  Calendar,
   FileSpreadsheet,
   Printer,
   ShieldCheck,
@@ -39,6 +40,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       label: 'Dashboard',
       icon: LayoutDashboard,
       roles: ['principal', 'admin', 'staff', 'librarian', 'incucula'],
+    },
+    {
+      id: 'events',
+      label: 'Events & Activities',
+      icon: Calendar,
+      roles: ['principal', 'admin', 'staff', 'incucula'],
+      badge: 'EVENTS',
+      badgeColor: 'bg-emerald-600 text-white font-bold',
     },
     {
       id: 'librarian_portal',

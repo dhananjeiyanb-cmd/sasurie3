@@ -1,6 +1,112 @@
 import * as XLSX from 'xlsx';
 import { StudentSkillBankData } from '../types/skillBank';
 
+// Function to check if a student matches a target cohort year (e.g. 'I Year', 'II Year', 'III Year', 'IV Year')
+export function isStudentInCohortYear(
+  profile: { academicYear?: string; batch?: string; semester?: string } | undefined | null,
+  targetYear: string
+): boolean {
+  if (!profile || !targetYear || targetYear === 'all') return true;
+
+  const target = targetYear.trim().toLowerCase();
+  const isTarget1st = target.includes('1st') || target.includes('i year') || target === '1' || target === 'i';
+  const isTarget2nd = target.includes('2nd') || target.includes('ii year') || target === '2' || target === 'ii';
+  const isTarget3rd = target.includes('3rd') || target.includes('iii year') || target === '3' || target === 'iii';
+  const isTarget4th = target.includes('4th') || target.includes('iv year') || target === '4' || target === 'iv' || target.includes('final');
+
+  const pYear = (profile.academicYear || '').trim().toLowerCase();
+  const pSem = (profile.semester || '').trim().toLowerCase();
+  const pBatch = (profile.batch || '').trim().toLowerCase();
+
+  // Explicit Year String check on academicYear (e.g. '4th Year', 'IV Year', '3rd Year', 'III Year', '2nd Year', 'II Year', '1st Year', 'I Year')
+  const is4thYear = pYear.includes('4th') || pYear.includes('iv') || pYear === '4' || pYear.includes('final') || pYear.includes('iv year');
+  const is3rdYear = !is4thYear && (pYear.includes('3rd') || pYear.includes('iii') || pYear === '3' || pYear.includes('iii year'));
+  const is2ndYear = !is4thYear && !is3rdYear && (pYear.includes('2nd') || pYear.includes('ii') || pYear === '2' || pYear.includes('ii year'));
+  const is1stYear = !is4thYear && !is3rdYear && !is2ndYear && (pYear.includes('1st') || pYear === '1' || pYear.includes('i year') || (pYear.includes('i') && !pYear.includes('iii') && !pYear.includes('ii')));
+
+  if (is4thYear) return isTarget4th;
+  if (is3rdYear) return isTarget3rd;
+  if (is2ndYear) return isTarget2nd;
+  if (is1stYear) return isTarget1st;
+
+  // Next Semester check
+  if (pSem.includes('sem vii') || pSem.includes('sem viii') || pSem.includes('sem 7') || pSem.includes('sem 8')) {
+    return isTarget4th;
+  }
+  if (pSem.includes('sem v') || pSem.includes('sem vi') || pSem.includes('sem 5') || pSem.includes('sem 6')) {
+    return isTarget3rd;
+  }
+  if (pSem.includes('sem iii') || pSem.includes('sem iv') || pSem.includes('sem 3') || pSem.includes('sem 4')) {
+    return isTarget2nd;
+  }
+  if (pSem.includes('sem i') || pSem.includes('sem ii') || pSem.includes('sem 1') || pSem.includes('sem 2')) {
+    return isTarget1st;
+  }
+
+  // Next Batch check
+  if (pBatch.includes('2022') || pBatch === '2022-2026') return isTarget4th;
+  if (pBatch.includes('2023') || pBatch === '2023-2027') return isTarget3rd;
+  if (pBatch.includes('2024') || pBatch === '2024-2028') return isTarget2nd;
+  if (pBatch.includes('2025') || pBatch === '2025-2029') return isTarget1st;
+
+  return false;
+}
+
+// Function to normalize student profile year, batch, and semester consistency
+export function normalizeStudentSkillBankRecord(record: StudentSkillBankData): StudentSkillBankData {
+  if (!record || !record.studentProfile) return record;
+
+  const prof = { ...record.studentProfile };
+  const pYear = (prof.academicYear || '').trim().toLowerCase();
+  const pSem = (prof.semester || '').trim().toLowerCase();
+  const pBatch = (prof.batch || '').trim().toLowerCase();
+
+  const is4th = pYear.includes('4th') || pYear.includes('iv') || pYear === '4' || pYear.includes('final') || pSem.includes('sem vii') || pSem.includes('sem viii') || pBatch.includes('2022');
+  const is3rd = !is4th && (pYear.includes('3rd') || pYear.includes('iii') || pYear === '3' || pSem.includes('sem v') || pSem.includes('sem vi') || pBatch.includes('2023'));
+  const is2nd = !is4th && !is3rd && (pYear.includes('2nd') || pYear.includes('ii') || pYear === '2' || pSem.includes('sem iii') || pSem.includes('sem iv') || pBatch.includes('2024'));
+  const is1st = !is4th && !is3rd && !is2nd && (pYear.includes('1st') || pYear === '1' || pYear.includes('i year') || pSem.includes('sem i') || pSem.includes('sem ii') || pBatch.includes('2025'));
+
+  let targetAcademicYear = prof.academicYear;
+  let targetBatch = prof.batch;
+  let targetSem = prof.semester;
+
+  if (is4th) {
+    targetAcademicYear = '4th Year';
+    targetBatch = '2022-2026';
+    targetSem = 'Sem VII & VIII';
+  } else if (is3rd) {
+    targetAcademicYear = '3rd Year';
+    targetBatch = '2023-2027';
+    targetSem = 'Sem V & VI';
+  } else if (is2nd) {
+    targetAcademicYear = '2nd Year';
+    targetBatch = '2024-2028';
+    targetSem = 'Sem III & IV';
+  } else if (is1st) {
+    targetAcademicYear = '1st Year';
+    targetBatch = '2025-2029';
+    targetSem = 'Sem I & II';
+  }
+
+  if (
+    prof.academicYear !== targetAcademicYear ||
+    prof.batch !== targetBatch ||
+    prof.semester !== targetSem
+  ) {
+    return {
+      ...record,
+      studentProfile: {
+        ...prof,
+        academicYear: targetAcademicYear,
+        batch: targetBatch,
+        semester: targetSem,
+      },
+    };
+  }
+
+  return record;
+}
+
 // Function to construct a default empty StudentSkillBankData record for new students imported via Excel
 export function createDefaultStudentSkillBankRecord(data: Partial<{
   registerNumber: string;
@@ -38,6 +144,7 @@ export function createDefaultStudentSkillBankRecord(data: Partial<{
   yearOfPassing: string;
   admissionCategory: string;
   mentorFaculty: string;
+  mentorStaffId: string;
   dreamCompany: string;
   careerGoal: string;
 }>): StudentSkillBankData {
@@ -82,6 +189,7 @@ export function createDefaultStudentSkillBankRecord(data: Partial<{
       yearOfPassing: data.yearOfPassing || '2023',
       admissionCategory: (data.admissionCategory as 'Government Quota' | 'Management Quota' | 'Lateral Entry' | '7.5% Govt Quota') || 'Government Quota',
       mentorFaculty: data.mentorFaculty || 'M. Kaviyarasu (Asst. Prof / III Year Mentor)',
+      mentorStaffId: data.mentorStaffId || 'STF001',
       dreamCompany: data.dreamCompany || 'Zoho Corp / TCS',
       careerGoal: data.careerGoal || 'Software Development Engineer',
       studentSigned: true,
@@ -92,80 +200,72 @@ export function createDefaultStudentSkillBankRecord(data: Partial<{
       hodSignedDate: new Date().toISOString().split('T')[0],
     },
     attendanceMonths: {
-      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
-      Aug: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 0, coinsEarned: 8000 },
-      Sep: { totalDays: 25, daysAttended: 24, attendancePct: 96, additionalRemedialDays: 0, coinsEarned: 8000 },
-      Oct: { totalDays: 20, daysAttended: 19, attendancePct: 95, additionalRemedialDays: 0, coinsEarned: 8000 },
-      Nov: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 0, coinsEarned: 8000 },
-      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Jul: { totalDays: 0, daysAttended: 0, attendancePct: 0, additionalRemedialDays: 0, coinsEarned: 0 },
+      Aug: { totalDays: 0, daysAttended: 0, attendancePct: 0, additionalRemedialDays: 0, coinsEarned: 0 },
+      Sep: { totalDays: 0, daysAttended: 0, attendancePct: 0, additionalRemedialDays: 0, coinsEarned: 0 },
+      Oct: { totalDays: 0, daysAttended: 0, attendancePct: 0, additionalRemedialDays: 0, coinsEarned: 0 },
+      Nov: { totalDays: 0, daysAttended: 0, attendancePct: 0, additionalRemedialDays: 0, coinsEarned: 0 },
+      Dec: { totalDays: 0, daysAttended: 0, attendancePct: 0, additionalRemedialDays: 0, coinsEarned: 0 },
     },
-    libraryBooks: [
-      { id: `LIB-${Date.now()}-1`, month: 'Jul', bookName: 'Core Java Programming', author: 'E. Balagurusamy', issueDate: '2026-07-05', returnDate: '2026-07-19', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
-    ],
-    libraryVisits: [
-      { id: `LV-${Date.now()}-1`, month: 'Jul', date: '2026-07-06', inTime: '10:00 AM', outTime: '11:00 AM', verified: true },
-    ],
+    libraryBooks: [],
+    libraryVisits: [],
     feePayment: {
-      tuitionFeePaid: true,
+      tuitionFeePaid: false,
       hostelFeePaid: false,
-      transportFeePaid: true,
-      scholarshipReceived: true,
-      scholarshipAmount: 10000,
-      scholarshipDate: '2026-07-10',
-      examFeePaid: true,
-      dateOfPayment: '2026-07-15',
+      transportFeePaid: false,
+      scholarshipReceived: false,
+      scholarshipAmount: 0,
+      scholarshipDate: '',
+      examFeePaid: false,
+      dateOfPayment: '',
       paymentBand: 'before_due',
-      coinsEarned: 6000,
-      signedByStaff: true,
+      coinsEarned: 0,
+      signedByStaff: false,
     },
     miniProjectChecklist: {
-      topicSelectionApproved: true,
-      proposalPrepared: true,
-      literatureReview: true,
-      developmentPlagiarismCheck: true,
-      verificationDone: true,
-      presentationVivaIPR: true,
-      coinsEarned: 2500,
+      topicSelectionApproved: false,
+      proposalPrepared: false,
+      literatureReview: false,
+      developmentPlagiarismCheck: false,
+      verificationDone: false,
+      presentationVivaIPR: false,
+      coinsEarned: 0,
     },
-    miniProjectDetails: [
-      { id: `MP-${Date.now()}`, subjectCode: 'CS3591', courseName: 'Mini Project', facultyName: data.mentorFaculty || 'M. Kaviyarasu', projectTitle: 'Web Application Development', learningOutcome: 'Built React TypeScript frontend' },
-    ],
+    miniProjectDetails: [],
     ictToolsChecklist: {
-      joiningClassroom: true,
-      submittingAssignmentOnTime: true,
-      completingQuizTest: true,
-      activeParticipation: true,
-      disciplineEngagement: true,
-      coinsEarned: 2500,
+      joiningClassroom: false,
+      submittingAssignmentOnTime: false,
+      completingQuizTest: false,
+      activeParticipation: false,
+      disciplineEngagement: false,
+      coinsEarned: 0,
     },
     examPerformance: {
-      ciat1Appeared: true,
-      ciat1Pct: 85,
-      ciat2Appeared: true,
-      ciat2Pct: 88,
-      endSemAllPass: true,
+      ciat1Appeared: false,
+      ciat1Pct: 0,
+      ciat2Appeared: false,
+      ciat2Pct: 0,
+      endSemAllPass: false,
       arrearCount: 0,
-      coinsEarned: 10000,
+      coinsEarned: 0,
     },
-    subjectMarkDetails: [
-      { id: `SM-${Date.now()}`, subjectCode: 'CS3501', subjectName: 'Compiler Design', ciat1Marks: 85, ciat2Marks: 88, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 90 },
-    ],
+    subjectMarkDetails: [],
     learnerCategory: {
-      ciat1Category: 'Fast',
-      ciat2Category: 'Fast',
-      remedialAttendancePct: 100,
+      ciat1Category: 'Slow',
+      ciat2Category: 'Slow',
+      remedialAttendancePct: 0,
       remedialBonusEarned: false,
-      coinsEarned: 3000,
+      coinsEarned: 0,
     },
     endSemResults: {
-      allPass: true,
+      allPass: false,
       arrearsCount: 0,
-      gpa: 8.5,
-      cgpa: 8.4,
-      coinsEarned: 5000,
+      gpa: 0,
+      cgpa: 0,
+      coinsEarned: 0,
     },
     nptelMonths: {
-      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Jul: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
       Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
       Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
       Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
@@ -173,61 +273,55 @@ export function createDefaultStudentSkillBankRecord(data: Partial<{
       Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
     },
     leetCodeMonths: {
-      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
-      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Jul: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Aug: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
       Sep: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
       Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
       Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
       Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
     },
-    onlineCertBasic: [
-      { id: `OCB-${Date.now()}`, month: 'Jul', platform: 'Coursera', courseName: 'Python for Beginners', durationHrs: 10, proofAttached: true, coinsEarned: 100 },
-    ],
-    advancedCourses: [
-      { id: `ADV-${Date.now()}`, month: 'Jul', platform: 'Udemy', courseName: 'Full Stack Web Development', durationHrs: 25, verifiedProof: true, remarks: 'Verified certificate', coinsEarned: 200 },
-    ],
+    onlineCertBasic: [],
+    advancedCourses: [],
     paperPresentations: [],
     aptitudeMonths: {
-      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
-      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Jul: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Aug: { attended: false, scoreBand: 'None', coinsEarned: 0 },
       Sep: { attended: false, scoreBand: 'None', coinsEarned: 0 },
       Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
       Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
       Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
     },
-    resume: { workshopAttended: true, atsScorePct: 85, enteredByCDC: true, coinsEarned: 2000 },
-    mockInterview: { attended: true, performanceBand: 'Moderate', enteredByCDC: true, coinsEarned: 1000 },
-    linkedIn: { profileCreated: true, originalPostCount: 4, repostCount: 5, coinsEarned: 1200 },
-    gitHub: { portfolioCompleted: true, assessmentBand: '100-149', coinsEarned: 1000 },
-    socialMedia: { profileCreated: true, originalPostCount: 3, repostCount: 3, coinsEarned: 800 },
+    resume: { workshopAttended: false, atsScorePct: 0, enteredByCDC: false, coinsEarned: 0 },
+    mockInterview: { attended: false, performanceBand: 'Attended', enteredByCDC: false, coinsEarned: 0 },
+    linkedIn: { profileCreated: false, originalPostCount: 0, repostCount: 0, coinsEarned: 0 },
+    gitHub: { portfolioCompleted: false, assessmentBand: '<50', coinsEarned: 0 },
+    socialMedia: { profileCreated: false, originalPostCount: 0, repostCount: 0, coinsEarned: 0 },
     hackathons: [],
-    internship: { industryName: 'Sasurie Tech Solutions', fromDate: '2026-06-01', toDate: '2026-06-15', totalDays: 15, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: false, startupActivity: false, coinsEarned: 1000 },
-    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
-    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: false, coinsEarned: 3000 },
-    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: false, coinsEarned: 3000 },
+    internship: { industryName: '', fromDate: '', toDate: '', totalDays: 0, type: 'Summer', internshipDone: false, certificateReceived: false, reportCompleted: false, fullTimeConverted: false, startupActivity: false, coinsEarned: 0 },
+    workshop: { certificationCompleted: false, reportOnLearning: false, industrialVisitParticipation: false, coinsEarned: 0 },
+    collegeEvent: { paidValueAddedCourse: false, eventParticipation: false, eventWinner: false, coinsEarned: 0 },
+    volunteering: { nssNccActivity: false, communityAwareness: false, leadershipRole: false, coinsEarned: 0 },
     professionalMemberships: [],
     sportsLogs: [],
     artsLogs: [],
-    clubLogs: [
-      { id: `CLUB-${Date.now()}`, clubName: 'Tech Club', role: 'Member', activityDetails: 'Attended Workshop', date: '2026-08-10', coinsEarned: 500 },
-    ],
+    clubLogs: [],
     violations: [],
     counsellingLogs: [],
     parentMeetingLogs: [],
     transformationJourney: {
-      academicReflection: 'Steady academic progress.',
-      skillReflection: 'Active in online certifications.',
-      careerReflection: 'Prepared resume and completed internship.',
-      coCurricularReflection: 'Participating in workshops.',
-      extraCurricularReflection: 'Engaged in college activities.',
-      checkpoint1Date: '2026-08-30',
-      checkpoint1Coins: 35000,
-      checkpoint1Grade: 'A (Very Good)',
-      checkpoint2Date: '2026-11-30',
-      checkpoint2Coins: 75000,
-      checkpoint2Grade: 'A+ (Exemplary)',
-      finalGradeCoin: 82000,
-      finalGradeLetter: 'A+ (Exemplary)',
+      academicReflection: '',
+      skillReflection: '',
+      careerReflection: '',
+      coCurricularReflection: '',
+      extraCurricularReflection: '',
+      checkpoint1Date: '',
+      checkpoint1Coins: 0,
+      checkpoint1Grade: 'E (Needs Improvement)',
+      checkpoint2Date: '',
+      checkpoint2Coins: 0,
+      checkpoint2Grade: 'E (Needs Improvement)',
+      finalGradeCoin: 0,
+      finalGradeLetter: 'E (Needs Improvement)',
     },
   };
 }

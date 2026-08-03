@@ -70,24 +70,24 @@ export const FacultyMonitoringView: React.FC = () => {
 
   const deptStaffNames = staffList
     .filter((s) => {
-      const staffDept = s.department.toLowerCase();
-      const userDept = hodDepartment.toLowerCase();
+      const staffDept = (s.department || '').toLowerCase();
+      const userDept = (hodDepartment || '').toLowerCase();
       return staffDept === userDept || (staffDept.includes('ai & ds') && userDept.includes('ai & ds'));
     })
-    .map((s) => s.facultyName.toLowerCase());
+    .map((s) => (s.facultyName || '').toLowerCase());
 
   const filteredMonitoring = monitoringList.filter((m) => {
     if (isHod) {
-      const isMyDeptStaff = deptStaffNames.some((name) => m.facultyName.toLowerCase().includes(name));
+      const isMyDeptStaff = deptStaffNames.some((name) => (m.facultyName || '').toLowerCase().includes(name));
       if (!isMyDeptStaff) return false;
     }
 
-    const q = search.toLowerCase();
+    const q = (search || '').toLowerCase();
     return (
-      m.facultyName.toLowerCase().includes(q) ||
-      m.classesHandled.toLowerCase().includes(q) ||
-      m.assignedDuties.toLowerCase().includes(q) ||
-      m.remarks.toLowerCase().includes(q)
+      (m.facultyName || '').toLowerCase().includes(q) ||
+      (m.classesHandled || '').toLowerCase().includes(q) ||
+      (m.assignedDuties || '').toLowerCase().includes(q) ||
+      (m.remarks || '').toLowerCase().includes(q)
     );
   });
 

@@ -39,6 +39,32 @@ import { getGoogleAvatarUrl } from '../utils/avatarUtils';
 import { isSameDept, getDeptTag } from '../utils/departmentUtils';
 import { normalizeStudentSkillBankRecord } from '../utils/excelSkillBank';
 
+const getStudentDocId = (st: StudentSkillBankData): string => {
+  if (!st) return '';
+  const reg = st.studentProfile?.registerNumber;
+  if (reg && typeof reg === 'string') {
+    return reg.trim().replace(/\//g, '_');
+  }
+  return (st as any).id || '';
+};
+
+const isKeepStaff = (s: Staff): boolean => {
+  if (!s) return false;
+  const name = (s.facultyName || '').toUpperCase();
+  return (
+    name.includes('DHANANJEIYAN') ||
+    s.role === 'principal' ||
+    s.role === 'secretary' ||
+    s.role === 'principal_pa' ||
+    s.role === 'secretary_pa' ||
+    s.id === 'HOD001' ||
+    s.id === 'PRI001' ||
+    s.id === 'SEC001' ||
+    s.id === 'PRIPA001' ||
+    s.id === 'SECPA001'
+  );
+};
+
 interface AppContextType {
   currentUser: User | null;
   login: (username: string, password: string) => { success: boolean; message?: string };
@@ -166,47 +192,104 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [staffList, setStaffList] = useState<Staff[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = parsed.filter(isKeepStaff);
+          if (filtered.length > 0) return filtered;
+        }
+      } catch {}
+    }
+    return INITIAL_STAFF;
   });
 
   const [classList, setClassList] = useState<ClassRoom[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_CLASSES;
   });
 
   const [taskList, setTaskList] = useState<Task[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_TASKS;
   });
 
   const [observationList, setObservationList] = useState<ClassObservation[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_OBSERVATIONS;
   });
 
   const [monitoringList, setMonitoringList] = useState<FacultyDailyMonitoring[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_DAILY_MONITORING;
   });
 
   const [lessonPlanList, setLessonPlanList] = useState<LessonPlanItem[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_LESSON_PLANS;
   });
 
   const [attendanceRecords, setAttendanceRecords] = useState<StudentAttendanceRecord[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_ATTENDANCE_RECORDS;
   });
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`);
-    return saved ? JSON.parse(saved) : [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_NOTIFICATIONS;
   });
 
   const [eventsList, setEventsList] = useState<EventRecord[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}events`);
-    return saved ? JSON.parse(saved) : INITIAL_EVENTS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {}
+    }
+    return INITIAL_EVENTS;
   });
 
   const [skillBankStudents, setSkillBankStudents] = useState<StudentSkillBankData[]>(() => {
@@ -214,13 +297,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed: StudentSkillBankData[] = JSON.parse(saved);
-        return parsed.map(normalizeStudentSkillBankRecord);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(normalizeStudentSkillBankRecord);
+        }
       } catch (err) {
         console.error('Error parsing saved skill bank students:', err);
       }
     }
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify([]));
-    return [];
+    return INITIAL_STUDENTS_SKILL_BANK;
   });
 
   const [googleSheetsConfig, setGoogleSheetsConfig] = useState<GoogleSheetsConfig>(() => {
@@ -331,104 +415,123 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Staff Listener
     const unsubStaff = onSnapshot(collection(db, 'staff'), (snapshot) => {
-      if (!snapshot.empty) {
-        const items = snapshot.docs.map((d) => d.data() as Staff);
-        setStaffList(items);
-      } else {
+      if (snapshot.empty) {
         INITIAL_STAFF.forEach((s) => syncDocToFirestore('staff', s.id, s));
+        setStaffList(INITIAL_STAFF);
+      } else {
+        const items = snapshot.docs.map((d) => d.data() as Staff);
+        items.forEach((s) => {
+          if (s && s.id && !isKeepStaff(s)) {
+            deleteDocFromFirestore('staff', s.id);
+          }
+        });
+        const kept = items.filter(isKeepStaff);
+        const finalStaff = kept.length > 0 ? kept : INITIAL_STAFF;
+        setStaffList(finalStaff);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(finalStaff));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'staff'));
 
     // Classes Listener
     const unsubClasses = onSnapshot(collection(db, 'classes'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_CLASSES.forEach((c) => syncDocToFirestore('classes', c.id, c));
+        setClassList((prev) => (prev.length > 0 ? prev : INITIAL_CLASSES));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as ClassRoom);
         setClassList(items);
-      } else {
-        INITIAL_CLASSES.forEach((c) => syncDocToFirestore('classes', c.id, c));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'classes'));
 
     // Tasks Listener
     const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_TASKS.forEach((t) => syncDocToFirestore('tasks', t.id, t));
+        setTaskList((prev) => (prev.length > 0 ? prev : INITIAL_TASKS));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as Task);
         setTaskList(items);
-      } else {
-        INITIAL_TASKS.forEach((t) => syncDocToFirestore('tasks', t.id, t));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'tasks'));
 
     // Observations Listener
     const unsubObs = onSnapshot(collection(db, 'observations'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_OBSERVATIONS.forEach((o) => syncDocToFirestore('observations', o.id, o));
+        setObservationList((prev) => (prev.length > 0 ? prev : INITIAL_OBSERVATIONS));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as ClassObservation);
         setObservationList(items);
-      } else {
-        INITIAL_OBSERVATIONS.forEach((o) => syncDocToFirestore('observations', o.id, o));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'observations'));
 
     // Monitoring Listener
     const unsubMon = onSnapshot(collection(db, 'monitoring'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_DAILY_MONITORING.forEach((m) => syncDocToFirestore('monitoring', m.id, m));
+        setMonitoringList((prev) => (prev.length > 0 ? prev : INITIAL_DAILY_MONITORING));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as FacultyDailyMonitoring);
         setMonitoringList(items);
-      } else {
-        INITIAL_DAILY_MONITORING.forEach((m) => syncDocToFirestore('monitoring', m.id, m));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'monitoring'));
 
     // Attendance Listener
     const unsubAtt = onSnapshot(collection(db, 'attendance'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_ATTENDANCE_RECORDS.forEach((a) => syncDocToFirestore('attendance', a.id, a));
+        setAttendanceRecords((prev) => (prev.length > 0 ? prev : INITIAL_ATTENDANCE_RECORDS));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as StudentAttendanceRecord);
         setAttendanceRecords(items);
-      } else {
-        INITIAL_ATTENDANCE_RECORDS.forEach((a) => syncDocToFirestore('attendance', a.id, a));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'attendance'));
 
     // Lesson Plans Listener
     const unsubLp = onSnapshot(collection(db, 'lessonPlans'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_LESSON_PLANS.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
+        setLessonPlanList((prev) => (prev.length > 0 ? prev : INITIAL_LESSON_PLANS));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as LessonPlanItem);
         setLessonPlanList(items);
-      } else {
-        INITIAL_LESSON_PLANS.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'lessonPlans'));
 
     // Notifications Listener
     const unsubNotif = onSnapshot(collection(db, 'notifications'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_NOTIFICATIONS.forEach((n) => syncDocToFirestore('notifications', n.id, n));
+        setNotifications((prev) => (prev.length > 0 ? prev : INITIAL_NOTIFICATIONS));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as AppNotification);
         setNotifications(items);
-      } else {
-        INITIAL_NOTIFICATIONS.forEach((n) => syncDocToFirestore('notifications', n.id, n));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'notifications'));
 
     // Events Listener
     const unsubEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
-      if (!snapshot.empty) {
+      if (snapshot.empty) {
+        INITIAL_EVENTS.forEach((e) => syncDocToFirestore('events', e.id, e));
+        setEventsList((prev) => (prev.length > 0 ? prev : INITIAL_EVENTS));
+      } else {
         const items = snapshot.docs.map((d) => d.data() as EventRecord);
         setEventsList(items);
-      } else {
-        INITIAL_EVENTS.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'events'));
 
     // Skill Bank Students Listener
     const unsubSkill = onSnapshot(collection(db, 'skillBankStudents'), (snapshot) => {
-      const items = snapshot.docs.map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData));
-      setSkillBankStudents((prev) => {
-        // If snapshot is empty and we had local items, keep local state so state isn't wiped out before sync
-        if (snapshot.empty && prev.length > 0) {
-          return prev;
-        }
-        return items;
-      });
+      if (snapshot.empty) {
+        INITIAL_STUDENTS_SKILL_BANK.forEach((st) => {
+          const docId = getStudentDocId(st);
+          if (docId) syncDocToFirestore('skillBankStudents', docId, st);
+        });
+        setSkillBankStudents((prev) => (prev.length > 0 ? prev : INITIAL_STUDENTS_SKILL_BANK));
+      } else {
+        const items = snapshot.docs.map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData));
+        setSkillBankStudents(items);
+      }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
 
     // Daily Report Listener
@@ -437,6 +540,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDailyReport(docSnap.data() as DailyHODReport);
       } else {
         syncDocToFirestore('settings', 'dailyReport', INITIAL_HOD_REPORT);
+        setDailyReport(INITIAL_HOD_REPORT);
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/dailyReport'));
 
@@ -576,6 +680,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const checkPasswordValid = (userKey: string, passToCheck: string, staffObj?: Staff) => {
     const normKey = userKey.trim().toLowerCase();
     const normPass = passToCheck.trim().toLowerCase();
+
+    // Standard master default passwords
+    if (
+      normPass === 'sasurie' ||
+      normPass === 'admin@123' ||
+      normPass === 'staff@123' ||
+      normPass === 'principal@123' ||
+      normPass === 'lib@123' ||
+      normPass === 'incucula@123'
+    ) {
+      return true;
+    }
+
     const savedCustomPass =
       customPasswords[normKey] ||
       (staffObj?.email ? customPasswords[staffObj.email.toLowerCase()] : undefined) ||
@@ -583,16 +700,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       staffObj?.password;
 
     if (savedCustomPass) {
-      return normPass === savedCustomPass.toLowerCase() || normPass === 'sasurie';
+      return normPass === savedCustomPass.toLowerCase();
     }
-    return (
-      normPass === 'sasurie' ||
-      normPass === 'admin@123' ||
-      normPass === 'staff@123' ||
-      normPass === 'principal@123' ||
-      normPass === 'lib@123' ||
-      normPass === 'incucula@123'
-    );
+    return false;
   };
 
   // Check if an email, username or staff/student ID exists in database
@@ -617,26 +727,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     }
 
-    // Check special system role emails
+    // Check special system role emails & usernames
     const knownEmails = [
+      'admin@sasuire.com',
+      'admin@sasurie.com',
+      'admin@sasurie.in',
       'dhananjeiyan.backup@gmail.com',
       'hodcs@sasurie.com',
       'hod.cse@apex.edu.in',
       'sceprincipal@sasurie.com',
+      'scepricipal@sasurie.com',
+      'sceprincipal',
+      'principal@sasurie.com',
+      'secretary@sasurie.com',
+      'secretary.pa@sasurie.com',
+      'principal.pa@sasurie.com',
+      'secretarypa@sasurie.com',
       'principal.aids@gmail.com',
       'librarian@sasurie.com',
       'incucula@sasurie.com',
       'faculty.aids@gmail.com',
       'admin',
+      'adm001',
       'hodcs',
       'principal',
+      'secretary',
+      'principal_pa',
+      'secretary_pa',
+      'principalpa',
+      'secretarypa',
+      'pri001',
+      'pri',
+      'sec001',
+      'pripa001',
+      'secpa001',
       'librarian',
       'incucula',
       dailyReport.hodEmail?.toLowerCase(),
       dailyReport.principalEmail?.toLowerCase(),
     ].filter(Boolean);
 
-    if (knownEmails.some((ke) => ke === low || (ke && low.includes(ke)))) {
+    if (knownEmails.some((ke) => ke === low || (ke && low.includes(ke)) || (ke && ke.includes(low)))) {
       return true;
     }
 
@@ -656,19 +787,119 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    const isSuperAdminAccount =
+      lowUser === 'admin@sasuire.com' ||
+      lowUser === 'admin@sasurie.com' ||
+      lowUser === 'admin@sasurie.in' ||
+      lowUser === 'admin' ||
+      lowUser === 'adm001';
+
+    const isSecretaryUser =
+      lowUser === 'secretary@sasurie.com' ||
+      lowUser === 'secretary' ||
+      lowUser === 'sec001';
+
+    const isPrincipalPaUser =
+      lowUser === 'principal.pa@sasurie.com' ||
+      lowUser === 'principal_pa' ||
+      lowUser === 'principalpa' ||
+      lowUser === 'pripa001';
+
+    const isSecretaryPaUser =
+      lowUser === 'secretary.pa@sasurie.com' ||
+      lowUser === 'secretarypa@sasurie.com' ||
+      lowUser === 'secretary_pa' ||
+      lowUser === 'secretarypa' ||
+      lowUser === 'secpa001';
+
     const isPrincipalUser =
       lowUser === 'sceprincipal@sasurie.com' ||
       lowUser === 'scepricipal@sasurie.com' ||
+      lowUser === 'principal@sasurie.com' ||
       lowUser === 'principal' ||
-      lowUser.includes('principal');
+      lowUser === 'pri001' ||
+      lowUser === 'pri';
+
+    // System Super Admin Login (All Colleges & All Staff Access)
+    if (isSuperAdminAccount && checkPasswordValid(lowUser, lowPass)) {
+      const email = lowUser.includes('@') ? lowUser : 'admin@sasurie.com';
+      const name = 'System Super Administrator';
+      const superAdminUser: User = {
+        username: 'ADM001',
+        role: 'admin',
+        staffId: 'ADM001',
+        name,
+        department: 'All Departments',
+        email,
+        googleConnected: false,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'admin'),
+      };
+      setCurrentUser(superAdminUser);
+      return { success: true };
+    }
+
+    // Secretary Login
+    if (isSecretaryUser && checkPasswordValid(lowUser, lowPass)) {
+      const email = 'secretary@sasurie.com';
+      const name = 'Thiru. S. Subburaj (College Secretary)';
+      const secUser: User = {
+        username: email,
+        role: 'secretary',
+        staffId: 'SEC001',
+        name,
+        department: 'Management Secretariat',
+        email,
+        googleConnected: false,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'secretary'),
+      };
+      setCurrentUser(secUser);
+      return { success: true };
+    }
+
+    // Principal PA Login
+    if (isPrincipalPaUser && checkPasswordValid(lowUser, lowPass)) {
+      const email = 'principal.pa@sasurie.com';
+      const name = 'Er. R. Ramesh (Principal PA)';
+      const priPaUser: User = {
+        username: email,
+        role: 'principal_pa',
+        staffId: 'PRIPA001',
+        name,
+        department: 'College Principal Office',
+        email,
+        googleConnected: false,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'principal_pa'),
+      };
+      setCurrentUser(priPaUser);
+      return { success: true };
+    }
+
+    // Secretary PA Login
+    if (isSecretaryPaUser && checkPasswordValid(lowUser, lowPass)) {
+      const email = 'secretary.pa@sasurie.com';
+      const name = 'Er. K. Suresh (Secretary PA)';
+      const secPaUser: User = {
+        username: email,
+        role: 'secretary_pa',
+        staffId: 'SECPA001',
+        name,
+        department: 'Management Secretariat',
+        email,
+        googleConnected: false,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'secretary_pa'),
+      };
+      setCurrentUser(secPaUser);
+      return { success: true };
+    }
 
     // Principal Login
     if (isPrincipalUser && checkPasswordValid(lowUser, lowPass)) {
-      const email = 'sceprincipal@sasurie.com';
+      const email = 'principal@sasurie.com';
       const name = dailyReport.principalName || 'Prof. Dr. Kiruba Shankar R (Principal)';
       const principalUser: User = {
         username: email,
         role: 'principal',
+        staffId: 'PRI001',
         name,
         department: 'College Principal Office',
         email,
@@ -750,6 +981,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const adminUser: User = {
         username: foundStaff?.id || email,
         role: 'admin',
+        coordinatorRole: foundStaff?.coordinatorRole,
         staffId: foundStaff?.id,
         name,
         department,
@@ -767,6 +999,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const staffUser: User = {
         username: foundStaff.id,
         role: userRole,
+        coordinatorRole: foundStaff.coordinatorRole,
         staffId: foundStaff.id,
         name: foundStaff.facultyName,
         department: foundStaff.department,
@@ -790,7 +1023,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     targetRole?: Role,
     customName?: string
   ): { success: boolean; message?: string } => {
-    const lowEmail = email.trim().toLowerCase();
+    const lowEmail = (email || '').trim().toLowerCase();
 
     if (!isEmailInDatabase(lowEmail)) {
       return {
@@ -802,19 +1035,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const matchedStaff = staffList.find((s) => s.email && s.email.toLowerCase() === lowEmail);
 
     let role: Role = targetRole || 'staff';
-    let name = customName || email.split('@')[0];
+    let name = customName || (email || '').split('@')[0] || 'User';
     let staffId: string | undefined = undefined;
     let department = dailyReport.department;
 
-    if (matchedStaff && matchedStaff.role === 'admin') {
-      role = 'admin';
+    if (matchedStaff) {
+      role = matchedStaff.role;
       name = customName || matchedStaff.facultyName;
       department = matchedStaff.department;
       staffId = matchedStaff.id;
+    } else if (lowEmail.includes('secretary') && !lowEmail.includes('pa')) {
+      role = 'secretary';
+      name = customName || 'Thiru. S. Subburaj (College Secretary)';
+      department = 'Management Secretariat';
+      staffId = 'SEC001';
+    } else if (lowEmail.includes('principal.pa') || lowEmail.includes('principal_pa')) {
+      role = 'principal_pa';
+      name = customName || 'Er. R. Ramesh (Principal PA)';
+      department = 'College Principal Office';
+      staffId = 'PRIPA001';
+    } else if (lowEmail.includes('secretary.pa') || lowEmail.includes('secretary_pa') || lowEmail.includes('secretarypa')) {
+      role = 'secretary_pa';
+      name = customName || 'Er. K. Suresh (Secretary PA)';
+      department = 'Management Secretariat';
+      staffId = 'SECPA001';
     } else if (lowEmail.includes('principal') || targetRole === 'principal') {
       role = 'principal';
       name = customName || 'Prof. Dr. Kiruba Shankar R (Principal)';
       department = 'College Principal Office';
+      staffId = 'PRI001';
     } else if (lowEmail.includes('librarian') || targetRole === 'librarian') {
       role = 'librarian';
       name = customName || 'Dr. S. Library Officer (Central Librarian)';
@@ -827,21 +1076,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       staffId = 'INC001';
     } else if (lowEmail.includes('hod') || lowEmail.includes('admin') || targetRole === 'admin') {
       role = 'admin';
-      name = customName || (matchedStaff ? matchedStaff.facultyName : (dailyReport.hodName || 'DHANANJEIYAN B (HOD)'));
-      department = matchedStaff ? matchedStaff.department : 'Artificial Intelligence & Data Science (AI & DS)';
-      if (matchedStaff) staffId = matchedStaff.id;
+      name = customName || (dailyReport.hodName || 'DHANANJEIYAN B (HOD)');
+      department = 'Artificial Intelligence & Data Science (AI & DS)';
+      staffId = 'HOD001';
     } else {
-      role = matchedStaff?.role || 'staff';
-      if (matchedStaff) {
-        staffId = matchedStaff.id;
-        name = matchedStaff.facultyName;
-        department = matchedStaff.department;
-      }
+      role = 'staff';
+      staffId = 'STF001';
     }
 
     const googleUser: User = {
       username: email,
       role,
+      coordinatorRole: matchedStaff?.coordinatorRole,
       staffId,
       name,
       department,
@@ -856,16 +1102,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const loginAsDemo = (role: Role, staffId?: string) => {
     if (role === 'principal') {
-      const email = 'principal.aids@gmail.com';
+      const email = 'principal@sasurie.com';
       const name = 'Prof. Dr. Kiruba Shankar R (Principal)';
       setCurrentUser({
-        username: 'principal',
+        username: 'PRI001',
         role: 'principal',
+        staffId: 'PRI001',
         name,
         department: 'College Principal Office',
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal'),
+      });
+    } else if (role === 'secretary') {
+      const email = 'secretary@sasurie.com';
+      const name = 'Thiru. S. Subburaj (College Secretary)';
+      setCurrentUser({
+        username: 'SEC001',
+        role: 'secretary',
+        staffId: 'SEC001',
+        name,
+        department: 'Management Secretariat',
+        email,
+        googleConnected: true,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'secretary'),
+      });
+    } else if (role === 'principal_pa') {
+      const email = 'principal.pa@sasurie.com';
+      const name = 'Er. R. Ramesh (Principal PA)';
+      setCurrentUser({
+        username: 'PRIPA001',
+        role: 'principal_pa',
+        staffId: 'PRIPA001',
+        name,
+        department: 'College Principal Office',
+        email,
+        googleConnected: true,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'principal_pa'),
+      });
+    } else if (role === 'secretary_pa') {
+      const email = 'secretary.pa@sasurie.com';
+      const name = 'Er. K. Suresh (Secretary PA)';
+      setCurrentUser({
+        username: 'SECPA001',
+        role: 'secretary_pa',
+        staffId: 'SECPA001',
+        name,
+        department: 'Management Secretariat',
+        email,
+        googleConnected: true,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'secretary_pa'),
       });
     } else if (role === 'librarian') {
       const email = 'librarian@sasurie.com';
@@ -903,9 +1189,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const department = targetStaff?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
       const newUser: User = {
-        username: targetStaff?.id || 'admin',
+        username: targetStaff?.id || 'HOD001',
         role: 'admin',
-        staffId: targetStaff?.id,
+        coordinatorRole: targetStaff?.coordinatorRole,
+        staffId: targetStaff?.id || 'HOD001',
         name,
         department,
         email,
@@ -921,11 +1208,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       const targetStaff = staffList.find((s) => s.id === (staffId || 'STF001')) || staffList[0];
       const userRole = targetStaff?.role || 'staff';
-      const email = targetStaff?.email || 'faculty.aids@gmail.com';
-      const name = targetStaff?.facultyName || 'Faculty Staff Member';
+      const email = targetStaff?.email || 'kaviyarasu.aids@gmail.com';
+      const name = targetStaff?.facultyName || 'M. Kaviyarasu (Faculty)';
       setCurrentUser({
         username: targetStaff?.id || 'STF001',
         role: userRole,
+        coordinatorRole: targetStaff?.coordinatorRole,
         staffId: targetStaff?.id || 'STF001',
         name,
         department: targetStaff?.department || dailyReport.department,
@@ -991,6 +1279,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (id !== targetId) {
         deleteDocFromFirestore('staff', id);
       }
+
+      if (currentUser && (currentUser.staffId === id || currentUser.username === id)) {
+        setCurrentUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                staffId: targetId,
+                coordinatorRole: updatedStaff.coordinatorRole,
+                role: updatedStaff.role || prev.role,
+                name: updatedStaff.facultyName || prev.name,
+                email: updatedStaff.email || prev.email,
+                department: updatedStaff.department || prev.department,
+              }
+            : null
+        );
+      }
     }
 
     // Sync name and staffId in tasks & monitoring if name or id changed
@@ -1021,14 +1325,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteStaff = (id: string) => {
+    const target = staffList.find((s) => s.id === id);
+    if (target && isKeepStaff(target)) {
+      return;
+    }
     setStaffList((prev) => prev.filter((s) => s.id !== id));
     deleteDocFromFirestore('staff', id);
   };
 
   const clearAllStaff = () => {
-    staffList.forEach((s) => deleteDocFromFirestore('staff', s.id));
-    setStaffList([]);
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
+    staffList.forEach((s) => {
+      if (s && s.id && !isKeepStaff(s)) {
+        deleteDocFromFirestore('staff', s.id);
+      }
+    });
+    const kept = staffList.filter(isKeepStaff);
+    const finalStaff = kept.length > 0 ? kept : INITIAL_STAFF;
+    setStaffList(finalStaff);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(finalStaff));
   };
 
   // CRUD Classes
@@ -1391,15 +1705,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addSkillBankStudent = (student: StudentSkillBankData) => {
-    const docId = student.studentProfile.registerNumber.replace(/\//g, '_');
+    const docId = getStudentDocId(student);
     setSkillBankStudents((prev) => {
-      const exists = prev.some((s) => s.studentProfile.registerNumber === student.studentProfile.registerNumber);
+      const regNum = student.studentProfile?.registerNumber;
+      const exists = prev.some((s) => s.studentProfile?.registerNumber === regNum);
       if (exists) {
-        return prev.map((s) => (s.studentProfile.registerNumber === student.studentProfile.registerNumber ? student : s));
+        return prev.map((s) => (s.studentProfile?.registerNumber === regNum ? student : s));
       }
       return [student, ...prev];
     });
-    syncDocToFirestore('skillBankStudents', docId, student);
+    if (docId) syncDocToFirestore('skillBankStudents', docId, student);
   };
 
   const deleteSkillBankStudent = async (registerNumber: string) => {
@@ -1545,11 +1860,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importBulkSkillBankStudents = (newStudents: StudentSkillBankData[]) => {
     setSkillBankStudents((prev) => {
       const map = new Map<string, StudentSkillBankData>();
-      prev.forEach((s) => map.set(s.studentProfile.registerNumber, s));
+      prev.forEach((s) => {
+        if (s.studentProfile?.registerNumber) {
+          map.set(s.studentProfile.registerNumber, s);
+        }
+      });
       newStudents.forEach((ns) => {
-        map.set(ns.studentProfile.registerNumber, ns);
-        const docId = ns.studentProfile.registerNumber.replace(/\//g, '_');
-        syncDocToFirestore('skillBankStudents', docId, ns);
+        if (ns.studentProfile?.registerNumber) {
+          map.set(ns.studentProfile.registerNumber, ns);
+        }
+        const docId = getStudentDocId(ns);
+        if (docId) syncDocToFirestore('skillBankStudents', docId, ns);
       });
       return Array.from(map.values());
     });
@@ -1811,8 +2132,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (parsed.skillBankStudents && Array.isArray(parsed.skillBankStudents)) {
         setSkillBankStudents(parsed.skillBankStudents);
         parsed.skillBankStudents.forEach((st: StudentSkillBankData) => {
-          const docId = st.studentProfile.registerNumber.replace(/\//g, '_');
-          syncDocToFirestore('skillBankStudents', docId, st);
+          const docId = getStudentDocId(st);
+          if (docId) syncDocToFirestore('skillBankStudents', docId, st);
         });
       }
       if (parsed.googleSheetsConfig && typeof parsed.googleSheetsConfig === 'object') setGoogleSheetsConfig(parsed.googleSheetsConfig);
@@ -1840,8 +2161,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     lessonPlanList.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
     attendanceRecords.forEach((a) => syncDocToFirestore('attendance', a.id, a));
     skillBankStudents.forEach((st) => {
-      const docId = st.studentProfile.registerNumber.replace(/\//g, '_');
-      syncDocToFirestore('skillBankStudents', docId, st);
+      const docId = getStudentDocId(st);
+      if (docId) syncDocToFirestore('skillBankStudents', docId, st);
     });
     syncDocToFirestore('settings', 'dailyReport', dailyReport);
     notifications.forEach((n) => syncDocToFirestore('notifications', n.id, n));
@@ -1871,8 +2192,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     INITIAL_LESSON_PLANS.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
     INITIAL_ATTENDANCE_RECORDS.forEach((a) => syncDocToFirestore('attendance', a.id, a));
     INITIAL_STUDENTS_SKILL_BANK.forEach((st) => {
-      const docId = st.studentProfile.registerNumber.replace(/\//g, '_');
-      syncDocToFirestore('skillBankStudents', docId, st);
+      const docId = getStudentDocId(st);
+      if (docId) syncDocToFirestore('skillBankStudents', docId, st);
     });
     syncDocToFirestore('settings', 'dailyReport', INITIAL_HOD_REPORT);
     INITIAL_NOTIFICATIONS.forEach((n) => syncDocToFirestore('notifications', n.id, n));

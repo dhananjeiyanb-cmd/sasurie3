@@ -82,7 +82,7 @@ const AccreditationLogo: React.FC<{ className?: string }> = ({ className = 'w-16
 );
 
 export const ClassObservationView: React.FC = () => {
-  const { observationList, addObservation, deleteObservation, staffList, classList, currentUser, filterState } = useApp();
+  const { observationList, addObservation, deleteObservation, staffList, classList, currentUser, filterState, dailyReport } = useApp();
 
   const [search, setSearch] = useState('');
   const [ratingFilter, setRatingFilter] = useState<string>('all');
@@ -250,7 +250,7 @@ export const ClassObservationView: React.FC = () => {
             Class Observation Module
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Official Sasurie College of Engineering Classroom Observation Form & Pedagogical Evaluation Engine.
+            Official {dailyReport.collegeName || 'Sasurie College of Engineering'} Classroom Observation Form & Pedagogical Evaluation Engine.
           </p>
         </div>
 
@@ -325,7 +325,7 @@ export const ClassObservationView: React.FC = () => {
                 {/* Center: College Name */}
                 <div className="text-center flex-1">
                   <h1 className="text-red-600 font-extrabold text-2xl tracking-wider uppercase font-serif">
-                    SASURIE COLLEGE OF ENGINEERING
+                    {dailyReport.collegeName || 'SASURIE COLLEGE OF ENGINEERING'}
                   </h1>
                   <p className="text-sm font-bold text-slate-800 mt-0.5 tracking-wide">
                     (Autonomous)
@@ -627,7 +627,7 @@ export const ClassObservationView: React.FC = () => {
                                 }`}
                                 title={`${crit}: ${ratingStr}`}
                               >
-                                {crit.split(' ')[0]} ({ratingStr.charAt(0)})
+                                {(crit || '').split(' ')[0]} ({(ratingStr || '').charAt(0)})
                               </span>
                             );
                           })}
@@ -689,7 +689,7 @@ export const ClassObservationView: React.FC = () => {
                     Record Classroom Observation
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Official Sasurie College of Engineering Evaluation Criteria Checklist
+                    Official {dailyReport.collegeName || 'Sasurie College of Engineering'} Evaluation Criteria Checklist
                   </p>
                 </div>
               </div>

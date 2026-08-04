@@ -5,7 +5,7 @@ import { StudentAttendanceModal } from '../components/StudentAttendanceModal';
 import { DailyRemarksModal } from '../components/DailyRemarksModal';
 import { DEPARTMENTS } from '../types';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
-import { getDeptHodName, isSameDept, getDepartmentAttendanceSummaries } from '../utils/departmentUtils';
+import { getDeptHodName, isSameDept, getDepartmentAttendanceSummaries, getUserCollege, isStaffInCollege } from '../utils/departmentUtils';
 import {
   Users,
   GraduationCap,
@@ -86,10 +86,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const isStaff = currentUser?.role === 'staff';
   const isHod = currentUser?.role === 'admin';
-  const isPrincipal = currentUser?.role === 'principal';
+  const isPrincipal = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
+  const isSecretary = currentUser?.role === 'secretary' || currentUser?.role === 'secretary_pa';
+  const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
   const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
-  const selectedDept = isPrincipal
+  const selectedDept = (isPrincipal || isSecretary)
     ? (filterState.department || dailyReport?.department || 'All Departments')
     : hodDepartment;
 
@@ -99,9 +101,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return isSameDept(targetDept, selDept);
   };
 
+  // Base staff pool: Principal sees ONLY their college staff; Secretary sees ALL staff
+  const collegeStaffList = isPrincipal
+    ? staffList.filter((s) => isStaffInCollege(s, principalCollege))
+    : staffList;
+
   const displayStaffList = isHod || isStaff
-    ? staffList.filter((s) => isDeptMatch(s.department, hodDepartment))
-    : staffList.filter((s) => isDeptMatch(s.department, selectedDept));
+    ? collegeStaffList.filter((s) => isDeptMatch(s.department, hodDepartment))
+    : collegeStaffList.filter((s) => isDeptMatch(s.department, selectedDept));
 
   const displayClassList = isHod || isStaff
     ? classList.filter((c) => isDeptMatch(c.department, hodDepartment))
@@ -190,8 +197,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const pending = assigned.filter((t) => t.status === 'Pending' || t.status === 'In Progress').length;
     const overdue = assigned.filter((t) => t.status === 'Overdue').length;
 
+    const fName = staff.facultyName || staff.id || 'Staff';
+
     return {
-      name: staff.facultyName.split(' ')[1] || staff.facultyName,
+      name: fName.includes(' ') ? (fName.split(' ')[1] || fName.split(' ')[0]) : fName,
       Completed: completed,
       Pending: pending,
       Overdue: overdue,
@@ -768,7 +777,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">
-                    {dept.split(' ')[0]}
+                    {(dept || '').split(' ')[0]}
                   </span>
                   <span className="text-[10px] font-bold text-slate-500 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-md">
                     {deptStaffCount} Staff
@@ -1053,8 +1062,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {sortedUpcomingTasks.length === 0 ? (
                 <div className="text-[11px] text-slate-400 italic">No upcoming pending tasks.</div>
               ) : (
-                sortedUpcomingTasks.slice(0, 2).map((t) => (
-                  <div key={t.id} onClick={() => setActiveTab('tasks')} className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs cursor-pointer hover:border-blue-400 transition-all">
+                sortedUpcomingTasks.slice(0, 2).map((t, idx) => (
+                  <div key={t.id || `upcoming-${idx}`} onClick={() => setActiveTab('tasks')} className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs cursor-pointer hover:border-blue-400 transition-all">
                     <div className="truncate mr-2">
                       <span className="font-bold text-slate-800 dark:text-slate-200 truncate block text-[11px]">{t.title}</span>
                       <span className="text-[10px] text-slate-400">{t.assignedToName}</span>
@@ -1187,7 +1196,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               return true;
             })
             .slice(0, 6)
-            .map((staff) => {
+            .map((staff, staffIdx) => {
               const staffPlans = lessonPlanList.filter(
                 (lp) =>
                   (lp.staffName && staff.facultyName && lp.staffName.toLowerCase().includes(staff.facultyName.toLowerCase())) ||
@@ -1201,7 +1210,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
               return (
                 <div
-                  key={staff.id}
+                  key={staff.id || `staff-lp-${staffIdx}`}
                   onClick={() => setActiveTab('lesson_plan')}
                   className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 transition-all cursor-pointer space-y-2.5"
                 >
@@ -1348,7 +1357,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     const isMed = pct >= 75 && pct < 90;
 
                     return (
-                      <tr key={sa.classId + idx} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/30">
+                      <tr key={sa.classId ? `${sa.classId}-${idx}` : `sa-${idx}`} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/30">
                         <td className="p-3 font-bold text-slate-900 dark:text-white">
                           {sa.className}
                         </td>
@@ -1482,9 +1491,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="space-y-3">
-            {displayTaskList.slice(0, 4).map((task) => (
+            {displayTaskList.slice(0, 4).map((task, idx) => (
               <div
-                key={task.id}
+                key={task.id ? `${task.id}-${idx}` : `task-recent-${idx}`}
                 onClick={() => setActiveTab('tasks')}
                 className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 hover:border-blue-300 dark:hover:border-blue-600 transition-all cursor-pointer"
               >
@@ -1520,9 +1529,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <div className="space-y-3">
-              {observationList.slice(0, 3).map((obs) => (
+              {observationList.slice(0, 3).map((obs, idx) => (
                 <div
-                  key={obs.id}
+                  key={obs.id ? `${obs.id}-${idx}` : `obs-recent-${idx}`}
                   className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60"
                 >
                   <div className="flex items-center justify-between gap-2 mb-1">

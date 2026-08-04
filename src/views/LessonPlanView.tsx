@@ -392,7 +392,7 @@ export const LessonPlanView: React.FC = () => {
                   <option value="all">👥 All Department Faculty ({allowedStaffList.length})</option>
                   {allowedStaffList.map((stf) => (
                     <option key={stf.id} value={stf.facultyName}>
-                      {stf.facultyName} ({stf.department.split('(')[0].trim()})
+                      {stf.facultyName} ({(stf.department || '').split('(')[0].trim()})
                     </option>
                   ))}
                 </select>
@@ -705,7 +705,7 @@ export const LessonPlanView: React.FC = () => {
                     >
                       {allowedStaffList.map((stf) => (
                         <option key={stf.id} value={stf.facultyName}>
-                          {stf.facultyName} ({stf.department.split('(')[0].trim()})
+                          {stf.facultyName} ({(stf.department || '').split('(')[0].trim()})
                         </option>
                       ))}
                     </select>
@@ -721,8 +721,8 @@ export const LessonPlanView: React.FC = () => {
                     className="w-full p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
                   >
                     {classList.map((cls) => (
-                      <option key={cls.id} value={`${cls.year} ${cls.department.split('(')[0].trim()} - ${cls.section}`}>
-                        {cls.year} {cls.department.split('(')[0].trim()} - {cls.section}
+                      <option key={cls.id} value={`${cls.year} ${(cls.department || '').split('(')[0].trim()} - ${cls.section}`}>
+                        {cls.year} {(cls.department || '').split('(')[0].trim()} - {cls.section}
                       </option>
                     ))}
                   </select>

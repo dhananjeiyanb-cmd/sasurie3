@@ -5,6 +5,7 @@ export interface StudentProfile {
   skillBankAccountNo: string; // e.g. SSB-2026-CS-001
   degreeBranch: string; // e.g. B.E. Computer Science & Engineering
   department: string;
+  institution?: string;
   batch: string; // e.g. 2024-2028
   academicYear: string; // e.g. 2026-2027
   semester: string; // e.g. Odd Semester (Sem V)
@@ -188,12 +189,27 @@ export interface LearnerCategoryEntry {
   coinsEarned: number;
 }
 
+export interface EndSemSubjectGrade {
+  id: string;
+  subjectCode: string;
+  subjectName: string;
+  credits: number;
+  grade: 'O' | 'A+' | 'A' | 'B+' | 'B' | 'C' | 'RA' | 'SA' | 'W';
+  gradePoint: number;
+  resultStatus: 'PASS' | 'ARREAR' | 'ABSENT';
+}
+
 export interface EndSemResultEntry {
   allPass: boolean;
   arrearsCount: number;
   gpa: number;
   cgpa: number;
   coinsEarned: number;
+  examSession?: string;
+  publishedDate?: string;
+  marksheetVerifiedByMentor?: boolean;
+  subjectGrades?: EndSemSubjectGrade[];
+  revaluationNotes?: string;
 }
 
 // Dimension 2: Skill Development

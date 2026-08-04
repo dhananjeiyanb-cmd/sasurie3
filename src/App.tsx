@@ -27,15 +27,36 @@ const MainContent: React.FC = () => {
   const [isQuickAddStaffOpen, setIsQuickAddStaffOpen] = useState(false);
   const [isQuickAddClassOpen, setIsQuickAddClassOpen] = useState(false);
 
-  // Redirect staff users away from HOD-only management tabs if accessed
+  // Redirect staff users away from unauthorized coordinator tabs or HOD-only tabs
   React.useEffect(() => {
     if (!currentUser) return;
     const isStaffUser = currentUser.role === 'staff';
     const isLibrarianUser = currentUser.role === 'librarian';
-    const hodOnlyTabs = ['staff', 'classes', 'observations', 'monitoring', 'daily_report', 'mentor_mapping'];
-
-    if (isStaffUser && hodOnlyTabs.includes(activeTab)) {
+    
+    if (currentUser.role === 'principal' && ['events', 'classes', 'mentor_mapping'].includes(activeTab)) {
       setActiveTab('dashboard');
+      return;
+    }
+
+    if (isStaffUser) {
+      const hodOnlyTabs = ['staff', 'observations', 'monitoring', 'daily_report', 'mentor_mapping'];
+
+      // Events tab only accessible if Event Coordinator
+      if (activeTab === 'events' && currentUser.coordinatorRole !== 'Event Coordinator') {
+        setActiveTab('dashboard');
+        return;
+      }
+
+      // Classes tab only accessible if Timetable Coordinator
+      if (activeTab === 'classes' && currentUser.coordinatorRole !== 'Timetable Coordinator') {
+        setActiveTab('dashboard');
+        return;
+      }
+
+      if (hodOnlyTabs.includes(activeTab)) {
+        setActiveTab('dashboard');
+        return;
+      }
     } else if (isLibrarianUser && !['librarian_portal', 'skill_bank', 'dashboard', 'events'].includes(activeTab)) {
       setActiveTab('librarian_portal');
     } else if (!isLibrarianUser && activeTab === 'librarian_portal') {

@@ -28,9 +28,23 @@ export function calculateDimension1(record: StudentSkillBankData): {
   }
   let attCoins = 0;
   if (record.attendanceMonths) {
+    let totDays = 0;
+    let attDays = 0;
     MONTH_LIST.forEach((m) => {
-      attCoins += record.attendanceMonths[m]?.coinsEarned || 0;
+      const entry = record.attendanceMonths[m];
+      if (entry) {
+        totDays += entry.totalDays || 0;
+        attDays += entry.daysAttended || 0;
+      }
     });
+    if (totDays > 0) {
+      const overallPct = Number(((attDays / totDays) * 100).toFixed(1));
+      attCoins = calculateAttendanceCoins(overallPct);
+    } else {
+      MONTH_LIST.forEach((m) => {
+        attCoins += record.attendanceMonths[m]?.coinsEarned || 0;
+      });
+    }
   }
   const attendanceCoins = Math.min(8000, attCoins);
 

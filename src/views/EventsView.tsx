@@ -67,10 +67,12 @@ export const EventsView: React.FC = () => {
     addEventFeedback,
     skillBankStudents,
     staffList,
+    dailyReport,
   } = useApp();
 
   const userDept = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
-  const isPrincipalOrAdmin = currentUser?.role === 'principal' || currentUser?.role === 'admin';
+  const isPrincipalOrAdmin = true; // HOD Login, Principal, Admin, and Faculty have full edit & delete permissions in Event Master & Analytics Portal
+  const isHodOrAdmin = true;
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,10 +90,32 @@ export const EventsView: React.FC = () => {
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditEventModalOpen, setIsEditEventModalOpen] = useState(false);
   const [isAddParticipantModalOpen, setIsAddParticipantModalOpen] = useState(false);
   const [isAddDocModalOpen, setIsAddDocModalOpen] = useState(false);
   const [isSubmitFeedbackModalOpen, setIsSubmitFeedbackModalOpen] = useState(false);
   const [isEditGuestModalOpen, setIsEditGuestModalOpen] = useState(false);
+
+  // Edit Event Form State
+  const [editAcademicYear, setEditAcademicYear] = useState('2025-2026');
+  const [editSemester, setEditSemester] = useState<'Odd' | 'Even'>('Odd');
+  const [editDepartment, setEditDepartment] = useState(userDept);
+  const [editAssociation, setEditAssociation] = useState<string>('Department Association');
+  const [editEventTitle, setEditEventTitle] = useState('');
+  const [editEventType, setEditEventType] = useState<EventType>('Workshop');
+  const [editMode, setEditMode] = useState<'Internal' | 'External'>('Internal');
+  const [editPlannedDate, setEditPlannedDate] = useState('');
+  const [editActualDate, setEditActualDate] = useState('');
+  const [editVenue, setEditVenue] = useState('');
+  const [editTopic, setEditTopic] = useState('');
+  const [editResourcePersonName, setEditResourcePersonName] = useState('');
+  const [editOrganization, setEditOrganization] = useState('');
+  const [editFundingType, setEditFundingType] = useState<'Sponsored' | 'Self Supported' | 'Institute'>('Institute');
+  const [editBudget, setEditBudget] = useState<number>(10000);
+  const [editFacultyCoordinator, setEditFacultyCoordinator] = useState('');
+  const [editEventStatus, setEditEventStatus] = useState<'Planned' | 'Completed' | 'Cancelled'>('Planned');
+  const [editHodApproval, setEditHodApproval] = useState<'Pending' | 'Approved' | 'Rejected'>('Approved');
+  const [editPrincipalApproval, setEditPrincipalApproval] = useState<'Pending' | 'Approved' | 'Rejected'>('Approved');
 
   // New Event Form State
   const [newAcademicYear, setNewAcademicYear] = useState('2025-2026');
@@ -117,7 +141,7 @@ export const EventsView: React.FC = () => {
   const [partDept, setPartDept] = useState(userDept);
   const [partYear, setPartYear] = useState('3rd Year');
   const [partSection, setPartSection] = useState('A');
-  const [partInstitution, setPartInstitution] = useState('Sasurie College of Engineering');
+  const [partInstitution, setPartInstitution] = useState(dailyReport.collegeName || 'Sasurie College of Engineering');
   const [partAttendance, setPartAttendance] = useState<'Present' | 'Absent'>('Present');
 
   // Document Upload Form
@@ -214,7 +238,7 @@ export const EventsView: React.FC = () => {
       venue: newVenue || 'Main Auditorium',
       topic: newTopic || newEventTitle,
       resourcePersonName: newResourcePersonName || 'TBD',
-      organization: newOrganization || 'Sasurie College of Engineering',
+      organization: newOrganization || dailyReport.collegeName || 'Sasurie College of Engineering',
       fundingType: newFundingType,
       budget: Number(newBudget) || 0,
       facultyCoordinator: newFacultyCoordinator,
@@ -232,6 +256,64 @@ export const EventsView: React.FC = () => {
     setNewTopic('');
     setNewResourcePersonName('');
     setNewOrganization('');
+  };
+
+  // Open Edit Event Modal
+  const openEditEventModal = (eventToEdit: EventRecord) => {
+    setEditAcademicYear(eventToEdit.academicYear || '2025-2026');
+    setEditSemester(eventToEdit.semester || 'Odd');
+    setEditDepartment(eventToEdit.department || userDept);
+    setEditAssociation(eventToEdit.association || 'Department Association');
+    setEditEventTitle(eventToEdit.eventTitle || '');
+    setEditEventType(eventToEdit.eventType || 'Workshop');
+    setEditMode(eventToEdit.mode || 'Internal');
+    setEditPlannedDate(eventToEdit.plannedDate || '');
+    setEditActualDate(eventToEdit.actualDate || eventToEdit.plannedDate || '');
+    setEditVenue(eventToEdit.venue || '');
+    setEditTopic(eventToEdit.topic || '');
+    setEditResourcePersonName(eventToEdit.resourcePersonName || '');
+    setEditOrganization(eventToEdit.organization || '');
+    setEditFundingType(eventToEdit.fundingType || 'Institute');
+    setEditBudget(eventToEdit.budget || 0);
+    setEditFacultyCoordinator(eventToEdit.facultyCoordinator || '');
+    setEditEventStatus(eventToEdit.eventStatus || 'Planned');
+    setEditHodApproval(eventToEdit.hodApproval || 'Approved');
+    setEditPrincipalApproval(eventToEdit.principalApproval || 'Approved');
+    setIsEditEventModalOpen(true);
+  };
+
+  // Edit Event Handler
+  const handleEditEventSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEvent) return;
+    if (!editEventTitle.trim()) {
+      alert('Please enter an Event Title.');
+      return;
+    }
+    updateEvent(selectedEvent.id, {
+      academicYear: editAcademicYear,
+      semester: editSemester,
+      department: editDepartment,
+      association: editAssociation,
+      eventTitle: editEventTitle,
+      eventType: editEventType,
+      mode: editMode,
+      plannedDate: editPlannedDate,
+      actualDate: editActualDate,
+      venue: editVenue,
+      topic: editTopic,
+      resourcePersonName: editResourcePersonName,
+      organization: editOrganization,
+      fundingType: editFundingType,
+      budget: Number(editBudget) || 0,
+      facultyCoordinator: editFacultyCoordinator,
+      eventStatus: editEventStatus,
+      hodApproval: editHodApproval,
+      principalApproval: editPrincipalApproval,
+    });
+
+    setIsEditEventModalOpen(false);
+    alert('Event Master record updated successfully!');
   };
 
   // Manual Add Participant
@@ -543,17 +625,42 @@ export const EventsView: React.FC = () => {
                       <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
                         {event.id}
                       </span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          event.eventStatus === 'Completed'
-                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                            : event.eventStatus === 'Cancelled'
-                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                            : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                        }`}
-                      >
-                        {event.eventStatus}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedEventId(event.id);
+                            openEditEventModal(event);
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition-colors"
+                          title="Edit Event Master"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Are you sure you want to delete "${event.eventTitle}"?`)) {
+                              deleteEvent(event.id);
+                            }
+                          }}
+                          className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                          title="Delete Event Master"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ml-1 ${
+                            event.eventStatus === 'Completed'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : event.eventStatus === 'Cancelled'
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                              : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                          }`}
+                        >
+                          {event.eventStatus}
+                        </span>
+                      </div>
                     </div>
 
                     <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white line-clamp-2 leading-snug">
@@ -625,13 +732,24 @@ export const EventsView: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      {currentUser?.role === 'admin' && selectedEvent.hodApproval === 'Pending' && (
+                      {(currentUser?.role === 'admin' || currentUser?.role === 'principal') && selectedEvent.hodApproval === 'Pending' && (
                         <div className="mt-1 flex gap-1 justify-center">
                           <button
-                            onClick={() => updateEvent(selectedEvent.id, { hodApproval: 'Approved' })}
+                            onClick={() => {
+                              updateEvent(selectedEvent.id, { hodApproval: 'Approved' });
+                              alert(`Event approved by HOD and sent to Principal login for final approval!`);
+                            }}
                             className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-600 text-white rounded hover:bg-emerald-700"
                           >
                             Approve
+                          </button>
+                          <button
+                            onClick={() => {
+                              updateEvent(selectedEvent.id, { hodApproval: 'Rejected' });
+                            }}
+                            className="px-1.5 py-0.5 text-[9px] font-bold bg-rose-600 text-white rounded hover:bg-rose-700"
+                          >
+                            Reject
                           </button>
                         </div>
                       )}
@@ -658,31 +776,122 @@ export const EventsView: React.FC = () => {
                       {currentUser?.role === 'principal' && selectedEvent.principalApproval === 'Pending' && (
                         <div className="mt-1 flex gap-1 justify-center">
                           <button
-                            onClick={() => updateEvent(selectedEvent.id, { principalApproval: 'Approved' })}
+                            onClick={() => {
+                              updateEvent(selectedEvent.id, { principalApproval: 'Approved' });
+                              alert(`Event sanctioned and approved by Principal!`);
+                            }}
                             className="px-1.5 py-0.5 text-[9px] font-bold bg-emerald-600 text-white rounded hover:bg-emerald-700"
                           >
                             Approve
+                          </button>
+                          <button
+                            onClick={() => {
+                              updateEvent(selectedEvent.id, { principalApproval: 'Rejected' });
+                            }}
+                            className="px-1.5 py-0.5 text-[9px] font-bold bg-rose-600 text-white rounded hover:bg-rose-700"
+                          >
+                            Reject
                           </button>
                         </div>
                       )}
                     </div>
 
-                    {isPrincipalOrAdmin && (
+                    {/* HOD / Admin Edit & Delete Master Buttons */}
+                    <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-700">
+                      <button
+                        onClick={() => openEditEventModal(selectedEvent)}
+                        className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors"
+                        title="Edit Event Master Details"
+                      >
+                        <Edit className="w-3.5 h-3.5" /> Edit Event
+                      </button>
                       <button
                         onClick={() => {
-                          if (confirm('Are you sure you want to delete this event master record?')) {
+                          if (confirm(`Are you sure you want to delete event "${selectedEvent.eventTitle}"?`)) {
                             deleteEvent(selectedEvent.id);
                           }
                         }}
-                        className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-400 dark:hover:bg-rose-900/60"
-                        title="Delete Event Master"
+                        className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors"
+                        title="Delete Event Master Record"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
               </div>
+
+              {/* Interactive Workflow Review Banners */}
+              {selectedEvent.hodApproval === 'Pending' && currentUser?.role === 'admin' && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs gap-3">
+                  <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-medium">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>
+                      <strong>HOD Review Pending:</strong> Event Coordinator submitted this event proposal. Review details and approve to forward to Principal.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        updateEvent(selectedEvent.id, { hodApproval: 'Approved' });
+                        alert(`Event "${selectedEvent.eventTitle}" approved by HOD and forwarded to Principal login for final approval!`);
+                      }}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Approve &amp; Send to Principal
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Reject this event proposal?')) {
+                          updateEvent(selectedEvent.id, { hodApproval: 'Rejected' });
+                        }
+                      }}
+                      className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
+                    >
+                      <XCircle className="w-3.5 h-3.5" /> Reject
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selectedEvent.hodApproval === 'Approved' && selectedEvent.principalApproval === 'Pending' && currentUser?.role === 'principal' && (
+                <div className="p-3 bg-purple-50 dark:bg-purple-950/40 border-b border-purple-200 dark:border-purple-800 flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs gap-3">
+                  <div className="flex items-center gap-2 text-purple-900 dark:text-purple-200 font-medium">
+                    <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
+                    <span>
+                      <strong>Principal Sanction Required:</strong> HOD has approved this event proposal ({selectedEvent.department}). Sanction to finalize event.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        updateEvent(selectedEvent.id, { principalApproval: 'Approved' });
+                        alert(`Event "${selectedEvent.eventTitle}" has been fully sanctioned & approved by Principal!`);
+                      }}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Sanction &amp; Approve Event
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Reject this event?')) {
+                          updateEvent(selectedEvent.id, { principalApproval: 'Rejected' });
+                        }
+                      }}
+                      className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-xs transition-all flex items-center gap-1"
+                    >
+                      <XCircle className="w-3.5 h-3.5" /> Reject
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selectedEvent.hodApproval === 'Approved' && selectedEvent.principalApproval === 'Approved' && (
+                <div className="p-2.5 bg-emerald-50/80 dark:bg-emerald-950/40 border-b border-emerald-200 dark:border-emerald-800 flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-200 font-semibold px-5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Fully Sanctioned Event: Approved by both HOD ({selectedEvent.department}) and Principal Office.</span>
+                </div>
+              )}
 
               {/* Inspector Navigation Tabs */}
               <div className="flex items-center border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 overflow-x-auto scrollbar-none">
@@ -860,6 +1069,21 @@ export const EventsView: React.FC = () => {
                         <Plus className="w-3.5 h-3.5" />
                         Add Manually
                       </button>
+
+                      {selectedEvent.participants && selectedEvent.participants.length > 0 && (
+                        <button
+                          onClick={() => {
+                            if (confirm('Are you sure you want to delete ALL registered participants for this event?')) {
+                              updateEvent(selectedEvent.id, { participants: [] });
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-400 text-xs font-semibold flex items-center gap-1.5"
+                          title="Clear all participants"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Clear All
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -875,12 +1099,13 @@ export const EventsView: React.FC = () => {
                           <th className="p-3">Year / Sec</th>
                           <th className="p-3">Institution</th>
                           <th className="p-3 text-center">Attendance</th>
+                          <th className="p-3 text-center">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                         {(!selectedEvent.participants || selectedEvent.participants.length === 0) ? (
                           <tr>
-                            <td colSpan={7} className="p-8 text-center text-slate-400">
+                            <td colSpan={8} className="p-8 text-center text-slate-400">
                               No participants added yet. Upload Excel or click "Add Manually".
                             </td>
                           </tr>
@@ -913,6 +1138,20 @@ export const EventsView: React.FC = () => {
                                 >
                                   {p.attendance}
                                 </span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Delete participant "${p.name}" (${p.rollNo})?`)) {
+                                      const updated = selectedEvent.participants.filter((x) => x.id !== p.id);
+                                      updateEvent(selectedEvent.id, { participants: updated });
+                                    }
+                                  }}
+                                  className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                                  title="Delete Participant"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </td>
                             </tr>
                           ))
@@ -1222,9 +1461,23 @@ export const EventsView: React.FC = () => {
 
                   {/* Student Suggestions List */}
                   <div className="space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                      Attendee Suggestions & Remarks ({feedbackList.filter((f) => f.suggestions).length})
-                    </h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                        Attendee Suggestions & Remarks ({feedbackList.filter((f) => f.suggestions).length})
+                      </h4>
+                      {feedbackList.length > 0 && (
+                        <button
+                          onClick={() => {
+                            if (confirm('Are you sure you want to clear ALL feedback responses for this event?')) {
+                              updateEvent(selectedEvent.id, { feedbackResponses: [] });
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-400 text-[11px] font-bold flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Clear All Feedback
+                        </button>
+                      )}
+                    </div>
 
                     <div className="space-y-2 max-h-48 overflow-y-auto">
                       {feedbackList.filter((f) => f.suggestions).length === 0 ? (
@@ -1235,13 +1488,27 @@ export const EventsView: React.FC = () => {
                           .map((f) => (
                             <div
                               key={f.id}
-                              className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300"
+                              className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 relative group"
                             >
                               <div className="flex items-center justify-between mb-1 text-[10px] text-slate-400">
                                 <span className="font-bold text-slate-800 dark:text-slate-200">
                                   {f.participantName || f.participantRollNo || 'Anonymous'}
                                 </span>
-                                <span>{f.submittedAt}</span>
+                                <div className="flex items-center gap-2">
+                                  <span>{f.submittedAt}</span>
+                                  <button
+                                    onClick={() => {
+                                      if (confirm('Delete this feedback response?')) {
+                                        const updated = (selectedEvent.feedbackResponses || []).filter((x) => x.id !== f.id);
+                                        updateEvent(selectedEvent.id, { feedbackResponses: updated });
+                                      }
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                                    title="Delete Feedback"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
                               </div>
                               <p>"{f.suggestions}"</p>
                             </div>
@@ -2041,6 +2308,333 @@ export const EventsView: React.FC = () => {
                   className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                 >
                   Submit Form
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: Edit Event Master Record */}
+      {isEditEventModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Edit className="w-5 h-5 text-emerald-500" />
+                Edit Event Master Record ({selectedEvent?.id})
+              </h3>
+              <button
+                onClick={() => setIsEditEventModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditEventSubmit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Academic Year *
+                  </label>
+                  <select
+                    value={editAcademicYear}
+                    onChange={(e) => setEditAcademicYear(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  >
+                    <option value="2025-2026">2025-2026</option>
+                    <option value="2026-2027">2026-2027</option>
+                    <option value="2027-2028">2027-2028</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Semester *
+                  </label>
+                  <select
+                    value={editSemester}
+                    onChange={(e) => setEditSemester(e.target.value as any)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  >
+                    <option value="Odd">Odd Semester</option>
+                    <option value="Even">Even Semester</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Department *
+                  </label>
+                  <select
+                    value={editDepartment}
+                    onChange={(e) => setEditDepartment(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  >
+                    {DEPARTMENTS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Association / Club / Cell *
+                  </label>
+                  <select
+                    value={editAssociation}
+                    onChange={(e) => setEditAssociation(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  >
+                    <option value="Department Association">Department Association</option>
+                    <option value="IEEE Student Branch">IEEE Student Branch</option>
+                    <option value="CSI Student Chapter">CSI Student Chapter</option>
+                    <option value="Fine Arts Club">Fine Arts Club</option>
+                    <option value="NSS (National Service Scheme)">NSS (National Service Scheme)</option>
+                    <option value="YRC (Youth Red Cross)">YRC (Youth Red Cross)</option>
+                    <option value="Sports Club">Sports Club</option>
+                    <option value="Entrepreneurship Cell (E-Cell)">Entrepreneurship Cell (E-Cell)</option>
+                    <option value="Women Empowerment Cell">Women Empowerment Cell</option>
+                    <option value="Institution's Innovation Council (IIC)">Institution's Innovation Council (IIC)</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Event Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editEventTitle}
+                  onChange={(e) => setEditEventTitle(e.target.value)}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 font-bold focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Event Type *
+                  </label>
+                  <select
+                    value={editEventType}
+                    onChange={(e) => setEditEventType(e.target.value as EventType)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  >
+                    <option value="Workshop">Workshop</option>
+                    <option value="Seminar">Seminar</option>
+                    <option value="FDP">FDP</option>
+                    <option value="Guest Lecture">Guest Lecture</option>
+                    <option value="Hackathon">Hackathon</option>
+                    <option value="Competition">Competition</option>
+                    <option value="Club Activity">Club Activity</option>
+                    <option value="Industrial Visit">Industrial Visit</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Internal / External *
+                  </label>
+                  <select
+                    value={editMode}
+                    onChange={(e) => setEditMode(e.target.value as any)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  >
+                    <option value="Internal">Internal</option>
+                    <option value="External">External</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Planned Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editPlannedDate}
+                    onChange={(e) => setEditPlannedDate(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Actual Conducted Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editActualDate}
+                    onChange={(e) => setEditActualDate(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Venue Location
+                  </label>
+                  <input
+                    type="text"
+                    value={editVenue}
+                    onChange={(e) => setEditVenue(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Topic / Key Focus
+                  </label>
+                  <input
+                    type="text"
+                    value={editTopic}
+                    onChange={(e) => setEditTopic(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Resource Person Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editResourcePersonName}
+                    onChange={(e) => setEditResourcePersonName(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Organization / Company
+                  </label>
+                  <input
+                    type="text"
+                    value={editOrganization}
+                    onChange={(e) => setEditOrganization(e.target.value)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Funding Type
+                  </label>
+                  <select
+                    value={editFundingType}
+                    onChange={(e) => setEditFundingType(e.target.value as any)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  >
+                    <option value="Institute">Institute</option>
+                    <option value="Sponsored">Sponsored</option>
+                    <option value="Self Supported">Self Supported</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Budget (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={editBudget}
+                    onChange={(e) => setEditBudget(Number(e.target.value))}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Event Status
+                  </label>
+                  <select
+                    value={editEventStatus}
+                    onChange={(e) => setEditEventStatus(e.target.value as any)}
+                    className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold"
+                  >
+                    <option value="Planned">Planned</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Faculty Coordinator
+                  </label>
+                  <input
+                    type="text"
+                    value={editFacultyCoordinator}
+                    onChange={(e) => setEditFacultyCoordinator(e.target.value)}
+                    className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    HOD Approval Status
+                  </label>
+                  <select
+                    value={editHodApproval}
+                    onChange={(e) => setEditHodApproval(e.target.value as any)}
+                    className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-emerald-600"
+                  >
+                    <option value="Approved">Approved</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Principal Approval Status
+                  </label>
+                  <select
+                    value={editPrincipalApproval}
+                    onChange={(e) => setEditPrincipalApproval(e.target.value as any)}
+                    className="w-full p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-emerald-600"
+                  >
+                    <option value="Approved">Approved</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditEventModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                >
+                  Save Master Changes
                 </button>
               </div>
             </form>

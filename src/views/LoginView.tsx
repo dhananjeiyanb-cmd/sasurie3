@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { SASURIE_COLLEGES } from '../types';
+import { getCollegeLogoText } from '../utils/departmentUtils';
 import { SettingsModal } from '../components/SettingsModal';
 import {
   Lock,
@@ -23,7 +25,7 @@ import {
 } from 'lucide-react';
 
 export const LoginView: React.FC = () => {
-  const { login, loginWithGoogle, dailyReport } = useApp();
+  const { login, loginWithGoogle, loginAsDemo, dailyReport, updateDailyReport } = useApp();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -97,8 +99,27 @@ export const LoginView: React.FC = () => {
             )}
           </div>
 
-          <div className="text-sm sm:text-base font-black uppercase tracking-wider text-amber-400/95 px-2">
-            {dailyReport.collegeName || 'Sasurie College of Engineering'}
+          <div className="mt-1">
+            <select
+              aria-label="Select Sasurie College"
+              value={dailyReport.collegeName || 'Sasurie College of Engineering'}
+              onChange={(e) => {
+                const newCol = e.target.value;
+                const logoText = getCollegeLogoText(newCol);
+                updateDailyReport({
+                  collegeName: newCol,
+                  collegeLogoText: logoText,
+                });
+              }}
+              className="text-xs sm:text-sm font-black uppercase tracking-wider text-amber-400/95 bg-slate-900/90 border border-amber-500/30 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500/50 cursor-pointer max-w-full truncate text-center"
+              title="Select Sasurie Institution"
+            >
+              {SASURIE_COLLEGES.map((col) => (
+                <option key={col} value={col} className="bg-slate-900 text-amber-300 font-bold">
+                  🎓 {col}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -169,8 +190,6 @@ export const LoginView: React.FC = () => {
               <span>SIGN IN TO PORTAL</span>
               <ArrowRight className="w-4 h-4" />
             </button>
-
-
           </form>
         </div>
       </div>

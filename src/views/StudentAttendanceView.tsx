@@ -362,6 +362,19 @@ export const StudentAttendanceView: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Printable PDF Header */}
+      <div className="hidden print:block border-b-2 border-slate-900 pb-4 mb-6 text-center space-y-1">
+        <h1 className="text-xl font-black uppercase tracking-wider text-slate-900">
+          {dailyReport?.collegeName || 'Sasurie College of Engineering'}
+        </h1>
+        <p className="text-xs font-bold text-slate-700 uppercase">
+          DEPARTMENT OF {userDept.toUpperCase()} — STUDENT ATTENDANCE REPORT
+        </p>
+        <p className="text-[10px] text-slate-500 font-semibold">
+          Printed on: {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+        </p>
+      </div>
+
       {/* Top Header & Navigation Tabs */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
         <div>

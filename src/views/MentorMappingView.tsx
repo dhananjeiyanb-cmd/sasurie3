@@ -58,7 +58,7 @@ export const MentorMappingView: React.FC = () => {
     if (d.includes('civil')) return 'CIVIL';
     if (d.includes('information technology') || d.includes('it')) return 'IT';
     if (d.includes('artificial') || d.includes('ai & ds') || d.includes('aids')) return 'AI & DS';
-    return activeDeptName.split(' ')[0] || 'DEPT';
+    return (activeDeptName || '').split(' ')[0] || 'DEPT';
   }, [activeDeptName]);
 
   const scopedStudents = React.useMemo(() => getScopedStudents(skillBankStudents, currentUser, fallbackDept), [skillBankStudents, currentUser, fallbackDept]);

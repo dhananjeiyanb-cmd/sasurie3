@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { DEPARTMENTS } from '../types';
+import { DEPARTMENTS, SASURIE_COLLEGES } from '../types';
+import { getCollegeLogoText } from '../utils/departmentUtils';
 import { SettingsModal } from './SettingsModal';
 import { ProfilePasswordModal } from './ProfilePasswordModal';
-import { AiHighThinkingAdvisor } from './AiHighThinkingAdvisor';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
 import {
   Bell,
@@ -22,7 +22,6 @@ import {
   Settings,
   Image as ImageIcon,
   Upload,
-  Brain,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -58,7 +57,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showProfilePasswordModal, setShowProfilePasswordModal] = useState(false);
-  const [showAiAdvisorModal, setShowAiAdvisorModal] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -126,33 +124,14 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-white leading-tight">
                 {displayDept}
               </h1>
-              {currentUser?.role === 'principal' && (
-                <select
-                  aria-label="Change Department"
-                  value={isAll ? 'All Departments' : (DEPARTMENTS.find((d) => d.toLowerCase() === cleanDept.toLowerCase()) || cleanDept)}
-                  onChange={(e) => {
-                    const newDept = e.target.value;
-                    updateDailyReport({ department: newDept });
-                    setFilterState((prev) => ({ ...prev, department: newDept }));
-                  }}
-                  className="text-xs bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 rounded-md px-2 py-0.5 font-bold text-blue-900 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-slate-700 focus:outline-none cursor-pointer max-w-[150px] sm:max-w-[220px] truncate"
-                  title="Switch Department (Principal Overview)"
-                >
-                  <option value="All Departments">🏢 All Departments</option>
-                  {DEPARTMENTS.map((dept) => (
-                    <option key={dept} value={dept}>
-                      {dept}
-                    </option>
-                  ))}
-                </select>
-              )}
             </div>
-            <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 tracking-wide hidden sm:block">
-              {dailyReport.collegeName || 'Sasuri College of Engineering'} • <span className="font-semibold text-slate-700 dark:text-slate-200">{subText}</span>
+
+            <p className="text-[10px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide mt-0.5">
+              🎓 {dailyReport.collegeName || 'Sasurie College of Engineering'}
             </p>
           </div>
         </div>
@@ -190,16 +169,6 @@ export const Header: React.FC<HeaderProps> = ({
               {new Date().toLocaleDateString('en-US', { weekday: 'long' })}
             </div>
           </div>
-
-          {/* AI High Thinking Advisor Button */}
-          <button
-            onClick={() => setShowAiAdvisorModal(true)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-xs transition-all border border-purple-500/30"
-            title="Launch Gemini 3.1 Pro High Thinking Advisor"
-          >
-            <Brain className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-            <span className="hidden sm:inline">AI Advisor</span>
-          </button>
 
           {/* Settings Button */}
           <button
@@ -342,16 +311,28 @@ export const Header: React.FC<HeaderProps> = ({
                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                       currentUser?.role === 'principal'
                         ? 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300/40'
-                        : currentUser?.role === 'admin'
+                        : currentUser?.role === 'secretary'
+                        ? 'bg-purple-100 text-purple-900 dark:bg-purple-950 dark:text-purple-300 border border-purple-300/40'
+                        : currentUser?.role === 'principal_pa'
                         ? 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-300 border border-blue-300/40'
+                        : currentUser?.role === 'secretary_pa'
+                        ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-300/40'
+                        : currentUser?.role === 'admin'
+                        ? 'bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-300 border border-sky-300/40'
                         : currentUser?.role === 'librarian'
                         ? 'bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-300 border border-teal-300/40'
                         : currentUser?.role === 'incucula'
-                        ? 'bg-purple-100 text-purple-900 dark:bg-purple-950 dark:text-purple-300 border border-purple-300/40'
+                        ? 'bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-300 border border-fuchsia-300/40'
                         : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300/40'
                     }`}>
                       {currentUser?.role === 'principal'
                         ? 'College Principal'
+                        : currentUser?.role === 'secretary'
+                        ? 'College Secretary'
+                        : currentUser?.role === 'principal_pa'
+                        ? 'Principal PA'
+                        : currentUser?.role === 'secretary_pa'
+                        ? 'Secretary PA'
                         : currentUser?.role === 'admin'
                         ? 'HOD Administrator'
                         : currentUser?.role === 'librarian'
@@ -422,12 +403,6 @@ export const Header: React.FC<HeaderProps> = ({
     <SettingsModal
       isOpen={showSettingsModal}
       onClose={() => setShowSettingsModal(false)}
-    />
-
-    {/* AI High Thinking Advisor Modal */}
-    <AiHighThinkingAdvisor
-      isOpen={showAiAdvisorModal}
-      onClose={() => setShowAiAdvisorModal(false)}
     />
 
     {/* Profile & Password Modal */}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { FacultyDailyMonitoring } from '../types';
+import { getUserCollege, isStaffInCollege } from '../utils/departmentUtils';
 import {
   CalendarCheck,
   CheckCircle,
@@ -36,7 +37,7 @@ import {
 } from 'recharts';
 
 export const FacultyMonitoringView: React.FC = () => {
-  const { monitoringList, updateMonitoring, staffList, taskList, observationList, currentUser } = useApp();
+  const { monitoringList, updateMonitoring, staffList, taskList, observationList, currentUser, dailyReport } = useApp();
 
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -66,7 +67,16 @@ export const FacultyMonitoringView: React.FC = () => {
   };
 
   const isHod = currentUser?.role === 'admin';
+  const isPrincipal = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
+  const isSecretary = currentUser?.role === 'secretary' || currentUser?.role === 'secretary_pa';
+  const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
   const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
+
+  const collegeStaffList = isPrincipal
+    ? staffList.filter((s) => isStaffInCollege(s, principalCollege))
+    : staffList;
+
+  const collegeStaffNames = collegeStaffList.map((s) => (s.facultyName || '').toLowerCase());
 
   const deptStaffNames = staffList
     .filter((s) => {
@@ -77,7 +87,10 @@ export const FacultyMonitoringView: React.FC = () => {
     .map((s) => (s.facultyName || '').toLowerCase());
 
   const filteredMonitoring = monitoringList.filter((m) => {
-    if (isHod) {
+    if (isPrincipal) {
+      const isMyCollegeStaff = collegeStaffNames.some((name) => (m.facultyName || '').toLowerCase().includes(name));
+      if (!isMyCollegeStaff) return false;
+    } else if (isHod) {
       const isMyDeptStaff = deptStaffNames.some((name) => (m.facultyName || '').toLowerCase().includes(name));
       if (!isMyDeptStaff) return false;
     }
@@ -128,8 +141,8 @@ export const FacultyMonitoringView: React.FC = () => {
         : 60;
 
     // Short display name for X-axis
-    const cleanName = m.facultyName.replace(/^(Dr\.|Prof\.|Mr\.|Mrs\.|Ms\.)\s*/i, '');
-    const firstName = cleanName.split(' ')[0] || m.staffId;
+    const cleanName = (m.facultyName || '').replace(/^(Dr\.|Prof\.|Mr\.|Mrs\.|Ms\.)\s*/i, '');
+    const firstName = (cleanName || '').split(' ')[0] || m.staffId;
 
     return {
       staffId: m.staffId,

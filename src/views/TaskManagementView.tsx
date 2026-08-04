@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Task, TaskStatus, TaskPriority } from '../types';
 import { TaskStatusBadge, PriorityBadge } from '../components/StatusBadge';
 import { GoogleWorkspaceModal } from '../components/GoogleWorkspaceModal';
-import { isSameDept } from '../utils/departmentUtils';
+import { isSameDept, getUserCollege, isStaffInCollege } from '../utils/departmentUtils';
 import {
   CheckSquare,
   Plus,
@@ -48,6 +48,7 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
     classList,
     currentUser,
     filterState,
+    dailyReport,
   } = useApp();
 
   const [search, setSearch] = useState('');
@@ -294,9 +295,16 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
     }
   };
 
-  // Principal can assign tasks to ALL faculty across ALL departments
+  const isPrincipalUser = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
+  const isSecretaryUser = currentUser?.role === 'secretary' || currentUser?.role === 'secretary_pa';
+  const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
+
+  // Principal can assign tasks to faculty in THEIR college
+  // Secretary can assign tasks to ALL faculty across ALL colleges
   // HOD can assign tasks to faculty in their department
-  const availableStaffList = isPrincipal
+  const availableStaffList = isPrincipalUser
+    ? staffList.filter((s) => isStaffInCollege(s, principalCollege))
+    : isSecretaryUser
     ? staffList
     : isHod
     ? staffList.filter((s) => isSameDept(s.department, hodDepartment))
@@ -463,8 +471,8 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                 <option value="all">All Faculty & Group Assignments</option>
                 <option value="group_hods">👥 HODs Group Tasks ({taskList.filter((t) => t.groupName === 'HODs Group' || t.assignedToStaffId === 'GROUP_HODS').length})</option>
                 <option value="group_all">🏛️ All Group Broadcast Tasks ({taskList.filter((t) => t.isGroupTask || t.groupName).length})</option>
-                {availableStaffList.map((s) => (
-                  <option key={s.id} value={s.id}>
+                {availableStaffList.map((s, sIdx) => (
+                  <option key={s.id ? `filter-staff-${s.id}-${sIdx}` : `filter-staff-idx-${sIdx}`} value={s.id}>
                     {s.facultyName} ({s.id})
                   </option>
                 ))}
@@ -888,8 +896,8 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                       onChange={(e) => setAssignedToStaffId(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none"
                     >
-                      {availableStaffList.map((s) => (
-                        <option key={s.id} value={s.id}>
+                      {availableStaffList.map((s, sIdx) => (
+                        <option key={s.id ? `assign-staff-${s.id}-${sIdx}` : `assign-staff-idx-${sIdx}`} value={s.id}>
                           {s.facultyName} — {s.department} ({s.designation || s.id})
                         </option>
                       ))}
@@ -921,8 +929,8 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none mb-1.5"
                   >
                     <option value="">General Department Duty (No specific class)</option>
-                    {classList.map((c) => (
-                      <option key={c.id} value={c.id}>
+                    {classList.map((c, cIdx) => (
+                      <option key={c.id ? `class-${c.id}-${cIdx}` : `class-idx-${cIdx}`} value={c.id}>
                         {c.year} {c.department.slice(0, 3)}-{c.section} (Room {c.roomNumber})
                       </option>
                     ))}

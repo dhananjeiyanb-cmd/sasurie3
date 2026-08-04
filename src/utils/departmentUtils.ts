@@ -1,6 +1,15 @@
 import { User, Staff, StudentAttendanceSummary, ClassRoom, StudentAttendanceRecord, DEPARTMENTS } from '../types';
 import { StudentSkillBankData } from '../types/skillBank';
 
+export function getCollegeLogoText(collegeName?: string): string {
+  if (!collegeName) return 'SCE';
+  if (collegeName.includes('Arts')) return 'SCAS';
+  if (collegeName.includes('Education')) return 'SCED';
+  if (collegeName.includes('Nursing') || collegeName.includes('Pharmacy')) return 'SCNP';
+  if (collegeName.includes('Polytechnic')) return 'SPC';
+  return 'SCE';
+}
+
 export function normalizeDept(dept?: string): string {
   if (!dept) return '';
   let d = dept.trim().toLowerCase();
@@ -28,33 +37,95 @@ export function isSameDept(dept1?: string, dept2?: string): boolean {
   return n1 === n2;
 }
 
+export function getUserCollege(currentUser: User | null, defaultCollegeName?: string): string {
+  if (currentUser?.institution) {
+    return currentUser.institution;
+  }
+  return defaultCollegeName || 'Sasurie College of Engineering';
+}
+
+export function isSameCollege(col1?: string, col2?: string): boolean {
+  if (!col1 || !col2) return true;
+  const norm1 = col1.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const norm2 = col2.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return norm1 === norm2 || norm1.includes(norm2) || norm2.includes(norm1);
+}
+
+export function isStaffInCollege(staff: Staff, targetCollege?: string): boolean {
+  if (!targetCollege) return true;
+  const staffCollege = staff.institution || 'Sasurie College of Engineering';
+  return isSameCollege(staffCollege, targetCollege);
+}
+
+export function isSuperAdmin(currentUser: User | null): boolean {
+  if (!currentUser) return false;
+  if (currentUser.role === 'secretary' || currentUser.role === 'secretary_pa') return true;
+  const lowEmail = (currentUser.email || '').toLowerCase();
+  const lowDept = (currentUser.department || '').toLowerCase();
+  const lowUser = (currentUser.username || '').toLowerCase();
+  
+  if (
+    lowEmail.includes('admin@sas') ||
+    lowEmail.includes('admin@sasu') ||
+    lowUser === 'adm001' ||
+    lowUser === 'admin' ||
+    lowDept === 'all departments' ||
+    lowDept === 'central administration' ||
+    lowDept === 'management secretariat'
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Returns students that are accessible to the given user based on their role & department
  */
 export function getScopedStudents(
   skillBankStudents: StudentSkillBankData[],
   currentUser: User | null,
-  fallbackDept: string = 'Artificial Intelligence & Data Science (AI & DS)'
+  fallbackDept: string = 'Artificial Intelligence & Data Science (AI & DS)',
+  collegeNameFallback?: string
 ): StudentSkillBankData[] {
+  const isSecretary = isSuperAdmin(currentUser);
+  const isPrincipal = !isSecretary && (currentUser?.role === 'principal' || currentUser?.role === 'principal_pa');
+  const userCollege = getUserCollege(currentUser, collegeNameFallback);
+
+  let pool = skillBankStudents;
+  if (isPrincipal) {
+    pool = skillBankStudents.filter((s) => {
+      const stCollege = s.studentProfile?.institution || 'Sasurie College of Engineering';
+      return isSameCollege(stCollege, userCollege);
+    });
+  }
+
   const targetDept = (fallbackDept && fallbackDept !== 'all' && fallbackDept !== 'All Departments')
     ? fallbackDept
     : (currentUser?.department && currentUser.department !== 'College Principal Office' ? currentUser.department : 'Artificial Intelligence & Data Science (AI & DS)');
 
   if (!currentUser) {
-    return skillBankStudents.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
+    return pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
   }
 
-  // Principal: Sees all students across all departments, UNLESS a specific fallbackDept filter is selected
-  if (currentUser.role === 'principal') {
+  // Super Admin / Secretary sees all students across all colleges
+  if (isSecretary) {
     if (fallbackDept && fallbackDept !== 'all' && fallbackDept !== 'All Departments') {
       return skillBankStudents.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
     }
     return skillBankStudents;
   }
 
-  // HOD (admin): Sees only students in their respective department (or selected filter department)
+  // Principal sees all students in THEIR college
+  if (isPrincipal) {
+    if (fallbackDept && fallbackDept !== 'all' && fallbackDept !== 'All Departments') {
+      return pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
+    }
+    return pool;
+  }
+
+  // HOD (admin): Sees only students in their respective department
   if (currentUser.role === 'admin') {
-    return skillBankStudents.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
+    return pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
   }
 
   // Staff (Faculty Mentor): Sees assigned mentees or department students
@@ -62,10 +133,8 @@ export function getScopedStudents(
     const staffId = currentUser.staffId;
     const staffName = currentUser.name?.toLowerCase() || '';
 
-    // First filter to target department
-    const deptStudents = skillBankStudents.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
+    const deptStudents = pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
 
-    // Find assigned mentees
     const assignedMentees = deptStudents.filter((s) => {
       const stMentorId = s.studentProfile?.mentorStaffId;
       const stMentor = (s.studentProfile?.mentorFaculty || '').toLowerCase();
@@ -75,16 +144,14 @@ export function getScopedStudents(
       );
     });
 
-    // If staff has explicitly assigned mentees, return ONLY those assigned mentees!
     if (assignedMentees.length > 0) {
       return assignedMentees;
     }
 
-    // Otherwise, fallback to department students
     return deptStudents;
   }
 
-  return skillBankStudents.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
+  return pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
 }
 
 /**
@@ -93,18 +160,33 @@ export function getScopedStudents(
 export function getScopedStaff(
   staffList: Staff[],
   currentUser: User | null,
-  fallbackDept: string = 'Artificial Intelligence & Data Science (AI & DS)'
+  fallbackDept: string = 'Artificial Intelligence & Data Science (AI & DS)',
+  collegeNameFallback?: string
 ): Staff[] {
+  const isSecretary = isSuperAdmin(currentUser);
+  const isPrincipal = !isSecretary && (currentUser?.role === 'principal' || currentUser?.role === 'principal_pa');
+  const userCollege = getUserCollege(currentUser, collegeNameFallback);
+
+  let pool = staffList;
+  if (isPrincipal) {
+    pool = staffList.filter((s) => isStaffInCollege(s, userCollege));
+  }
+
+  // Super Admin / Secretary sees all staff across all colleges unless a department filter is selected
+  if (isSecretary && (!fallbackDept || fallbackDept === 'all' || fallbackDept === 'All Departments')) {
+    return staffList;
+  }
+
+  // Principal with 'all' or 'All Departments' sees all staff in THEIR college
+  if (isPrincipal && (!fallbackDept || fallbackDept === 'all' || fallbackDept === 'All Departments')) {
+    return pool;
+  }
+
   const targetDept = (fallbackDept && fallbackDept !== 'all' && fallbackDept !== 'All Departments')
     ? fallbackDept
     : (currentUser?.department && currentUser.department !== 'College Principal Office' ? currentUser.department : 'Artificial Intelligence & Data Science (AI & DS)');
 
-  if (currentUser?.role === 'principal' && (!fallbackDept || fallbackDept === 'all' || fallbackDept === 'All Departments')) {
-    return staffList;
-  }
-
-  const deptStaff = staffList.filter((st) => isSameDept(st.department, targetDept));
-  return deptStaff;
+  return pool.filter((st) => isSameDept(st.department, targetDept));
 }
 
 /**

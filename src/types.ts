@@ -1,4 +1,31 @@
-export type Role = 'principal' | 'admin' | 'staff' | 'librarian' | 'incucula';
+export const SASURIE_COLLEGES = [
+  'Sasurie College of Engineering',
+  'Sasurie College of Arts & Science',
+  'Sasurie College of Education',
+  'Sasurie College of Nursing / Pharmacy',
+  'Sasurie Polytechnic College',
+] as const;
+
+export type SasurieCollege = (typeof SASURIE_COLLEGES)[number];
+
+export type Role =
+  | 'principal'
+  | 'secretary'
+  | 'principal_pa'
+  | 'secretary_pa'
+  | 'admin'
+  | 'staff'
+  | 'librarian'
+  | 'incucula';
+
+export type CoordinatorRole =
+  | 'General Faculty'
+  | 'Event Coordinator'
+  | 'Timetable Coordinator'
+  | 'CDC Coordinator'
+  | 'Placement Coordinator'
+  | 'Exam Coordinator'
+  | 'Class Advisor';
 
 export type TaskStatus = 'Pending' | 'In Progress' | 'Submitted' | 'Completed' | 'Cancelled' | 'Overdue';
 
@@ -11,9 +38,11 @@ export type ObservationRating = 'Excellent' | 'Good' | 'Average' | 'Needs Improv
 export interface User {
   username: string;
   role: Role;
+  coordinatorRole?: CoordinatorRole;
   staffId?: string;
   name: string;
   department?: string;
+  institution?: string;
   email?: string;
   mobile?: string;
   password?: string;
@@ -26,10 +55,12 @@ export interface Staff {
   facultyName: string;
   designation: string;
   department: string;
+  institution?: string;
   mobile: string;
   email: string;
   password?: string;
   role: Role;
+  coordinatorRole?: CoordinatorRole;
   status: StaffStatus;
 }
 

@@ -34,20 +34,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const overdueCount = taskList.filter((t) => t.status === 'Overdue').length;
   const pendingCount = taskList.filter((t) => t.status === 'Pending' || t.status === 'In Progress' || t.status === 'Submitted').length;
 
+  const executiveRoles = ['principal', 'secretary', 'principal_pa', 'secretary_pa', 'admin'];
+
   const navItems = [
     {
       id: 'dashboard',
       label: 'Dashboard',
       icon: LayoutDashboard,
-      roles: ['principal', 'admin', 'staff', 'librarian', 'incucula'],
+      roles: ['principal', 'secretary', 'principal_pa', 'secretary_pa', 'admin', 'staff', 'librarian', 'incucula'],
     },
     {
       id: 'events',
       label: 'Events & Activities',
       icon: Calendar,
-      roles: ['principal', 'admin', 'staff', 'incucula'],
-      badge: 'EVENTS',
-      badgeColor: 'bg-emerald-600 text-white font-bold',
+      roles: ['principal', 'secretary', 'principal_pa', 'secretary_pa', 'admin', 'incucula', ...(currentUser?.coordinatorRole === 'Event Coordinator' ? ['staff'] : [])],
+      badge: currentUser?.coordinatorRole === 'Event Coordinator' ? 'Event Coordinator' : 'EVENTS',
+      badgeColor: currentUser?.coordinatorRole === 'Event Coordinator' ? 'bg-amber-500 text-slate-950 font-extrabold' : 'bg-emerald-600 text-white font-bold',
     },
     {
       id: 'librarian_portal',
@@ -61,27 +63,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       id: 'staff',
       label: 'Faculty Management',
       icon: Users,
-      roles: ['principal', 'admin'],
+      roles: executiveRoles,
     },
     {
       id: 'classes',
       label: 'Class Management',
       icon: GraduationCap,
-      roles: ['principal', 'admin'],
+      roles: [...executiveRoles, ...(currentUser?.coordinatorRole === 'Timetable Coordinator' ? ['staff'] : [])],
+      badge: currentUser?.coordinatorRole === 'Timetable Coordinator' ? 'Timetable Coordinator' : undefined,
+      badgeColor: 'bg-purple-600 text-white font-bold',
     },
     {
       id: 'mentor_mapping',
       label: 'Mentor-Mentee Mapping',
       icon: UserPlus,
-      roles: ['principal', 'admin'],
-      badge: 'HOD Only',
+      roles: executiveRoles,
+      badge: 'HOD / Execs',
       badgeColor: 'bg-indigo-600 text-white font-bold',
     },
     {
       id: 'tasks',
       label: 'Task Management',
       icon: CheckSquare,
-      roles: ['principal', 'admin', 'staff', 'incucula'],
+      roles: [...executiveRoles, 'staff', 'incucula'],
       badge: overdueCount > 0 ? `${overdueCount} Overdue` : pendingCount > 0 ? `${pendingCount} Pending` : undefined,
       badgeColor: overdueCount > 0 ? 'bg-rose-500 text-white' : 'bg-amber-500 text-white',
     },
@@ -89,49 +93,64 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       id: 'student_attendance',
       label: 'Student Attendance Today',
       icon: UserCheck,
-      roles: ['principal', 'admin', 'staff', 'incucula'],
+      roles: [...executiveRoles, 'staff', 'incucula'],
     },
     {
       id: 'skill_bank',
       label: 'Skill Bank (SSB) Grade Coins',
       icon: Coins,
-      roles: ['principal', 'admin', 'staff', 'librarian', 'incucula'],
-      badge: 'AY 2026-27',
-      badgeColor: 'bg-amber-500 text-slate-950 font-bold',
+      roles: [...executiveRoles, 'staff', 'librarian', 'incucula'],
+      badge: currentUser?.coordinatorRole === 'CDC Coordinator' ? 'CDC Coordinator' : currentUser?.coordinatorRole === 'Placement Coordinator' ? 'Placement Coord' : 'AY 2026-27',
+      badgeColor: currentUser?.coordinatorRole === 'CDC Coordinator' || currentUser?.coordinatorRole === 'Placement Coordinator' ? 'bg-indigo-600 text-white font-bold' : 'bg-amber-500 text-slate-950 font-bold',
     },
     {
       id: 'lesson_plan',
       label: 'Faculty Lesson Plan',
       icon: BookOpen,
-      roles: ['principal', 'admin', 'staff'],
+      roles: [...executiveRoles, 'staff'],
     },
     {
       id: 'observations',
       label: 'Class Observations',
       icon: Eye,
-      roles: ['principal', 'admin'],
+      roles: executiveRoles,
     },
     {
       id: 'monitoring',
       label: 'Daily Faculty Monitoring',
       icon: CalendarCheck,
-      roles: ['principal', 'admin'],
+      roles: executiveRoles,
     },
     {
       id: 'daily_report',
       label: 'HOD Daily Report Card',
       icon: FileSpreadsheet,
-      roles: ['principal', 'admin'],
+      roles: executiveRoles,
     },
     {
       id: 'reports',
       label: 'Reports & Print Center',
       icon: Printer,
-      roles: ['principal', 'admin', 'staff'],
+      roles: [...executiveRoles, 'staff'],
     },
   ];
 
-  const visibleNavItems = navItems.filter((item) => item.roles.includes(currentUser?.role || 'staff'));
+  const visibleNavItems = navItems.filter((item) => {
+    if (!currentUser) return false;
+    if (!item.roles.includes(currentUser.role)) return false;
+
+    // Strict coordinator restrictions for staff users
+    if (currentUser.role === 'staff') {
+      if (item.id === 'events' && currentUser.coordinatorRole !== 'Event Coordinator') {
+        return false;
+      }
+      if (item.id === 'classes' && currentUser.coordinatorRole !== 'Timetable Coordinator') {
+        return false;
+      }
+    }
+
+    return true;
+  });
 
   return (
     <>
@@ -166,7 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               HOD Monitor
             </span>
             <span className="text-[10px] text-blue-100 font-medium block truncate opacity-90">
-              {dailyReport?.collegeName || 'Sasuri College of Engineering'}
+              {dailyReport?.collegeName || 'Sasurie College of Engineering'}
             </span>
           </div>
         </div>
@@ -272,6 +291,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <div className="min-w-0 flex-1">
               <div className="font-bold text-white text-[11px] truncate leading-tight">{currentUser?.name}</div>
               <div className="text-[10px] text-slate-400 truncate mt-0.5">{currentUser?.email || currentUser?.department}</div>
+              {currentUser?.coordinatorRole && currentUser.coordinatorRole !== 'General Faculty' && (
+                <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[9px] font-extrabold uppercase">
+                  <Award className="w-2.5 h-2.5 text-purple-400" />
+                  {currentUser.coordinatorRole}
+                </div>
+              )}
             </div>
           </div>
           <button

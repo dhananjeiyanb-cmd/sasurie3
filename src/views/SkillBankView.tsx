@@ -5,6 +5,7 @@ import {
   MONTH_LIST,
   MonthKey,
   StudentSkillBankData,
+  SubjectMarkDetail,
 } from '../types/skillBank';
 import {
   calculateStudentTotals,
@@ -136,6 +137,13 @@ export const SkillBankView: React.FC = () => {
 
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
+
+  // Batch CIAT Mark Entry State
+  const [isBatchCiatModalOpen, setIsBatchCiatModalOpen] = useState(false);
+  const [batchCiatExam, setBatchCiatExam] = useState<'CIAT 1' | 'CIAT 2'>('CIAT 1');
+  const [batchSubjectCode, setBatchSubjectCode] = useState('CS3401');
+  const [batchSubjectName, setBatchSubjectName] = useState('Algorithms & Data Structures');
+  const [batchStudentMarks, setBatchStudentMarks] = useState<Record<string, number>>({});
 
   // Excel Bulk Import Modal State
   const [isExcelUploadModalOpen, setIsExcelUploadModalOpen] = useState(false);
@@ -1889,6 +1897,56 @@ export const SkillBankView: React.FC = () => {
               </span>
             </div>
 
+            {/* Semester Cumulative Attendance Summary Card */}
+            {(() => {
+              let totalWorkingDaysAllMonths = 0;
+              let totalAttendedDaysAllMonths = 0;
+              MONTH_LIST.forEach((m) => {
+                const ent = currentStudent.attendanceMonths[m];
+                if (ent) {
+                  totalWorkingDaysAllMonths += ent.totalDays || 0;
+                  totalAttendedDaysAllMonths += ent.daysAttended || 0;
+                }
+              });
+              const overallSemesterPct = totalWorkingDaysAllMonths > 0
+                ? Number(((totalAttendedDaysAllMonths / totalWorkingDaysAllMonths) * 100).toFixed(1))
+                : 0;
+              const overallSemesterCoins = calculateAttendanceCoins(overallSemesterPct);
+
+              return (
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-slate-800 dark:to-slate-800/80 p-4 rounded-xl border border-blue-200 dark:border-blue-800/60 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-blue-600 text-white rounded-xl shadow-xs">
+                      <UserCheck className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-blue-900 dark:text-blue-300 block">
+                        Semester Cumulative Attendance Summary (Logged Month-wise by Mentor)
+                      </span>
+                      <div className="flex items-center gap-3 mt-1 text-xs">
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          Total Days Attended: <strong className="text-blue-700 dark:text-blue-400 font-bold">{totalAttendedDaysAllMonths} / {totalWorkingDaysAllMonths} Days</strong>
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                          Overall Semester %: <strong className={`font-black ${overallSemesterPct >= 95 ? 'text-emerald-600 dark:text-emerald-400' : overallSemesterPct >= 85 ? 'text-blue-600' : 'text-amber-600'}`}>{overallSemesterPct}%</strong>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xs font-bold text-slate-500">Auto Evaluated Coins</div>
+                    <div className="text-lg font-black text-amber-600 dark:text-amber-400">
+                      {overallSemesterCoins.toLocaleString()} / 8,000 Coins
+                    </div>
+                    <span className="text-[10px] text-slate-500 block">
+                      {overallSemesterPct >= 95 ? '✓ >95% Band (Max 8,000 Coins)' : overallSemesterPct >= 91 ? '✓ 91–95% Band (5,000 Coins)' : overallSemesterPct >= 81 ? '✓ 81–90% Band (3,000 Coins)' : '75–80% (0 Coins)'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Attendance Month Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse">
@@ -1899,7 +1957,7 @@ export const SkillBankView: React.FC = () => {
                     <th className="p-2.5">Days Attended</th>
                     <th className="p-2.5">Attendance %</th>
                     <th className="p-2.5">Remedial Days</th>
-                    <th className="p-2.5">Auto Calculated Coins</th>
+                    <th className="p-2.5">Semester Coins Credit</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
@@ -1919,7 +1977,7 @@ export const SkillBankView: React.FC = () => {
                         const attended = field === 'daysAttended' ? value : updatedEntry.daysAttended;
                         const pct = total > 0 ? Number(((attended / total) * 100).toFixed(1)) : 0;
                         updatedEntry.attendancePct = pct;
-                        updatedEntry.coinsEarned = calculateAttendanceCoins(pct);
+                        updatedEntry.coinsEarned = 0; // Total 8,000 coins is evaluated cumulatively for the semester, not per month
                       }
 
                       const updatedMonths = {
@@ -1974,8 +2032,8 @@ export const SkillBankView: React.FC = () => {
                             className="w-16 p-1.5 bg-slate-50 dark:bg-slate-800 border rounded"
                           />
                         </td>
-                        <td className="p-2.5 font-black text-amber-600 dark:text-amber-400">
-                          {entry.coinsEarned.toLocaleString()} Coins
+                        <td className="p-2.5 text-xs text-slate-500 font-semibold">
+                          Logged for Semester Total (Max 8,000)
                         </td>
                       </tr>
                     );
@@ -2315,13 +2373,37 @@ export const SkillBankView: React.FC = () => {
             {/* 4.5.2 ICT Tools Usage Checklist */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
               <div className="flex items-center justify-between border-b pb-2">
-                <h4 className="text-xs font-black uppercase text-blue-600 dark:text-blue-400 tracking-wider">
-                  4.5.2 ICT Tools Usage (Max 2,500)
-                </h4>
+                <div>
+                  <h4 className="text-xs font-black uppercase text-blue-600 dark:text-blue-400 tracking-wider">
+                    4.5.2 ICT Tools Usage (Max 2,500) — Month-wise Mentor Entry
+                  </h4>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Logged monthly for Google Classroom, online assignments &amp; engagement.
+                  </p>
+                </div>
                 <span className="text-xs font-bold text-amber-500">
                   {totals.d1.ictToolsCoins} Coins
                 </span>
               </div>
+
+              {/* Month Selector Indicator for ICT Tools Monthly Log */}
+              <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/80 p-2 rounded-xl border border-slate-200 dark:border-slate-700/80 text-[11px]">
+                <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Logged Months:</span>
+                </span>
+                <div className="flex items-center gap-1 overflow-x-auto">
+                  {MONTH_LIST.map((m) => (
+                    <span
+                      key={m}
+                      className="px-2 py-0.5 bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 rounded font-bold text-[10px]"
+                    >
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-2 text-xs">
                 {[
                   { key: 'joiningClassroom', label: 'Joining Google Classroom / ERP (500)' },
@@ -2375,9 +2457,31 @@ export const SkillBankView: React.FC = () => {
                   Enter CIAT-1, CIAT-2 exam performance, attendance &amp; subject marks breakdown.
                 </p>
               </div>
-              <span className="px-3 py-1 bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 font-black text-xs rounded-xl border border-purple-200 dark:border-purple-800">
-                Earned: {totals.d1.examCoins.toLocaleString()} / 12,000 Coins
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Populate initial marks from scopedStudents
+                    const initialMarks: Record<string, number> = {};
+                    scopedStudents.forEach((st) => {
+                      const sub = (st.subjectMarkDetails || []).find(
+                        (s) => s.subjectCode.toUpperCase() === batchSubjectCode.toUpperCase()
+                      );
+                      initialMarks[st.studentProfile.registerNumber] =
+                        batchCiatExam === 'CIAT 1' ? sub?.ciat1Marks || 0 : sub?.ciat2Marks || 0;
+                    });
+                    setBatchStudentMarks(initialMarks);
+                    setIsBatchCiatModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5"
+                >
+                  <FilePlus className="w-3.5 h-3.5" />
+                  <span>⚡ Batch Class CIAT Entry</span>
+                </button>
+                <span className="px-3 py-1 bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 font-black text-xs rounded-xl border border-purple-200 dark:border-purple-800">
+                  Earned: {totals.d1.examCoins.toLocaleString()} / 12,000 Coins
+                </span>
+              </div>
             </div>
 
             {/* Exam Summary Controls */}
@@ -2390,6 +2494,49 @@ export const SkillBankView: React.FC = () => {
                 endSemAllPass: true,
                 arrearCount: 0,
                 coinsEarned: 10000,
+              };
+
+              const updateSubjectMarksAndAutoCalcAggregates = (updatedSubjects: SubjectMarkDetail[]) => {
+                let calcCiat1Avg = ep.ciat1Pct;
+                let calcCiat2Avg = ep.ciat2Pct;
+
+                if (updatedSubjects.length > 0) {
+                  const sum1 = updatedSubjects.reduce((acc, s) => acc + (Number(s.ciat1Marks) || 0), 0);
+                  const sum2 = updatedSubjects.reduce((acc, s) => acc + (Number(s.ciat2Marks) || 0), 0);
+                  calcCiat1Avg = Math.round(sum1 / updatedSubjects.length);
+                  calcCiat2Avg = Math.round(sum2 / updatedSubjects.length);
+                }
+
+                let coins = 0;
+                if (ep.ciat1Appeared) {
+                  if (calcCiat1Avg >= 90) coins += 5000;
+                  else if (calcCiat1Avg >= 80) coins += 4000;
+                  else if (calcCiat1Avg >= 70) coins += 3000;
+                  else if (calcCiat1Avg >= 60) coins += 2000;
+                  else if (calcCiat1Avg > 0) coins += 1000;
+                }
+                if (ep.ciat2Appeared) {
+                  if (calcCiat2Avg >= 90) coins += 5000;
+                  else if (calcCiat2Avg >= 80) coins += 4000;
+                  else if (calcCiat2Avg >= 70) coins += 3000;
+                  else if (calcCiat2Avg >= 60) coins += 2000;
+                  else if (calcCiat2Avg > 0) coins += 1000;
+                }
+                if (ep.ciat1Appeared && ep.ciat2Appeared && (ep.arrearCount === 0 || ep.endSemAllPass)) {
+                  coins += 2000;
+                }
+
+                const updatedEp = {
+                  ...ep,
+                  ciat1Pct: calcCiat1Avg,
+                  ciat2Pct: calcCiat2Avg,
+                  coinsEarned: Math.min(12000, coins),
+                };
+
+                updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                  subjectMarkDetails: updatedSubjects,
+                  examPerformance: updatedEp,
+                });
               };
 
               const handleExamPerfUpdate = (field: string, value: any) => {
@@ -2436,9 +2583,14 @@ export const SkillBankView: React.FC = () => {
                     </div>
 
                     <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        CIAT-1 Aggregate %
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          CIAT-1 Aggregate %
+                        </label>
+                        <span className="text-[9px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950 px-1.5 py-0.5 rounded">
+                          ⚡ Auto Calc
+                        </span>
+                      </div>
                       <input
                         type="number"
                         min={0}
@@ -2463,9 +2615,14 @@ export const SkillBankView: React.FC = () => {
                     </div>
 
                     <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-1">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase">
-                        CIAT-2 Aggregate %
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          CIAT-2 Aggregate %
+                        </label>
+                        <span className="text-[9px] font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950 px-1.5 py-0.5 rounded">
+                          ⚡ Auto Calc
+                        </span>
+                      </div>
                       <input
                         type="number"
                         min={0}
@@ -2524,9 +2681,7 @@ export const SkillBankView: React.FC = () => {
                             assignment2Marks: 10,
                             modelLabMarks: 90,
                           };
-                          updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                            subjectMarkDetails: [...subjects, newSub],
-                          });
+                          updateSubjectMarksAndAutoCalcAggregates([...subjects, newSub]);
                         }}
                         className="px-2.5 py-1 text-xs font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-950 dark:text-purple-300 dark:hover:bg-purple-900 rounded-lg border border-purple-200 dark:border-purple-800 flex items-center gap-1 transition-colors"
                       >
@@ -2559,9 +2714,7 @@ export const SkillBankView: React.FC = () => {
                                   onChange={(e) => {
                                     const updated = [...(currentStudent.subjectMarkDetails || [])];
                                     updated[idx] = { ...sub, subjectCode: e.target.value };
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="w-20 p-1 bg-white dark:bg-slate-900 border rounded font-mono uppercase text-[11px]"
                                 />
@@ -2573,9 +2726,7 @@ export const SkillBankView: React.FC = () => {
                                   onChange={(e) => {
                                     const updated = [...(currentStudent.subjectMarkDetails || [])];
                                     updated[idx] = { ...sub, subjectName: e.target.value };
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="w-full min-w-[140px] p-1 bg-white dark:bg-slate-900 border rounded font-semibold text-[11px]"
                                 />
@@ -2589,9 +2740,7 @@ export const SkillBankView: React.FC = () => {
                                   onChange={(e) => {
                                     const updated = [...(currentStudent.subjectMarkDetails || [])];
                                     updated[idx] = { ...sub, ciat1Marks: Number(e.target.value) };
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="w-16 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
                                 />
@@ -2605,9 +2754,7 @@ export const SkillBankView: React.FC = () => {
                                   onChange={(e) => {
                                     const updated = [...(currentStudent.subjectMarkDetails || [])];
                                     updated[idx] = { ...sub, ciat2Marks: Number(e.target.value) };
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="w-16 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
                                 />
@@ -2621,9 +2768,7 @@ export const SkillBankView: React.FC = () => {
                                   onChange={(e) => {
                                     const updated = [...(currentStudent.subjectMarkDetails || [])];
                                     updated[idx] = { ...sub, assignment1Marks: Number(e.target.value) };
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="w-14 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
                                 />
@@ -2637,9 +2782,7 @@ export const SkillBankView: React.FC = () => {
                                   onChange={(e) => {
                                     const updated = [...(currentStudent.subjectMarkDetails || [])];
                                     updated[idx] = { ...sub, assignment2Marks: Number(e.target.value) };
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="w-14 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
                                 />
@@ -2653,9 +2796,7 @@ export const SkillBankView: React.FC = () => {
                                   onChange={(e) => {
                                     const updated = [...(currentStudent.subjectMarkDetails || [])];
                                     updated[idx] = { ...sub, modelLabMarks: Number(e.target.value) };
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="w-16 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
                                 />
@@ -2665,9 +2806,7 @@ export const SkillBankView: React.FC = () => {
                                   type="button"
                                   onClick={() => {
                                     const updated = (currentStudent.subjectMarkDetails || []).filter((_, i) => i !== idx);
-                                    updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
-                                      subjectMarkDetails: updated,
-                                    });
+                                    updateSubjectMarksAndAutoCalcAggregates(updated);
                                   }}
                                   className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
                                   title="Delete subject"
@@ -2817,7 +2956,7 @@ export const SkillBankView: React.FC = () => {
                     <span>4.7 End Semester Exam Results — Mentor Entry (Max 8,000)</span>
                   </h4>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Semester pass status, standing arrears &amp; GPA/CGPA weightage.
+                    Semester pass status, standing arrears, GPA/CGPA &amp; subject grade logging.
                   </p>
                 </div>
                 <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
@@ -2832,10 +2971,51 @@ export const SkillBankView: React.FC = () => {
                   gpa: 8.5,
                   cgpa: 8.4,
                   coinsEarned: 5000,
+                  examSession: 'Nov/Dec 2025',
+                  publishedDate: '2026-02-15',
+                  marksheetVerifiedByMentor: true,
+                  subjectGrades: [],
                 };
 
+                const subjectGradesList = es.subjectGrades || [
+                  { id: 'ES-1', subjectCode: 'CS3401', subjectName: 'Algorithms & Data Structures', grade: 'O', credits: 4, resultStatus: 'PASS' },
+                  { id: 'ES-2', subjectCode: 'CS3402', subjectName: 'Database Management Systems', grade: 'A+', credits: 3, resultStatus: 'PASS' },
+                  { id: 'ES-3', subjectCode: 'CS3403', subjectName: 'Operating Systems', grade: 'A', credits: 3, resultStatus: 'PASS' },
+                ];
+
                 const handleEndSemUpdate = (field: string, value: any) => {
-                  const updated = { ...es, [field]: value };
+                  const updated = { ...es, subjectGrades: subjectGradesList, [field]: value };
+                  let coins = 0;
+                  if (updated.allPass && updated.arrearsCount === 0) {
+                    coins += 5000;
+                  }
+                  if (updated.gpa >= 9.0) coins += 3000;
+                  else if (updated.gpa >= 8.0) coins += 2000;
+                  else if (updated.gpa >= 7.0) coins += 1000;
+
+                  if (updated.arrearsCount > 0) {
+                    coins = Math.max(0, coins - updated.arrearsCount * 1000);
+                  }
+                  updated.coinsEarned = Math.min(8000, coins);
+
+                  updateSkillBankStudent(currentStudent.studentProfile.registerNumber, {
+                    endSemResults: updated,
+                  });
+                };
+
+                const updateGradesAndRecalculate = (newList: any[]) => {
+                  const failCount = newList.filter(
+                    (sg) => sg.grade === 'RA' || sg.grade === 'AB' || sg.resultStatus === 'FAIL' || sg.resultStatus === 'ABSENT'
+                  ).length;
+                  const autoAllPass = failCount === 0;
+
+                  const updated = {
+                    ...es,
+                    subjectGrades: newList,
+                    arrearsCount: failCount,
+                    allPass: autoAllPass,
+                  };
+
                   let coins = 0;
                   if (updated.allPass && updated.arrearsCount === 0) {
                     coins += 5000;
@@ -2855,7 +3035,46 @@ export const SkillBankView: React.FC = () => {
                 };
 
                 return (
-                  <div className="space-y-3 text-xs">
+                  <div className="space-y-4 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          Exam Session / Month
+                        </label>
+                        <input
+                          type="text"
+                          value={es.examSession || 'Nov/Dec 2025'}
+                          onChange={(e) => handleEndSemUpdate('examSession', e.target.value)}
+                          placeholder="e.g., Nov/Dec 2025"
+                          className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          Published Date
+                        </label>
+                        <input
+                          type="date"
+                          value={es.publishedDate || ''}
+                          onChange={(e) => handleEndSemUpdate('publishedDate', e.target.value)}
+                          className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <label className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg cursor-pointer border border-slate-200 dark:border-slate-700/80 w-full h-[38px]">
+                          <input
+                            type="checkbox"
+                            checked={!!es.marksheetVerifiedByMentor}
+                            onChange={(e) => handleEndSemUpdate('marksheetVerifiedByMentor', e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 rounded"
+                          />
+                          <span className="font-bold text-[11px] text-slate-700 dark:text-slate-300">
+                            Verified with Mark Sheet
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
                     <label className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl cursor-pointer border border-slate-200 dark:border-slate-700/80">
                       <div className="flex items-center gap-2">
                         <input
@@ -2911,6 +3130,146 @@ export const SkillBankView: React.FC = () => {
                           onChange={(e) => handleEndSemUpdate('cgpa', Number(e.target.value))}
                           className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-800 border rounded-lg font-bold text-center"
                         />
+                      </div>
+                    </div>
+
+                    {/* End Semester Subject-wise Grades Entry Table */}
+                    <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>End Semester Subject Grade Entries (Mentor Entry):</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newSubGrade = {
+                              id: `ESG-${Date.now()}`,
+                              subjectCode: `CS340${subjectGradesList.length + 1}`,
+                              subjectName: 'New End Sem Subject',
+                              grade: 'A',
+                              credits: 3,
+                              resultStatus: 'PASS',
+                            };
+                            updateGradesAndRecalculate([...subjectGradesList, newSubGrade]);
+                          }}
+                          className="px-2.5 py-1 text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add Subject Grade</span>
+                        </button>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                              <th className="p-2">Subject Code</th>
+                              <th className="p-2">Subject Name</th>
+                              <th className="p-2">Credits</th>
+                              <th className="p-2">Grade</th>
+                              <th className="p-2">Result</th>
+                              <th className="p-2 text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                            {subjectGradesList.map((sg: any, idx: number) => (
+                              <tr key={sg.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                <td className="p-2">
+                                  <input
+                                    type="text"
+                                    value={sg.subjectCode}
+                                    onChange={(e) => {
+                                      const updated = [...subjectGradesList];
+                                      updated[idx] = { ...sg, subjectCode: e.target.value };
+                                      updateGradesAndRecalculate(updated);
+                                    }}
+                                    className="w-24 p-1 bg-white dark:bg-slate-900 border rounded font-mono uppercase text-[11px]"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="text"
+                                    value={sg.subjectName}
+                                    onChange={(e) => {
+                                      const updated = [...subjectGradesList];
+                                      updated[idx] = { ...sg, subjectName: e.target.value };
+                                      updateGradesAndRecalculate(updated);
+                                    }}
+                                    className="w-full min-w-[160px] p-1 bg-white dark:bg-slate-900 border rounded font-semibold text-[11px]"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={6}
+                                    value={sg.credits || 3}
+                                    onChange={(e) => {
+                                      const updated = [...subjectGradesList];
+                                      updated[idx] = { ...sg, credits: Number(e.target.value) };
+                                      updateGradesAndRecalculate(updated);
+                                    }}
+                                    className="w-14 p-1 bg-white dark:bg-slate-900 border rounded text-center font-bold"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <select
+                                    value={sg.grade}
+                                    onChange={(e) => {
+                                      const newGrade = e.target.value;
+                                      const newRes = (newGrade === 'RA' || newGrade === 'AB') ? 'FAIL' : 'PASS';
+                                      const updated = [...subjectGradesList];
+                                      updated[idx] = { ...sg, grade: newGrade, resultStatus: newRes };
+                                      updateGradesAndRecalculate(updated);
+                                    }}
+                                    className="p-1 bg-white dark:bg-slate-900 border rounded font-bold text-center"
+                                  >
+                                    <option value="O">O (Outstanding)</option>
+                                    <option value="A+">A+ (Excellent)</option>
+                                    <option value="A">A (Very Good)</option>
+                                    <option value="B+">B+ (Good)</option>
+                                    <option value="B">B (Average)</option>
+                                    <option value="C">C (Satisfactory)</option>
+                                    <option value="RA">RA (Re-Appear)</option>
+                                    <option value="AB">AB (Absent)</option>
+                                  </select>
+                                </td>
+                                <td className="p-2">
+                                  <span
+                                    className={`px-2 py-0.5 rounded font-black text-[10px] ${
+                                      sg.resultStatus === 'PASS' || (sg.grade !== 'RA' && sg.grade !== 'AB')
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                    }`}
+                                  >
+                                    {sg.grade === 'RA' || sg.grade === 'AB' ? 'FAIL / ARREAR' : 'PASS'}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = subjectGradesList.filter((_: any, i: number) => i !== idx);
+                                      updateGradesAndRecalculate(updated);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                                    title="Delete subject grade"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                            {subjectGradesList.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="p-3 text-center text-slate-400 italic text-[11px]">
+                                  No subject grades logged yet. Click "+ Add Subject Grade" to enter mentor grade entry.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
@@ -7860,7 +8219,7 @@ export const SkillBankView: React.FC = () => {
                   {/* Institutional Header */}
                   <div className="border-b-2 border-slate-900 pb-4 text-center space-y-1">
                     <div className="text-lg font-black uppercase tracking-tight text-slate-900">
-                      SASURIE COLLEGE OF ENGINEERING (AUTONOMOUS)
+                      {dailyReport.collegeName || 'SASURIE COLLEGE OF ENGINEERING (AUTONOMOUS)'}
                     </div>
                     <div className="text-[11px] font-bold text-slate-700 uppercase">
                       Vijayamangalam, Tirupur District - 638056 • Approved by AICTE, Affiliated to Anna University
@@ -8115,6 +8474,236 @@ export const SkillBankView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* MODAL: Batch Class CIAT Entry */}
+      {isBatchCiatModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-3xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Award className="w-5 h-5 text-purple-600" />
+                  ⚡ Batch Class CIAT Mark Entry
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Bulk mark entry for all students in {fallbackDept}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsBatchCiatModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Examination
+                </label>
+                <select
+                  value={batchCiatExam}
+                  onChange={(e) => {
+                    const newExam = e.target.value as 'CIAT 1' | 'CIAT 2';
+                    setBatchCiatExam(newExam);
+                    // refresh marks
+                    const updated: Record<string, number> = {};
+                    scopedStudents.forEach((st) => {
+                      const sub = (st.subjectMarkDetails || []).find(
+                        (s) => s.subjectCode.toUpperCase() === batchSubjectCode.toUpperCase()
+                      );
+                      updated[st.studentProfile.registerNumber] =
+                        newExam === 'CIAT 1' ? sub?.ciat1Marks || 0 : sub?.ciat2Marks || 0;
+                    });
+                    setBatchStudentMarks(updated);
+                  }}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-purple-600"
+                >
+                  <option value="CIAT 1">CIAT 1 (Continuous Internal Assessment 1)</option>
+                  <option value="CIAT 2">CIAT 2 (Continuous Internal Assessment 2)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Subject Code
+                </label>
+                <input
+                  type="text"
+                  value={batchSubjectCode}
+                  onChange={(e) => setBatchSubjectCode(e.target.value)}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-mono font-bold uppercase"
+                  placeholder="e.g. CS3401"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Subject Name
+                </label>
+                <input
+                  type="text"
+                  value={batchSubjectName}
+                  onChange={(e) => setBatchSubjectName(e.target.value)}
+                  className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg font-medium"
+                  placeholder="e.g. Data Structures"
+                />
+              </div>
+            </div>
+
+            {/* Table of Students */}
+            <div className="overflow-x-auto border rounded-xl border-slate-200 dark:border-slate-800 max-h-96">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 sticky top-0 font-bold">
+                  <tr>
+                    <th className="p-2.5">S.No</th>
+                    <th className="p-2.5">Register No</th>
+                    <th className="p-2.5">Student Name</th>
+                    <th className="p-2.5">Year / Sec</th>
+                    <th className="p-2.5 text-center">{batchCiatExam} Mark (/100)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {scopedStudents.map((st, idx) => (
+                    <tr key={st.studentProfile.registerNumber} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="p-2.5 font-bold text-slate-400">{idx + 1}</td>
+                      <td className="p-2.5 font-mono font-bold text-slate-800 dark:text-slate-200">
+                        {st.studentProfile.registerNumber}
+                      </td>
+                      <td className="p-2.5 font-bold">{st.studentProfile.studentName}</td>
+                      <td className="p-2.5 text-slate-500">
+                        {st.studentProfile.academicYear} ({st.studentProfile.section})
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={batchStudentMarks[st.studentProfile.registerNumber] ?? 0}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setBatchStudentMarks((prev) => ({
+                              ...prev,
+                              [st.studentProfile.registerNumber]: val,
+                            }));
+                          }}
+                          className="w-20 p-1.5 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-purple-600 focus:ring-2 focus:ring-purple-500"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                  {scopedStudents.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-4 text-center text-slate-400 italic">
+                        No students found for current department scope.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">
+                Saving will update {batchCiatExam} marks &amp; recalculate coins for {scopedStudents.length} students.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchCiatModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 font-bold text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    scopedStudents.forEach((st) => {
+                      const regNo = st.studentProfile.registerNumber;
+                      const mark = batchStudentMarks[regNo] ?? 0;
+                      const subjects = [...(st.subjectMarkDetails || [])];
+                      const existingIdx = subjects.findIndex(
+                        (s) => s.subjectCode.toUpperCase() === batchSubjectCode.toUpperCase()
+                      );
+
+                      if (existingIdx >= 0) {
+                        if (batchCiatExam === 'CIAT 1') {
+                          subjects[existingIdx] = { ...subjects[existingIdx], ciat1Marks: mark };
+                        } else {
+                          subjects[existingIdx] = { ...subjects[existingIdx], ciat2Marks: mark };
+                        }
+                      } else {
+                        subjects.push({
+                          id: `SM-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                          subjectCode: batchSubjectCode.toUpperCase(),
+                          subjectName: batchSubjectName,
+                          ciat1Marks: batchCiatExam === 'CIAT 1' ? mark : 0,
+                          ciat2Marks: batchCiatExam === 'CIAT 2' ? mark : 0,
+                          assignment1Marks: 10,
+                          assignment2Marks: 10,
+                          modelLabMarks: 85,
+                        });
+                      }
+
+                      // Recalculate average CIAT 1 & CIAT 2 %
+                      const sum1 = subjects.reduce((acc, s) => acc + (Number(s.ciat1Marks) || 0), 0);
+                      const sum2 = subjects.reduce((acc, s) => acc + (Number(s.ciat2Marks) || 0), 0);
+                      const avg1 = subjects.length > 0 ? Math.round(sum1 / subjects.length) : 0;
+                      const avg2 = subjects.length > 0 ? Math.round(sum2 / subjects.length) : 0;
+
+                      const ep = st.examPerformance || {
+                        ciat1Appeared: true,
+                        ciat1Pct: 80,
+                        ciat2Appeared: true,
+                        ciat2Pct: 80,
+                        endSemAllPass: true,
+                        arrearCount: 0,
+                        coinsEarned: 8000,
+                      };
+
+                      let coins = 0;
+                      if (ep.ciat1Appeared) {
+                        if (avg1 >= 90) coins += 5000;
+                        else if (avg1 >= 80) coins += 4000;
+                        else if (avg1 >= 70) coins += 3000;
+                        else if (avg1 >= 60) coins += 2000;
+                        else if (avg1 > 0) coins += 1000;
+                      }
+                      if (ep.ciat2Appeared) {
+                        if (avg2 >= 90) coins += 5000;
+                        else if (avg2 >= 80) coins += 4000;
+                        else if (avg2 >= 70) coins += 3000;
+                        else if (avg2 >= 60) coins += 2000;
+                        else if (avg2 > 0) coins += 1000;
+                      }
+                      if (ep.ciat1Appeared && ep.ciat2Appeared && (ep.arrearCount === 0 || ep.endSemAllPass)) {
+                        coins += 2000;
+                      }
+
+                      updateSkillBankStudent(regNo, {
+                        subjectMarkDetails: subjects,
+                        examPerformance: {
+                          ...ep,
+                          ciat1Pct: avg1,
+                          ciat2Pct: avg2,
+                          coinsEarned: Math.min(12000, coins),
+                        },
+                      });
+                    });
+
+                    alert(`Successfully saved ${batchCiatExam} marks for ${batchSubjectCode} across ${scopedStudents.length} students.`);
+                    setIsBatchCiatModalOpen(false);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs"
+                >
+                  Save All Class Marks
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -132,7 +132,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     if (selectedClassId) {
       const foundCls = classList.find((c) => c.id === selectedClassId);
       if (foundCls) {
-        nameToAdd = `${foundCls.year} ${foundCls.department.split(' ')[0]} - ${foundCls.section}`;
+        nameToAdd = `${foundCls.year} ${(foundCls.department || '').split(' ')[0]} - ${foundCls.section}`;
         yearToAdd = foundCls.year;
         idToAdd = foundCls.id;
       }

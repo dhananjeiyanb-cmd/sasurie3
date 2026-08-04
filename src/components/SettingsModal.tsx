@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { DEPARTMENTS } from '../types';
+import { DEPARTMENTS, SASURIE_COLLEGES } from '../types';
+import { getCollegeLogoText } from '../utils/departmentUtils';
 import { X, Building, UserCheck, ShieldCheck, Image as ImageIcon, Save, Check, Upload, Trash2, Camera, Mail, Database, Download, RotateCcw } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -15,7 +16,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const cleanDept = rawDept.replace(/^Department of\s+/i, '');
   const matchedDept = DEPARTMENTS.find((d) => d.toLowerCase() === cleanDept.toLowerCase()) || DEPARTMENTS[0];
 
-  const [collegeName, setCollegeName] = useState(dailyReport.collegeName || 'Sasuri College of Engineering');
+  const [collegeName, setCollegeName] = useState(dailyReport.collegeName || 'Sasurie College of Engineering');
   const [department, setDepartment] = useState(matchedDept);
   const [hodName, setHodName] = useState(dailyReport.hodName || '');
   const [hodEmail, setHodEmail] = useState(dailyReport.hodEmail || 'hodcs@sasurie.com');
@@ -113,16 +114,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           {/* College Name */}
           <div>
             <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              College Name *
+              Select Sasurie Institution / College *
             </label>
-            <input
-              type="text"
-              required
+            <select
               value={collegeName}
-              onChange={(e) => setCollegeName(e.target.value)}
-              placeholder="e.g. St. Apex Institute of Engineering & Technology"
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-            />
+              onChange={(e) => {
+                const newCol = e.target.value;
+                setCollegeName(newCol);
+                setCollegeLogoText(getCollegeLogoText(newCol));
+              }}
+              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            >
+              {SASURIE_COLLEGES.map((col) => (
+                <option key={col} value={col}>
+                  {col}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

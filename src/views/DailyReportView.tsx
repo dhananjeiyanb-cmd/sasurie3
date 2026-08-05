@@ -4,6 +4,7 @@ import { exportElementToPDF, exportToExcel, triggerPrint } from '../utils/export
 import { getDeptHodName, getScopedStaff, getDepartmentAttendanceSummaries, isSameDept } from '../utils/departmentUtils';
 import { SettingsModal } from '../components/SettingsModal';
 import { StudentAttendanceModal } from '../components/StudentAttendanceModal';
+import { FacultyAttendanceModal } from '../components/FacultyAttendanceModal';
 import { DailyRemarksModal } from '../components/DailyRemarksModal';
 import {
   FileText,
@@ -66,6 +67,7 @@ export const DailyReportView: React.FC = () => {
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
+  const [isFacultyAttendanceModalOpen, setIsFacultyAttendanceModalOpen] = useState(false);
   const [isRemarksModalOpen, setIsRemarksModalOpen] = useState(false);
   const [remarksTab, setRemarksTab] = useState<'events' | 'discipline' | 'hod' | 'naac'>('naac');
   const [eventsConducted, setEventsConducted] = useState(dailyReport.eventsConducted);
@@ -365,31 +367,60 @@ export const DailyReportView: React.FC = () => {
 
           {/* Section 1: Faculty Attendance */}
           <div className="mb-6 font-sans">
-            <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider mb-2 border-b border-slate-300 pb-1 flex items-center gap-1.5">
-              1. FACULTY ATTENDANCE SUMMARY
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-300 pb-1 mb-2">
+              <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                1. FACULTY ATTENDANCE SUMMARY
+              </h3>
+              {!isPrincipal && currentUser?.role !== 'secretary' ? (
+                <button
+                  onClick={() => setIsFacultyAttendanceModalOpen(true)}
+                  className="no-print inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-2.5 py-1 rounded border border-blue-200 transition-colors"
+                >
+                  <Edit3 className="w-3 h-3" /> Edit / Enter Faculty Attendance
+                </button>
+              ) : (
+                <span className="no-print inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                  <Lock className="w-3 h-3 text-amber-600" /> Read-Only View
+                </span>
+              )}
+            </div>
             <table className="w-full text-xs text-left border-collapse border border-slate-300">
               <thead className="bg-slate-100 text-slate-800 font-bold">
                 <tr>
                   <th className="p-2 border border-slate-300">Total Staff</th>
                   <th className="p-2 border border-slate-300">Present</th>
-                  <th className="p-2 border border-slate-300">Absent / On Leave</th>
-                  <th className="p-2 border border-slate-300">Leave Details</th>
+                  <th className="p-2 border border-slate-300">Absent</th>
+                  <th className="p-2 border border-slate-300">On Duty (OD)</th>
+                  <th className="p-2 border border-slate-300">Permission</th>
+                  <th className="p-2 border border-slate-300">Attendance %</th>
+                  <th className="p-2 border border-slate-300">Leave / OD Details</th>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="p-2 border border-slate-300 font-bold">{scopedStaff.length}</td>
-                  <td className="p-2 border border-slate-300 font-bold text-emerald-700">
-                    {scopedStaff.filter((s) => s.status === 'Active').length}
-                  </td>
-                  <td className="p-2 border border-slate-300 font-bold text-amber-700">
-                    {scopedStaff.filter((s) => s.status === 'Inactive').length}
-                  </td>
-                  <td className="p-2 border border-slate-300 text-slate-700">
-                    {dailyReport.facultyAttendanceCount.absentNames || 'Prof. Sarah Jenkins (CL)'}
-                  </td>
-                </tr>
+                {(() => {
+                  const facCount = dailyReport.facultyAttendanceCount || { present: 0, absent: 0, od: 0, permission: 0, total: 0 };
+                  const facTotal = facCount.total > 0 ? facCount.total : scopedStaff.length;
+                  const facPresent = facCount.present ?? Math.max(0, facTotal - (facCount.absent || 0));
+                  const facAbsent = facCount.absent ?? 0;
+                  const facOd = facCount.od ?? 0;
+                  const facPermission = facCount.permission ?? 0;
+                  const facEffectivePresent = facPresent + facOd;
+                  const facPct = facTotal > 0 ? Number(((facEffectivePresent / facTotal) * 100).toFixed(1)) : 100;
+
+                  return (
+                    <tr>
+                      <td className="p-2 border border-slate-300 font-bold">{facTotal}</td>
+                      <td className="p-2 border border-slate-300 font-bold text-emerald-700">{facPresent}</td>
+                      <td className="p-2 border border-slate-300 font-bold text-rose-700">{facAbsent}</td>
+                      <td className="p-2 border border-slate-300 font-bold text-blue-700">{facOd}</td>
+                      <td className="p-2 border border-slate-300 font-bold text-amber-700">{facPermission}</td>
+                      <td className="p-2 border border-slate-300 font-bold text-indigo-700">{facPct}%</td>
+                      <td className="p-2 border border-slate-300 text-slate-700">
+                        {facCount.absentNames || 'None'}
+                      </td>
+                    </tr>
+                  );
+                })()}
               </tbody>
             </table>
           </div>
@@ -744,6 +775,11 @@ export const DailyReportView: React.FC = () => {
       <StudentAttendanceModal
         isOpen={isAttendanceModalOpen}
         onClose={() => setIsAttendanceModalOpen(false)}
+      />
+
+      <FacultyAttendanceModal
+        isOpen={isFacultyAttendanceModalOpen}
+        onClose={() => setIsFacultyAttendanceModalOpen(false)}
       />
 
       <DailyRemarksModal

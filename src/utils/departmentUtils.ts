@@ -283,16 +283,7 @@ export function getDepartmentAttendanceSummaries(
 ): StudentAttendanceSummary[] {
   if (!department) return [];
 
-  // If department is 'all' or 'All Departments', aggregate summaries across all departments
-  if (department === 'all' || department === 'All Departments') {
-    return DEPARTMENTS.flatMap((d) =>
-      getDepartmentAttendanceSummaries(existingSummaries, classList, d, attendanceRecords)
-    );
-  }
-
-  const deptTag = getDeptTag(department);
-
-  // Helper to normalize year string for display
+  // Helper to normalize year string for sorting
   const normYear = (y?: string) => {
     if (!y) return 'II Year';
     if (y.includes('2') || y.includes('II')) return 'II Year';
@@ -311,177 +302,21 @@ export function getDepartmentAttendanceSummaries(
     return 5;
   };
 
-  // 1. Get all class definitions for this department from classList
-  const realDeptClasses = (classList || []).filter((c) => isSameDept(c.department, department));
-  const hasRealClasses = realDeptClasses.length > 0;
-
-  let deptClasses = realDeptClasses;
-
-  // Fallback if no classes found in classList for this department (II, III, IV Year default classes)
-  if (!hasRealClasses) {
-    deptClasses = [
-      {
-        id: `CLS-DEF-II-${deptTag}`,
-        year: '2nd Year',
-        department: department,
-        section: 'Sec A',
-        classAdvisor: '',
-        roomNumber: '',
-        semester: 'Semester 3',
-        academicYear: '2025-2026',
-        totalStudents: 60,
-      },
-      {
-        id: `CLS-DEF-III-${deptTag}`,
-        year: '3rd Year',
-        department: department,
-        section: 'Sec A',
-        classAdvisor: '',
-        roomNumber: '',
-        semester: 'Semester 5',
-        academicYear: '2025-2026',
-        totalStudents: 60,
-      },
-      {
-        id: `CLS-DEF-IV-${deptTag}`,
-        year: '4th Year',
-        department: department,
-        section: 'Sec A',
-        classAdvisor: '',
-        roomNumber: '',
-        semester: 'Semester 7',
-        academicYear: '2025-2026',
-        totalStudents: 60,
-      },
-    ];
+  // If department is 'all' or 'All Departments', aggregate summaries across all departments
+  if (department === 'all' || department === 'All Departments') {
+    return DEPARTMENTS.flatMap((d) =>
+      getDepartmentAttendanceSummaries(existingSummaries, classList, d, attendanceRecords)
+    );
   }
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayDeptRecords = (attendanceRecords || []).filter(
-    (r) => r.date === todayStr && isSameDept(r.department, department)
-  );
-
   // Filter existingSummaries for those strictly matching this department
-  const existingDeptSummaries = (existingSummaries || []).filter((sa) => {
+  const matchedSummaries = (existingSummaries || []).filter((sa) => {
     if (sa.department) return isSameDept(sa.department, department);
     const classObj = classList.find((c) => c.id === sa.classId);
     if (classObj) return isSameDept(classObj.department, department);
     return isSameDept(sa.className, department);
   });
 
-  const matchedSummaries: StudentAttendanceSummary[] = [];
-  const processedClassIds = new Set<string>();
-  const processedYearSecKeys = new Set<string>();
-
-  // Construct a row for each class section belonging strictly to this department
-  for (const c of deptClasses) {
-    processedClassIds.add(c.id);
-    const yearSecKey = `${normYear(c.year)}_${(c.section || '').toLowerCase().replace(/sec\s*/, '')}`;
-    processedYearSecKeys.add(yearSecKey);
-
-    // 1st Priority: Check if existingDeptSummaries has an entry for this class
-    const foundSummary = existingDeptSummaries.find(
-      (s) =>
-        s.classId === c.id ||
-        (normYear(s.year) === normYear(c.year) && (s.className || '').toLowerCase().includes((c.section || '').toLowerCase()))
-    );
-
-    if (foundSummary) {
-      const secTag = c.section.startsWith('Sec') ? c.section : `Sec ${c.section}`;
-      const cName = `${normYear(c.year)} ${deptTag} - ${secTag}`;
-      matchedSummaries.push({
-        ...foundSummary,
-        classId: c.id,
-        className: foundSummary.className || cName,
-        department: department,
-        year: normYear(c.year),
-        totalStudents: foundSummary.totalStudents || c.totalStudents || 60,
-      });
-      continue;
-    }
-
-    // 2nd Priority: Check if today's attendanceRecords has an entry for this class
-    const foundRecord = todayDeptRecords.find(
-      (r) =>
-        r.classId === c.id ||
-        (normYear(r.year) === normYear(c.year) && (r.className || '').toLowerCase().includes(r.section?.toLowerCase() || (c.section || '').toLowerCase()))
-    );
-
-    if (foundRecord) {
-      const secTag = c.section.startsWith('Sec') ? c.section : `Sec ${c.section}`;
-      const cName = `${normYear(c.year)} ${deptTag} - ${secTag}`;
-      matchedSummaries.push({
-        classId: c.id,
-        className: foundRecord.className || cName,
-        year: normYear(c.year),
-        department: department,
-        totalStudents: foundRecord.totalStudents || c.totalStudents || 60,
-        presentStudents: foundRecord.presentStudents,
-        absentStudents: foundRecord.absentStudents || 0,
-        odStudents: foundRecord.odStudents || 0,
-        othersStudents: foundRecord.othersStudents || 0,
-        attendancePercentage: foundRecord.attendancePercentage,
-        morningPresent: foundRecord.presentStudents,
-        morningAbsent: foundRecord.absentStudents || 0,
-        morningOd: foundRecord.odStudents || 0,
-        morningOthers: foundRecord.othersStudents || 0,
-        morningPercentage: foundRecord.attendancePercentage,
-        eveningPresent: foundRecord.presentStudents,
-        eveningAbsent: foundRecord.absentStudents || 0,
-        eveningOd: foundRecord.odStudents || 0,
-        eveningOthers: foundRecord.othersStudents || 0,
-        eveningPercentage: foundRecord.attendancePercentage,
-        variation: 0,
-      });
-      continue;
-    }
-
-    // 3rd Priority: Default class section row for this department
-    const secTag = c.section.startsWith('Sec') ? c.section : `Sec ${c.section}`;
-    const cName = `${normYear(c.year)} ${deptTag} - ${secTag}`;
-    matchedSummaries.push({
-      classId: c.id,
-      className: cName,
-      year: normYear(c.year),
-      department: department,
-      totalStudents: c.totalStudents || 60,
-      presentStudents: 0,
-      absentStudents: 0,
-      odStudents: 0,
-      othersStudents: 0,
-      attendancePercentage: 0,
-      morningPresent: 0,
-      morningAbsent: 0,
-      morningOd: 0,
-      morningOthers: 0,
-      morningPercentage: 0,
-      eveningPresent: 0,
-      eveningAbsent: 0,
-      eveningOd: 0,
-      eveningOthers: 0,
-      eveningPercentage: 0,
-      variation: 0,
-    });
-  }
-
-  // Include custom non-duplicate extra summaries from existingDeptSummaries
-  for (const s of existingDeptSummaries) {
-    if (!s.classId) continue;
-
-    const isAlreadyProcessed = processedClassIds.has(s.classId);
-    const sYearSecKey = `${normYear(s.year)}_${(s.className || '').toLowerCase().replace(/sec\s*/, '')}`;
-    const isYearSecDup = Array.from(processedYearSecKeys).some((key) => sYearSecKey.includes(key));
-
-    if (!isAlreadyProcessed && !isYearSecDup) {
-      matchedSummaries.push({
-        ...s,
-        department: department,
-      });
-      processedClassIds.add(s.classId);
-    }
-  }
-
-  // Sort chronologically by year order (II Year, III Year, IV Year) and section
   matchedSummaries.sort((a, b) => {
     const wA = yearWeight(a.year);
     const wB = yearWeight(b.year);

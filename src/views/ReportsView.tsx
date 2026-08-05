@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { exportElementToPDF, exportToExcel, triggerPrint } from '../utils/exportUtils';
 import { getDeptHodName, getScopedStaff, isSameDept } from '../utils/departmentUtils';
 import { TaskStatusBadge, PriorityBadge, ObservationBadge } from '../components/StatusBadge';
+import { FacultyAttendanceModal } from '../components/FacultyAttendanceModal';
 import {
   Printer,
   Download,
@@ -18,6 +19,8 @@ import {
   Filter,
   Building2,
   GraduationCap,
+  Edit3,
+  UserCheck,
 } from 'lucide-react';
 
 export const ReportsView: React.FC = () => {
@@ -58,6 +61,7 @@ export const ReportsView: React.FC = () => {
   const [filterStaffId, setFilterStaffId] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [isFacultyAttendanceModalOpen, setIsFacultyAttendanceModalOpen] = useState<boolean>(false);
   
   const isHod = currentUser?.role === 'admin';
 
@@ -266,10 +270,35 @@ export const ReportsView: React.FC = () => {
             {/* Render Selected Report View */}
             {selectedReportType === 'daily_hod' && (
               <div className="space-y-4 font-sans text-xs">
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded">
-                  <strong className="block text-blue-900 font-bold mb-1">HOD Summary Overview:</strong>
-                  <p>Department: {hodDepartment}</p>
-                  <p>Faculty Attendance: {dailyReport.facultyAttendanceCount.present}/{scopedStaff.length} Present</p>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <strong className="block text-blue-900 font-bold mb-1">HOD Summary Overview:</strong>
+                    <p className="font-semibold text-slate-800">Department: {hodDepartment}</p>
+                    {(() => {
+                      const facCount = dailyReport.facultyAttendanceCount || { present: 0, absent: 0, od: 0, permission: 0, total: 0 };
+                      const facTotal = facCount.total > 0 ? facCount.total : scopedStaff.length;
+                      const facPresent = facCount.present ?? Math.max(0, facTotal - (facCount.absent || 0));
+                      const facAbsent = facCount.absent ?? 0;
+                      const facOd = facCount.od ?? 0;
+                      const facPermission = facCount.permission ?? 0;
+                      const facEffectivePresent = facPresent + facOd;
+                      const facPct = facTotal > 0 ? Number(((facEffectivePresent / facTotal) * 100).toFixed(1)) : 100;
+
+                      return (
+                        <p className="mt-1 text-slate-700">
+                          <strong>Faculty Attendance:</strong> Present: <span className="font-bold text-emerald-700">{facPresent}</span> | Absent: <span className="font-bold text-rose-700">{facAbsent}</span> | On Duty (OD): <span className="font-bold text-blue-700">{facOd}</span> | Permission: <span className="font-bold text-amber-700">{facPermission}</span> (Total: {facTotal} Staff) — <strong className="text-blue-900 font-extrabold">{facPct}% Attendance</strong>
+                        </p>
+                      );
+                    })()}
+                  </div>
+                  {currentUser?.role !== 'principal' && currentUser?.role !== 'secretary' && (
+                    <button
+                      onClick={() => setIsFacultyAttendanceModalOpen(true)}
+                      className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold border border-blue-300 transition-colors flex items-center gap-1 shrink-0 text-xs shadow-2xs"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> Faculty Attendance Entry
+                    </button>
+                  )}
                 </div>
 
                 <h3 className="font-bold text-blue-900 border-b border-slate-300 pb-1">Task Execution Summary</h3>
@@ -539,6 +568,11 @@ export const ReportsView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <FacultyAttendanceModal
+        isOpen={isFacultyAttendanceModalOpen}
+        onClose={() => setIsFacultyAttendanceModalOpen(false)}
+      />
     </div>
   );
 };

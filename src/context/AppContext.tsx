@@ -203,9 +203,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const filtered = parsed.filter(isKeepStaff);
-          if (filtered.length > 0) return filtered;
+        if (Array.isArray(parsed)) {
+          return parsed.filter(isKeepStaff);
         }
       } catch {}
     }
@@ -228,10 +227,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((t: Task) => t && t.id && !['TSK-101', 'TSK-102', 'TSK-103', 'TSK-104', 'TSK-105'].includes(t.id));
+        }
       } catch {}
     }
-    return INITIAL_TASKS;
+    return [];
   });
 
   const [observationList, setObservationList] = useState<ClassObservation[]>(() => {
@@ -462,19 +463,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 designation: 'Head of Department (HOD)',
                 role: 'admin',
               };
-              syncDocToFirestore('staff', 'HOD001', fixedHOD);
               map.set('HOD001', fixedHOD);
             } else {
               map.set(s.id.toUpperCase(), s);
             }
-          }
-        });
-
-        // Add any locally saved staff that are missing in Firestore and sync them
-        localStaffArr.forEach((s) => {
-          if (s && s.id && !map.has(s.id.toUpperCase())) {
-            map.set(s.id.toUpperCase(), s);
-            syncDocToFirestore('staff', s.id, s);
           }
         });
 
@@ -494,7 +486,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_CLASSES;
-        toInit.forEach((c) => syncDocToFirestore('classes', c.id, c));
         setClassList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`, JSON.stringify(toInit));
       } else {
@@ -504,7 +495,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localArr.forEach((c) => {
           if (c && c.id && !map.has(c.id)) {
             map.set(c.id, c);
-            syncDocToFirestore('classes', c.id, c);
           }
         });
         const finalClasses = Array.from(map.values());
@@ -515,29 +505,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Tasks Listener
     const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
-      let localArr: Task[] = [];
-      try {
-        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`);
-        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
-      } catch {}
       if (snapshot.empty) {
-        const toInit = localArr.length > 0 ? localArr : INITIAL_TASKS;
-        toInit.forEach((t) => syncDocToFirestore('tasks', t.id, t));
-        setTaskList(toInit);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify(toInit));
+        setTaskList([]);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify([]));
       } else {
-        const items = snapshot.docs.map((d) => d.data() as Task);
-        const map = new Map<string, Task>();
-        items.forEach((t) => { if (t && t.id) map.set(t.id, t); });
-        localArr.forEach((t) => {
-          if (t && t.id && !map.has(t.id)) {
-            map.set(t.id, t);
-            syncDocToFirestore('tasks', t.id, t);
-          }
-        });
-        const finalTasks = Array.from(map.values());
-        setTaskList(finalTasks);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify(finalTasks));
+        const sampleTaskIds = ['TSK-101', 'TSK-102', 'TSK-103', 'TSK-104', 'TSK-105'];
+        const items = snapshot.docs
+          .map((d) => d.data() as Task)
+          .filter((t) => t && t.id && !sampleTaskIds.includes(t.id));
+        setTaskList(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'tasks'));
 
@@ -550,7 +527,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_OBSERVATIONS;
-        toInit.forEach((o) => syncDocToFirestore('observations', o.id, o));
         setObservationList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`, JSON.stringify(toInit));
       } else {
@@ -560,7 +536,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localArr.forEach((o) => {
           if (o && o.id && !map.has(o.id)) {
             map.set(o.id, o);
-            syncDocToFirestore('observations', o.id, o);
           }
         });
         const finalObs = Array.from(map.values());
@@ -578,7 +553,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_DAILY_MONITORING;
-        toInit.forEach((m) => syncDocToFirestore('monitoring', m.id, m));
         setMonitoringList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`, JSON.stringify(toInit));
       } else {
@@ -588,7 +562,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localArr.forEach((m) => {
           if (m && m.id && !map.has(m.id)) {
             map.set(m.id, m);
-            syncDocToFirestore('monitoring', m.id, m);
           }
         });
         const finalMon = Array.from(map.values());
@@ -606,7 +579,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_ATTENDANCE_RECORDS;
-        toInit.forEach((a) => syncDocToFirestore('attendance', a.id, a));
         setAttendanceRecords(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(toInit));
       } else {
@@ -616,7 +588,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localArr.forEach((a) => {
           if (a && a.id && !map.has(a.id)) {
             map.set(a.id, a);
-            syncDocToFirestore('attendance', a.id, a);
           }
         });
         const finalAtt = Array.from(map.values());
@@ -634,7 +605,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_LESSON_PLANS;
-        toInit.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
         setLessonPlanList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`, JSON.stringify(toInit));
       } else {
@@ -644,7 +614,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localArr.forEach((lp) => {
           if (lp && lp.id && !map.has(lp.id)) {
             map.set(lp.id, lp);
-            syncDocToFirestore('lessonPlans', lp.id, lp);
           }
         });
         const finalLp = Array.from(map.values());
@@ -662,7 +631,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_NOTIFICATIONS;
-        toInit.forEach((n) => syncDocToFirestore('notifications', n.id, n));
         setNotifications(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`, JSON.stringify(toInit));
       } else {
@@ -672,7 +640,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localArr.forEach((n) => {
           if (n && n.id && !map.has(n.id)) {
             map.set(n.id, n);
-            syncDocToFirestore('notifications', n.id, n);
           }
         });
         const finalNotif = Array.from(map.values());
@@ -690,7 +657,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_EVENTS;
-        toInit.forEach((e) => syncDocToFirestore('events', e.id, e));
         setEventsList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(toInit));
       } else {
@@ -700,7 +666,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localArr.forEach((e) => {
           if (e && e.id && !map.has(e.id)) {
             map.set(e.id, e);
-            syncDocToFirestore('events', e.id, e);
           }
         });
         const finalEvents = Array.from(map.values());
@@ -722,16 +687,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (snapshot.empty) {
         if (localArr.length > 0) {
-          localArr.forEach((st) => {
-            const docId = getStudentDocId(st);
-            if (docId) syncDocToFirestore('skillBankStudents', docId, st);
-          });
           setSkillBankStudents(localArr);
         } else {
-          INITIAL_STUDENTS_SKILL_BANK.forEach((st) => {
-            const docId = getStudentDocId(st);
-            if (docId) syncDocToFirestore('skillBankStudents', docId, st);
-          });
           setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK);
         }
       } else {
@@ -745,8 +702,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
           if (key && !map.has(key)) {
             map.set(key, st);
-            const docId = getStudentDocId(st);
-            if (docId) syncDocToFirestore('skillBankStudents', docId, st);
           }
         });
         const finalStudents = Array.from(map.values());
@@ -765,7 +720,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             hodName: 'Dr. C. HOD (AI & DS)',
             hodEmail: 'hodcs@sasurie.com',
           };
-          syncDocToFirestore('settings', 'dailyReport', fixedReport);
           setDailyReport(fixedReport);
         } else {
           setDailyReport(reportData);

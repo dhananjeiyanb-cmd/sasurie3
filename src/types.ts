@@ -210,6 +210,16 @@ export const DEPARTMENTS = [
 
 export type DepartmentType = typeof DEPARTMENTS[number];
 
+export interface FacultyAttendanceCount {
+  present: number;
+  absent?: number;
+  od?: number;
+  permission?: number;
+  total: number;
+  absentNames?: string;
+  remarks?: string;
+}
+
 export interface DailyHODReport {
   id: string;
   date: string; // YYYY-MM-DD
@@ -220,7 +230,7 @@ export interface DailyHODReport {
   collegeName: string;
   collegeLogoUrl?: string;
   collegeLogoText?: string;
-  facultyAttendanceCount: { present: number; total: number; absentNames?: string };
+  facultyAttendanceCount: FacultyAttendanceCount;
   assignedTasksCount: { total: number; completed: number; pending: number; overdue: number };
   classObservationsCount: number;
   studentAttendanceSummaries: StudentAttendanceSummary[];
@@ -393,6 +403,55 @@ export interface EventRecord {
   documents: EventDocument[];
   feedbackResponses: EventFeedbackResponse[];
 
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CCMStudentMember {
+  id: string;
+  registerNo: string;
+  name: string;
+  category: 'Day Scholar' | 'Hosteller' | 'Class Representative' | 'High Performer' | 'Slow Learner';
+  attendanceStatus: 'Present' | 'Absent';
+}
+
+export interface CCMCourseCoverage {
+  id: string;
+  courseCode: string;
+  courseTitle: string;
+  facultyName: string;
+  plannedUnits: string;
+  actualUnitsCompleted: string;
+  statusOnSchedule: 'On Schedule' | 'Lagging' | 'Ahead';
+  remarks?: string;
+}
+
+export interface CCMActionItem {
+  id: string;
+  issueDescription: string;
+  category: 'Academics' | 'Lab Infrastructure' | 'Library / Books' | 'Teaching Pace' | 'General / Amenities';
+  actionTaken: string;
+  responsiblePerson: string;
+  status: 'Open' | 'In Progress' | 'Resolved';
+}
+
+export interface CCMRecord {
+  id: string;
+  meetingNo: 'CCM 1' | 'CCM 2' | 'CCM 3' | 'Special CCM';
+  academicYear: string;
+  semester: 'Odd' | 'Even';
+  department: string;
+  className: string;
+  meetingDate: string;
+  chairpersonName: string;
+  hodName: string;
+  venue: string;
+  studentMembers: CCMStudentMember[];
+  courseCoverage: CCMCourseCoverage[];
+  actionItems: CCMActionItem[];
+  studentFeedbackPoints: string[];
+  chairpersonRemarks: string;
+  iqacStatus: 'Draft' | 'Submitted to IQAC' | 'Approved by IQAC';
   createdAt: string;
   updatedAt: string;
 }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { TaskStatusBadge, PriorityBadge } from '../components/StatusBadge';
 import { StudentAttendanceModal } from '../components/StudentAttendanceModal';
+import { FacultyAttendanceModal } from '../components/FacultyAttendanceModal';
 import { DailyRemarksModal } from '../components/DailyRemarksModal';
 import { DEPARTMENTS } from '../types';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
@@ -85,6 +86,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   } = useApp();
 
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
+  const [isFacultyAttendanceModalOpen, setIsFacultyAttendanceModalOpen] = useState(false);
   const [isRemarksModalOpen, setIsRemarksModalOpen] = useState(false);
   const [remarksTab, setRemarksTab] = useState<'events' | 'discipline' | 'hod'>('discipline');
 
@@ -316,7 +318,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const totalPendingTasks = pendingTasks + inProgressTasks;
   const upcomingObservationsCount = displayObservationList.filter((o) => o.date >= todayStr).length;
   const activeFacultyCount = displayStaffList.filter((s) => s.status === 'Active').length;
-  const facultyAttendancePct = totalStaff > 0 ? Math.round((activeFacultyCount / totalStaff) * 100) : 100;
+
+  const facCount = dailyReport?.facultyAttendanceCount || { present: 0, absent: 0, od: 0, permission: 0, total: 0 };
+  const hasFacEntry = (facCount.total && facCount.total > 0) || facCount.present > 0 || facCount.absent > 0 || facCount.od > 0 || facCount.permission > 0;
+  const computedFacTotal = facCount.total && facCount.total > 0 ? facCount.total : (totalStaff > 0 ? totalStaff : 10);
+  const effectiveFacPresent = (facCount.present || 0) + (facCount.od || 0);
+
+  const facultyAttendancePct = hasFacEntry && computedFacTotal > 0
+    ? Math.min(100, Number(((effectiveFacPresent / computedFacTotal) * 100).toFixed(1)))
+    : (totalStaff > 0 ? Math.round((activeFacultyCount / totalStaff) * 100) : 100);
 
   return (
     <div className="space-y-6">
@@ -544,36 +554,66 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           {/* Card 3: Faculty Attendance Percentage */}
           <div
-            onClick={() => setActiveTab('staff')}
-            className="p-5 rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/80 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all cursor-pointer group space-y-3"
+            className="p-5 rounded-xl bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/80 hover:border-emerald-400 dark:hover:border-emerald-500 transition-all group space-y-3 relative"
           >
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                 Faculty Attendance Percentage
               </span>
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold shrink-0 border border-emerald-200 dark:border-emerald-800">
-                <UserCheck className="w-5 h-5" />
+              <div className="flex items-center gap-1.5">
+                {!isReadOnlyUser && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsFacultyAttendanceModalOpen(true);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-900 dark:bg-emerald-950 dark:hover:bg-emerald-900 dark:text-emerald-200 text-[11px] font-bold border border-emerald-300 dark:border-emerald-800 transition-colors flex items-center gap-1 shadow-2xs"
+                    title="Enter / Edit Faculty Attendance"
+                  >
+                    <Edit3 className="w-3 h-3" /> Entry
+                  </button>
+                )}
+                <div
+                  onClick={() => setActiveTab('staff')}
+                  className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold shrink-0 border border-emerald-200 dark:border-emerald-800 cursor-pointer"
+                >
+                  <UserCheck className="w-5 h-5" />
+                </div>
               </div>
             </div>
 
-            <div>
+            <div onClick={() => setActiveTab('staff')} className="cursor-pointer">
               <div className="text-3xl font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-baseline gap-1.5">
                 <span>{facultyAttendancePct}%</span>
                 <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Present</span>
               </div>
-              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mt-1">
-                <span>{activeFacultyCount} Active Faculty</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/80 px-1.5 py-0.5 rounded text-[10px]">
-                  {totalStaff} Total Staff
-                </span>
+
+              {/* Counts Breakdown Badge Grid */}
+              <div className="grid grid-cols-4 gap-1 text-[10px] font-bold text-center mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  <span className="block text-[9px] text-emerald-600 dark:text-emerald-400 uppercase font-medium">Present</span>
+                  {facCount.present ?? Math.max(0, computedFacTotal - (facCount.absent || 0))}
+                </div>
+                <div className="p-1 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                  <span className="block text-[9px] text-rose-600 dark:text-rose-400 uppercase font-medium">Absent</span>
+                  {facCount.absent || 0}
+                </div>
+                <div className="p-1 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                  <span className="block text-[9px] text-blue-600 dark:text-blue-400 uppercase font-medium">OD</span>
+                  {facCount.od || 0}
+                </div>
+                <div className="p-1 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                  <span className="block text-[9px] text-amber-600 dark:text-amber-400 uppercase font-medium">Permission</span>
+                  {facCount.permission || 0}
+                </div>
               </div>
             </div>
 
             <div className="space-y-1 pt-2 border-t border-slate-200/60 dark:border-slate-800">
               <div className="flex justify-between text-[11px]">
-                <span className="text-slate-500">Presence Status:</span>
+                <span className="text-slate-500">Total Faculty Count:</span>
                 <strong className="text-emerald-600 dark:text-emerald-400 font-extrabold">
-                  {facultyAttendancePct >= 90 ? 'Optimal' : 'Needs Review'}
+                  {computedFacTotal} Total
                 </strong>
               </div>
               <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5">
@@ -1509,6 +1549,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <StudentAttendanceModal
         isOpen={isAttendanceModalOpen}
         onClose={() => setIsAttendanceModalOpen(false)}
+      />
+
+      <FacultyAttendanceModal
+        isOpen={isFacultyAttendanceModalOpen}
+        onClose={() => setIsFacultyAttendanceModalOpen(false)}
       />
 
       <DailyRemarksModal

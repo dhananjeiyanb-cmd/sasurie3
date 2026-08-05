@@ -22,7 +22,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords, clearAllAttendance } = useApp();
+  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords, clearAllAttendance, deleteAttendanceRecord } = useApp();
 
   const userDept = currentUser?.department;
   const isFacultyOrHod = currentUser?.role === 'staff' || currentUser?.role === 'admin';
@@ -121,6 +121,10 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   };
 
   const handleRemoveRow = (index: number) => {
+    const itemToRemove = summaries[index];
+    if (itemToRemove && itemToRemove.classId) {
+      deleteAttendanceRecord(itemToRemove.classId);
+    }
     setSummaries((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -188,6 +192,21 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
       department: s.department || activeDept,
     }));
 
+    // Identify which classIds were removed from activeDept summaries and purge from DB
+    const initialDeptSummaries = (dailyReport.studentAttendanceSummaries || []).filter((s) => {
+      if (s.department) return isSameDept(s.department, activeDept);
+      const classObj = classList.find((c) => c.id === s.classId);
+      if (classObj) return isSameDept(classObj.department, activeDept);
+      return isSameDept(s.className, activeDept);
+    });
+
+    const keptClassIds = new Set(updatedSummariesWithDept.map((s) => s.classId));
+    initialDeptSummaries.forEach((oldSum) => {
+      if (oldSum.classId && !keptClassIds.has(oldSum.classId)) {
+        deleteAttendanceRecord(oldSum.classId);
+      }
+    });
+
     // Keep summaries belonging to OTHER departments intact
     const existingOtherDeptSummaries = (dailyReport.studentAttendanceSummaries || []).filter((s) => {
       if (s.department) return !isSameDept(s.department, activeDept);
@@ -206,8 +225,19 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
 
   const handleClearAllData = async () => {
     if (window.confirm("Are you sure you want to clear all student attendance data for today? This cannot be undone.")) {
-      setSummaries([]);
       const activeDept = userDept || 'Artificial Intelligence & Data Science (AI & DS)';
+      const currentDeptSummaries = (dailyReport.studentAttendanceSummaries || []).filter((s) => {
+        if (s.department) return isSameDept(s.department, activeDept);
+        const classObj = classList.find((c) => c.id === s.classId);
+        if (classObj) return isSameDept(classObj.department, activeDept);
+        return isSameDept(s.className, activeDept);
+      });
+
+      currentDeptSummaries.forEach((s) => {
+        if (s.classId) deleteAttendanceRecord(s.classId);
+      });
+
+      setSummaries([]);
       const existingOtherDeptSummaries = (dailyReport.studentAttendanceSummaries || []).filter((s) => {
         if (s.department) return !isSameDept(s.department, activeDept);
         const classObj = classList.find((c) => c.id === s.classId);

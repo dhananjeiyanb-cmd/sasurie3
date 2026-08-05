@@ -26,7 +26,10 @@ function sanitizeForFirestore<T>(data: T): T {
   return data;
 }
 
+let isQuotaExceeded = false;
+
 export async function syncDocToFirestore(collectionName: string, docId: string | number, data: any) {
+  if (isQuotaExceeded) return;
   if (docId === undefined || docId === null) {
     console.warn(`[syncDocToFirestore] Skipping write: invalid docId for collection "${collectionName}"`);
     return;
@@ -37,12 +40,20 @@ export async function syncDocToFirestore(collectionName: string, docId: string |
   try {
     const sanitized = sanitizeForFirestore(data);
     await setDoc(doc(db, collectionName, cleanId), sanitized, { merge: true });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'resource-exhausted' || (error?.message && error.message.includes('Quota limit exceeded'))) {
+      if (!isQuotaExceeded) {
+        console.warn('Firestore write quota exceeded. Application using local persistent state.');
+        isQuotaExceeded = true;
+      }
+      return;
+    }
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
 export async function deleteDocFromFirestore(collectionName: string, docId: string | number) {
+  if (isQuotaExceeded) return;
   if (docId === undefined || docId === null) {
     console.warn(`[deleteDocFromFirestore] Skipping delete: invalid docId for collection "${collectionName}"`);
     return;
@@ -52,7 +63,14 @@ export async function deleteDocFromFirestore(collectionName: string, docId: stri
   const path = `${collectionName}/${cleanId}`;
   try {
     await deleteDoc(doc(db, collectionName, cleanId));
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'resource-exhausted' || (error?.message && error.message.includes('Quota limit exceeded'))) {
+      if (!isQuotaExceeded) {
+        console.warn('Firestore delete quota exceeded. Application using local persistent state.');
+        isQuotaExceeded = true;
+      }
+      return;
+    }
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }

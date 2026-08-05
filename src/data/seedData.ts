@@ -1,4 +1,4 @@
-import { Staff, ClassRoom, Task, ClassObservation, FacultyDailyMonitoring, DailyHODReport, AppNotification, StudentAttendanceRecord, EventRecord } from '../types';
+import { Staff, ClassRoom, Task, ClassObservation, FacultyDailyMonitoring, DailyHODReport, AppNotification, StudentAttendanceRecord, EventRecord, CCMRecord } from '../types';
 
 const todayStr = new Date().toISOString().split('T')[0];
 const subDays = (days: number) => {
@@ -279,73 +279,7 @@ export const INITIAL_CLASSES: ClassRoom[] = [
   },
 ];
 
-export const INITIAL_TASKS: Task[] = [
-  {
-    id: 'TSK-101',
-    title: 'Submit III Year AI & DS Internal Assessment Marks',
-    description: 'Upload IA-1 marks for Compiler Design on the university portal.',
-    category: 'Assessment',
-    assignedToStaffId: 'STF001',
-    assignedToName: 'M. Kaviyarasu',
-    assignedDate: todayStr,
-    targetDate: todayStr,
-    priority: 'High',
-    status: 'In Progress',
-    remarks: 'Entering marks for Section A.',
-  },
-  {
-    id: 'TSK-102',
-    title: 'Prepare AI Lab Experiment Worksheets',
-    description: 'Finalize lab manual worksheets for 2nd Year Data Structures course.',
-    category: 'Lab Work',
-    assignedToStaffId: 'STF001',
-    assignedToName: 'M. Kaviyarasu',
-    assignedDate: todayStr,
-    targetDate: todayStr,
-    priority: 'Medium',
-    status: 'Pending',
-    remarks: 'Drafting exercises 1 to 5.',
-  },
-  {
-    id: 'TSK-103',
-    title: 'Verify Student Attendance Register',
-    description: 'Check attendance entries for II Year Sec A and update OD slips.',
-    category: 'Attendance',
-    assignedToStaffId: 'STF001',
-    assignedToName: 'M. Kaviyarasu',
-    assignedDate: todayStr,
-    targetDate: todayStr,
-    priority: 'Low',
-    status: 'Completed',
-    remarks: 'Verified and signed.',
-  },
-  {
-    id: 'TSK-104',
-    title: 'Deep Learning Project Review Phase 1',
-    description: 'Conduct preliminary project evaluation for IV Year students.',
-    category: 'Project Review',
-    assignedToStaffId: 'STF001',
-    assignedToName: 'Prof. S. Anurooba',
-    assignedDate: todayStr,
-    targetDate: todayStr,
-    priority: 'High',
-    status: 'In Progress',
-    remarks: 'Review scheduled at 2:00 PM.',
-  },
-  {
-    id: 'TSK-105',
-    title: 'NAAC Criteria 1 & 2 Course Outcome File Verification',
-    description: 'Verify CO-PO attainment logs, lesson plans, and ICT tools usage documentation for NAAC accreditation audit.',
-    category: 'NAAC / Accreditation',
-    assignedToStaffId: 'STF001',
-    assignedToName: 'M. Kaviyarasu',
-    assignedDate: todayStr,
-    targetDate: todayStr,
-    priority: 'High',
-    status: 'Completed',
-    remarks: 'Submitted Criteria 1 & 2 folders to IQAC coordinator.',
-  },
-];
+export const INITIAL_TASKS: Task[] = [];
 
 export const INITIAL_OBSERVATIONS: ClassObservation[] = [];
 
@@ -684,7 +618,7 @@ export const INITIAL_HOD_REPORT: DailyHODReport = {
   principalName: 'Prof. Dr. Kiruba Shankar R',
   collegeName: 'Sasurie College of Engineering',
   collegeLogoText: 'SCE',
-  facultyAttendanceCount: { present: 0, total: 0, absentNames: 'None' },
+  facultyAttendanceCount: { present: 0, absent: 0, od: 0, permission: 0, total: 0, absentNames: 'None', remarks: '' },
   assignedTasksCount: { total: 0, completed: 0, pending: 0, overdue: 0 },
   classObservationsCount: 0,
   studentAttendanceSummaries: [],
@@ -791,6 +725,46 @@ export const INITIAL_EVENTS: EventRecord[] = [
     feedbackResponses: [],
     createdAt: subDays(20),
     updatedAt: subDays(2),
+  },
+];
+
+export const INITIAL_CCM_RECORDS: CCMRecord[] = [
+  {
+    id: 'CCM-2026-001',
+    meetingNo: 'CCM 1',
+    academicYear: '2026-2027',
+    semester: 'Odd',
+    department: 'Artificial Intelligence & Data Science (AI & DS)',
+    className: 'III Year AI & DS - Sec A',
+    meetingDate: subDays(10),
+    chairpersonName: 'Dr. C. HOD (AI & DS)',
+    hodName: 'Dr. C. HOD (AI & DS)',
+    venue: 'AI & DS Seminar Hall',
+    studentMembers: [
+      { id: 'STU001', registerNo: '732723243001', name: 'Aakash V', category: 'Class Representative', attendanceStatus: 'Present' },
+      { id: 'STU002', registerNo: '732723243002', name: 'Bhavani S', category: 'High Performer', attendanceStatus: 'Present' },
+      { id: 'STU003', registerNo: '732723243003', name: 'Chandran M', category: 'Day Scholar', attendanceStatus: 'Present' },
+      { id: 'STU004', registerNo: '732723243004', name: 'Divya P', category: 'Hosteller', attendanceStatus: 'Present' },
+      { id: 'STU005', registerNo: '732723243005', name: 'Elango K', category: 'Slow Learner', attendanceStatus: 'Present' },
+    ],
+    courseCoverage: [
+      { id: 'CC001', courseCode: 'CS3501', courseTitle: 'Compiler Design', facultyName: 'M. Kaviyarasu', plannedUnits: 'Unit 1 & Unit 2', actualUnitsCompleted: 'Unit 1 & Unit 2 Completed', statusOnSchedule: 'On Schedule', remarks: 'Good pace with tutorial sheets.' },
+      { id: 'CC002', courseCode: 'AD3501', courseTitle: 'Deep Learning Techniques', facultyName: 'Dr. C. HOD', plannedUnits: 'Unit 1 & Unit 2', actualUnitsCompleted: 'Unit 1 & Unit 2 (80%)', statusOnSchedule: 'On Schedule', remarks: 'Hands-on PyTorch lab conducted.' },
+      { id: 'CC003', courseCode: 'AD3502', courseTitle: 'Data Visualization & Analytics', facultyName: 'Prof. Sarah Jenkins', plannedUnits: 'Unit 1 & Unit 2', actualUnitsCompleted: 'Unit 1 Completed', statusOnSchedule: 'Lagging', remarks: 'Extra coaching hour scheduled on Saturday.' },
+    ],
+    actionItems: [
+      { id: 'ACT001', issueDescription: 'Lab projector lens replacement needed in AI Lab 2', category: 'Lab Infrastructure', actionTaken: 'Work order raised to IT Infra Team', responsiblePerson: 'Lab Incharge', status: 'In Progress' },
+      { id: 'ACT002', issueDescription: 'Compiler Design textbook additional copies in Library', category: 'Library / Books', actionTaken: 'Requisition sent to Chief Librarian', responsiblePerson: 'Librarian', status: 'Resolved' },
+    ],
+    studentFeedbackPoints: [
+      'Students appreciated practical demonstrations in Deep Learning lab.',
+      'Requested additional solved question banks for Compiler Design Unit 2.',
+      'Wifi signal in AI Lab 2 requires bandwidth upgrade during peak afternoon hours.',
+    ],
+    chairpersonRemarks: 'Overall academic progress is satisfactory. Faculty advised to complete extra coaching hours for lagging subjects.',
+    iqacStatus: 'Approved by IQAC',
+    createdAt: subDays(12),
+    updatedAt: subDays(10),
   },
 ];
 

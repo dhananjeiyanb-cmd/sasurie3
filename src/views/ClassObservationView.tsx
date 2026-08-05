@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { ClassObservation, ObservationRating } from '../types';
 import { ObservationBadge } from '../components/StatusBadge';
+import { getUserCollege, isStaffInCollege } from '../utils/departmentUtils';
 import {
   Eye,
   Plus,
@@ -104,7 +105,7 @@ export const ClassObservationView: React.FC = () => {
   const [subject, setSubject] = useState('Design & Analysis of Algorithms');
   const [topic, setTopic] = useState('Dynamic Programming & Greedy Approaches');
   const [observedBy, setObservedBy] = useState(
-    currentUser?.name || (currentUser?.role === 'principal' ? 'Prof. Dr. Kiruba Shankar R (Principal)' : 'DHANANJEIYAN B (HOD)')
+    currentUser?.name || (currentUser?.role === 'principal' ? 'Prof. Dr. Kiruba Shankar R (Principal)' : 'Dr. C. HOD (AI & DS)')
   );
   const [overallRating, setOverallRating] = useState<ObservationRating>('Good');
   const [remarks, setRemarks] = useState('');
@@ -195,7 +196,12 @@ export const ClassObservationView: React.FC = () => {
   const isHod = currentUser?.role === 'admin';
   const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
-  const availableStaffList = isHod
+  const isPrincipalUser = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
+  const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
+
+  const availableStaffList = isPrincipalUser
+    ? staffList.filter((s) => isStaffInCollege(s, principalCollege))
+    : isHod
     ? staffList.filter((s) => {
         const staffDept = (s.department || '').toLowerCase();
         const userDept = (hodDepartment || '').toLowerCase();
@@ -203,7 +209,17 @@ export const ClassObservationView: React.FC = () => {
       })
     : staffList;
 
+  const collegeStaffIds = availableStaffList.map((s) => s.id);
+  const collegeStaffNames = availableStaffList.map((s) => (s.facultyName || '').toLowerCase());
+
   const filteredObservations = observationList.filter((obs) => {
+    // Principal Scope: strictly enforce viewing only observations of staff in their college
+    if (isPrincipalUser) {
+      const isMyCollegeObs =
+        collegeStaffIds.includes(obs.staffId) ||
+        collegeStaffNames.some((name) => (obs.facultyName || '').toLowerCase().includes(name));
+      if (!isMyCollegeObs) return false;
+    }
     const q = (search || filterState?.searchQuery || '').toLowerCase();
     const matchesSearch =
       (obs.facultyName || '').toLowerCase().includes(q) ||

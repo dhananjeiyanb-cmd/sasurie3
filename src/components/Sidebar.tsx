@@ -104,12 +104,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       badgeColor: currentUser?.coordinatorRole === 'CDC Coordinator' || currentUser?.coordinatorRole === 'Placement Coordinator' ? 'bg-indigo-600 text-white font-bold' : 'bg-amber-500 text-slate-950 font-bold',
     },
     {
-      id: 'lesson_plan',
-      label: 'Faculty Lesson Plan',
-      icon: BookOpen,
-      roles: [...executiveRoles, 'staff'],
-    },
-    {
       id: 'observations',
       label: 'Class Observations',
       icon: Eye,

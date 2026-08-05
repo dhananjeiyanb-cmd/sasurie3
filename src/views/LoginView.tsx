@@ -190,6 +190,7 @@ export const LoginView: React.FC = () => {
               <span>SIGN IN TO PORTAL</span>
               <ArrowRight className="w-4 h-4" />
             </button>
+
           </form>
         </div>
       </div>

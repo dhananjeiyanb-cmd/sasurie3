@@ -22,7 +22,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords } = useApp();
+  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords, clearAllAttendance } = useApp();
 
   const userDept = currentUser?.department;
   const isFacultyOrHod = currentUser?.role === 'staff' || currentUser?.role === 'admin';
@@ -129,21 +129,13 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     let yearToAdd = selectedYear;
     let idToAdd = `CLS-MANUAL-${Date.now()}`;
 
-    if (selectedClassId) {
-      const foundCls = classList.find((c) => c.id === selectedClassId);
-      if (foundCls) {
-        nameToAdd = `${foundCls.year} ${(foundCls.department || '').split(' ')[0]} - ${foundCls.section}`;
-        yearToAdd = foundCls.year;
-        idToAdd = foundCls.id;
-      }
-    }
+    const activeDept = userDept || 'Artificial Intelligence & Data Science (AI & DS)';
+    const deptTag = getDeptTag(activeDept);
 
     if (customClassName.trim()) {
       nameToAdd = customClassName.trim();
-    }
-
-    if (!nameToAdd) {
-      nameToAdd = `${selectedYear} Section ${summaries.length + 1}`;
+    } else {
+      nameToAdd = `${selectedYear} ${deptTag} - Sec A`;
     }
 
     const total = Math.max(1, newTotal);
@@ -159,6 +151,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
       classId: idToAdd,
       className: nameToAdd,
       year: yearToAdd,
+      department: activeDept,
       totalStudents: total,
       presentStudents: ePres,
       absentStudents: absent,
@@ -181,6 +174,11 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     setSummaries((prev) => [...prev, newSummary]);
     setCustomClassName('');
     setSelectedClassId('');
+    setNewTotal(60);
+    setNewMorPresent(0);
+    setNewEvePresent(0);
+    setNewAbsent(0);
+    setNewOd(0);
   };
 
   const handleSaveAll = () => {
@@ -206,8 +204,19 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     onClose();
   };
 
-  const handleClearAllData = () => {
-    setSummaries([]);
+  const handleClearAllData = async () => {
+    if (window.confirm("Are you sure you want to clear all student attendance data for today? This cannot be undone.")) {
+      setSummaries([]);
+      const activeDept = userDept || 'Artificial Intelligence & Data Science (AI & DS)';
+      const existingOtherDeptSummaries = (dailyReport.studentAttendanceSummaries || []).filter((s) => {
+        if (s.department) return !isSameDept(s.department, activeDept);
+        const classObj = classList.find((c) => c.id === s.classId);
+        if (classObj) return !isSameDept(classObj.department, activeDept);
+        return !isSameDept(s.className, activeDept);
+      });
+      updateDailyReport({ studentAttendanceSummaries: existingOtherDeptSummaries });
+      await clearAllAttendance();
+    }
   };
 
   const handleQuickPopulateDeptClasses = () => {
@@ -606,104 +615,122 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
           </table>
         </div>
 
-        {/* Add Class Section Form */}
-        <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700/80 mb-4">
-          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5">
-            <Plus className="w-4 h-4 text-blue-600" />
-            Add Year Attendance Entry (II, III, IV Year)
+        {/* Add Class Section Form (HOD Only) */}
+        {isHodOrAdmin && (
+          <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-700/80 mb-4">
+            <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-1.5">
+              <Plus className="w-4 h-4 text-blue-600" />
+              Add Year Attendance Entry (II, III, IV Year - HOD Action)
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-8 gap-2 items-end">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Year
+                </label>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(e.target.value)}
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-900 dark:text-white"
+                >
+                  <option value="II Year">II Year</option>
+                  <option value="III Year">III Year</option>
+                  <option value="IV Year">IV Year</option>
+                  <option value="I Year">I Year</option>
+                </select>
+              </div>
+
+              <div className="col-span-2 sm:col-span-2">
+                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Class / Section Name
+                </label>
+                <input
+                  type="text"
+                  placeholder={`e.g. ${selectedYear} ${getDeptTag(userDept || '')} - Sec A`}
+                  value={customClassName}
+                  onChange={(e) => setCustomClassName(e.target.value)}
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Total
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={newTotal}
+                  onChange={(e) => setNewTotal(Number(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-emerald-600 mb-1">
+                  Mor Pres
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={newMorPresent}
+                  onChange={(e) => setNewMorPresent(Number(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-emerald-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-blue-600 mb-1">
+                  Eve Pres
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={newEvePresent}
+                  onChange={(e) => setNewEvePresent(Number(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-rose-600 mb-1">
+                  Absent
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={newAbsent}
+                  onChange={(e) => setNewAbsent(Number(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-rose-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-amber-600 mb-1">
+                  OD
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={newOd}
+                  onChange={(e) => setNewOd(Number(e.target.value) || 0)}
+                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-amber-600"
+                />
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={handleAddClassSection}
+                  className="w-full py-1.5 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add
+                </button>
+              </div>
+            </div>
           </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 items-end">
-            <div className="col-span-2 sm:col-span-2">
-              <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                Class / Year Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. II Year AI & DS - Sec A"
-                value={customClassName}
-                onChange={(e) => setCustomClassName(e.target.value)}
-                className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                Total
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={newTotal}
-                onChange={(e) => setNewTotal(Number(e.target.value) || 0)}
-                className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-emerald-600 mb-1">
-                Mor Pres
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={newMorPresent}
-                onChange={(e) => setNewMorPresent(Number(e.target.value) || 0)}
-                className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-emerald-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-blue-600 mb-1">
-                Eve Pres
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={newEvePresent}
-                onChange={(e) => setNewEvePresent(Number(e.target.value) || 0)}
-                className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-blue-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-rose-600 mb-1">
-                Absent
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={newAbsent}
-                onChange={(e) => setNewAbsent(Number(e.target.value) || 0)}
-                className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-rose-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-amber-600 mb-1">
-                OD
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={newOd}
-                onChange={(e) => setNewOd(Number(e.target.value) || 0)}
-                className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center text-amber-600"
-              />
-            </div>
-
-            <div>
-              <button
-                type="button"
-                onClick={handleAddClassSection}
-                className="w-full py-1.5 px-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add
-              </button>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Action buttons */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-700">
@@ -716,15 +743,17 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
               Cancel
             </button>
 
-            <button
-              type="button"
-              onClick={handleClearAllData}
-              className="px-3 py-2 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl transition-colors flex items-center gap-1"
-              title="Remove all rows for a fresh start"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear All Entries
-            </button>
+            {isHodOrAdmin && (
+              <button
+                type="button"
+                onClick={handleClearAllData}
+                className="px-3 py-2 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl transition-colors flex items-center gap-1"
+                title="Remove all rows for a fresh start"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear All Entries
+              </button>
+            )}
 
             {isHodOrAdmin && (
               <button

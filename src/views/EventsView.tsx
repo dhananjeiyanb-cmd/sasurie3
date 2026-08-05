@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { DEPARTMENTS } from '../types';
+import { getUserCollege, isSameCollege } from '../utils/departmentUtils';
 import {
   EventRecord,
   EventType,
@@ -179,7 +180,17 @@ export const EventsView: React.FC = () => {
   const selectedEvent = eventsList.find((e) => e.id === selectedEventId) || eventsList[0] || null;
 
   // Filtered Events
+  const isPrincipalUser = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
+  const activeCollege = isPrincipalUser
+    ? getUserCollege(currentUser, dailyReport?.collegeName)
+    : (dailyReport?.collegeName && dailyReport.collegeName !== 'All Colleges' ? dailyReport.collegeName : undefined);
+
   const filteredEvents = eventsList.filter((event) => {
+    if (activeCollege) {
+      const eventCollege = (event as any).institution || 'Sasurie College of Engineering';
+      if (!isSameCollege(eventCollege, activeCollege)) return false;
+    }
+
     const q = (searchQuery || '').toLowerCase();
     const titleMatch = (event.eventTitle || '').toLowerCase().includes(q);
     const idMatch = (event.id || '').toLowerCase().includes(q);

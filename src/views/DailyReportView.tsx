@@ -20,6 +20,7 @@ import {
   Users,
   Settings,
   Edit3,
+  Lock,
 } from 'lucide-react';
 
 export const DailyReportView: React.FC = () => {
@@ -434,12 +435,18 @@ export const DailyReportView: React.FC = () => {
               <h3 className="text-xs font-bold text-blue-900 uppercase tracking-wider">
                 3. STUDENT ATTENDANCE SUMMARY (TODAY)
               </h3>
-              <button
-                onClick={() => setIsAttendanceModalOpen(true)}
-                className="no-print inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-2.5 py-1 rounded border border-blue-200 transition-colors"
-              >
-                <Edit3 className="w-3 h-3" /> Edit / Enter Attendance
-              </button>
+              {!isPrincipal && currentUser?.role !== 'secretary' ? (
+                <button
+                  onClick={() => setIsAttendanceModalOpen(true)}
+                  className="no-print inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 px-2.5 py-1 rounded border border-blue-200 transition-colors"
+                >
+                  <Edit3 className="w-3 h-3" /> Edit / Enter Attendance
+                </button>
+              ) : (
+                <span className="no-print inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                  <Lock className="w-3 h-3 text-amber-600" /> Read-Only View
+                </span>
+              )}
             </div>
 
             <table className="w-full text-xs text-left border-collapse border border-slate-300">

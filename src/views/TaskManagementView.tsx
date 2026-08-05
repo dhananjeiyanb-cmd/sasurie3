@@ -319,6 +319,14 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
 
   const filteredTasks = taskList.filter((t) => {
+    // Principal Scope: strictly enforce viewing only tasks assigned to staff in their college
+    if (isPrincipalUser) {
+      const isCollegeTask =
+        deptStaffIds.includes(t.assignedToStaffId) ||
+        availableStaffList.some((s) => (s.facultyName || '').toLowerCase() === (t.assignedToName || '').toLowerCase());
+      if (!isCollegeTask) return false;
+    }
+
     // If staff role, strictly enforce viewing only their assigned tasks
     if (currentUser?.role === 'staff') {
       const isMyTask =

@@ -42,27 +42,18 @@ import { normalizeStudentSkillBankRecord } from '../utils/excelSkillBank';
 const getStudentDocId = (st: StudentSkillBankData): string => {
   if (!st) return '';
   const reg = st.studentProfile?.registerNumber;
-  if (reg && typeof reg === 'string') {
-    return reg.trim().replace(/\//g, '_');
+  if (reg !== undefined && reg !== null && String(reg).trim()) {
+    return String(reg).trim().replace(/\//g, '_');
   }
-  return (st as any).id || '';
+  if ((st as any).id) return String((st as any).id).trim().replace(/\//g, '_');
+  if ((st.studentProfile as any)?.name) return `STU_${String((st.studentProfile as any).name).trim().replace(/[^a-zA-Z0-9]/g, '_')}`;
+  if ((st.studentProfile as any)?.studentName) return `STU_${String((st.studentProfile as any).studentName).trim().replace(/[^a-zA-Z0-9]/g, '_')}`;
+  return '';
 };
 
 const isKeepStaff = (s: Staff): boolean => {
-  if (!s) return false;
-  const name = (s.facultyName || '').toUpperCase();
-  return (
-    name.includes('DHANANJEIYAN') ||
-    s.role === 'principal' ||
-    s.role === 'secretary' ||
-    s.role === 'principal_pa' ||
-    s.role === 'secretary_pa' ||
-    s.id === 'HOD001' ||
-    s.id === 'PRI001' ||
-    s.id === 'SEC001' ||
-    s.id === 'PRIPA001' ||
-    s.id === 'SECPA001'
-  );
+  if (!s || !s.id) return false;
+  return true;
 };
 
 interface AppContextType {
@@ -90,8 +81,9 @@ interface AppContextType {
   staffList: Staff[];
   addStaff: (staff: Omit<Staff, 'id'> & { id?: string }) => void;
   updateStaff: (id: string, staff: Partial<Staff>) => void;
-  deleteStaff: (id: string) => void;
+  deleteStaff: (id: string) => Promise<void>;
   clearAllStaff: () => void;
+  restoreDemoStaff: () => void;
 
   classList: ClassRoom[];
   addClass: (cls: Omit<ClassRoom, 'id'>) => void;
@@ -123,6 +115,7 @@ interface AppContextType {
   addAttendanceRecord: (record: Omit<StudentAttendanceRecord, 'id'>) => void;
   updateAttendanceRecord: (id: string, record: Partial<StudentAttendanceRecord>) => void;
   deleteAttendanceRecord: (id: string) => void;
+  clearAllAttendance: () => Promise<void>;
 
   notifications: AppNotification[];
   markNotificationRead: (id: string) => void;
@@ -178,7 +171,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}user`);
     if (!saved) return null;
     try {
-      return JSON.parse(saved);
+      const parsed: User = JSON.parse(saved);
+      if (parsed && (parsed.role === 'admin' || parsed.role === 'principal')) {
+        if ((parsed.name || '').includes('DHANANJEIYAN') || (parsed.email || '').includes('dhananjeiyan')) {
+          return {
+            ...parsed,
+            name: 'DHANANJEIYAN B',
+            role: 'staff',
+            designation: 'Assistant Professor',
+            department: 'Artificial Intelligence & Data Science (AI & DS)',
+            email: 'dhananjeiyan.b@sasurie.com',
+            username: 'dhananjeiyan.b@sasurie.com',
+            staffId: 'STF001',
+          };
+        }
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -415,129 +423,353 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Staff Listener
     const unsubStaff = onSnapshot(collection(db, 'staff'), (snapshot) => {
+      // Read local staff from storage to ensure local additions are not lost
+      let localStaffArr: Staff[] = [];
+      try {
+        const savedLocal = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
+        if (savedLocal) {
+          const parsed = JSON.parse(savedLocal);
+          if (Array.isArray(parsed)) localStaffArr = parsed.filter(isKeepStaff);
+        }
+      } catch {}
+
+      const isInitialized = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`) === 'true';
+
       if (snapshot.empty) {
-        INITIAL_STAFF.forEach((s) => syncDocToFirestore('staff', s.id, s));
-        setStaffList(INITIAL_STAFF);
+        if (isInitialized || (localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`) && JSON.parse(localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`) || '[]').length === 0)) {
+          setStaffList([]);
+          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
+        } else {
+          const staffToInit = localStaffArr.length > 0 ? localStaffArr : INITIAL_STAFF;
+          staffToInit.forEach((s) => syncDocToFirestore('staff', s.id, s));
+          setStaffList(staffToInit);
+          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(staffToInit));
+          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
+        }
       } else {
         const items = snapshot.docs.map((d) => d.data() as Staff);
-        items.forEach((s) => {
-          if (s && s.id && !isKeepStaff(s)) {
-            deleteDocFromFirestore('staff', s.id);
+        const kept = items.filter(isKeepStaff);
+
+        const map = new Map<string, Staff>();
+        // First populate from Firestore
+        kept.forEach((s) => {
+          if (s && s.id) {
+            if (s.id === 'HOD001' && (s.facultyName.includes('DHANANJEIYAN') || (s.email && s.email.includes('dhananjeiyan')))) {
+              const fixedHOD: Staff = {
+                ...s,
+                facultyName: 'Dr. C. HOD (AI & DS)',
+                email: 'hodcs@sasurie.com',
+                designation: 'Head of Department (HOD)',
+                role: 'admin',
+              };
+              syncDocToFirestore('staff', 'HOD001', fixedHOD);
+              map.set('HOD001', fixedHOD);
+            } else {
+              map.set(s.id.toUpperCase(), s);
+            }
           }
         });
-        const kept = items.filter(isKeepStaff);
-        const finalStaff = kept.length > 0 ? kept : INITIAL_STAFF;
+
+        // Add any locally saved staff that are missing in Firestore and sync them
+        localStaffArr.forEach((s) => {
+          if (s && s.id && !map.has(s.id.toUpperCase())) {
+            map.set(s.id.toUpperCase(), s);
+            syncDocToFirestore('staff', s.id, s);
+          }
+        });
+
+        const finalStaff = Array.from(map.values());
         setStaffList(finalStaff);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(finalStaff));
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'staff'));
 
     // Classes Listener
     const unsubClasses = onSnapshot(collection(db, 'classes'), (snapshot) => {
+      let localArr: ClassRoom[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_CLASSES.forEach((c) => syncDocToFirestore('classes', c.id, c));
-        setClassList((prev) => (prev.length > 0 ? prev : INITIAL_CLASSES));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_CLASSES;
+        toInit.forEach((c) => syncDocToFirestore('classes', c.id, c));
+        setClassList(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as ClassRoom);
-        setClassList(items);
+        const map = new Map<string, ClassRoom>();
+        items.forEach((c) => { if (c && c.id) map.set(c.id, c); });
+        localArr.forEach((c) => {
+          if (c && c.id && !map.has(c.id)) {
+            map.set(c.id, c);
+            syncDocToFirestore('classes', c.id, c);
+          }
+        });
+        const finalClasses = Array.from(map.values());
+        setClassList(finalClasses);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`, JSON.stringify(finalClasses));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'classes'));
 
     // Tasks Listener
     const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
+      let localArr: Task[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_TASKS.forEach((t) => syncDocToFirestore('tasks', t.id, t));
-        setTaskList((prev) => (prev.length > 0 ? prev : INITIAL_TASKS));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_TASKS;
+        toInit.forEach((t) => syncDocToFirestore('tasks', t.id, t));
+        setTaskList(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as Task);
-        setTaskList(items);
+        const map = new Map<string, Task>();
+        items.forEach((t) => { if (t && t.id) map.set(t.id, t); });
+        localArr.forEach((t) => {
+          if (t && t.id && !map.has(t.id)) {
+            map.set(t.id, t);
+            syncDocToFirestore('tasks', t.id, t);
+          }
+        });
+        const finalTasks = Array.from(map.values());
+        setTaskList(finalTasks);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify(finalTasks));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'tasks'));
 
     // Observations Listener
     const unsubObs = onSnapshot(collection(db, 'observations'), (snapshot) => {
+      let localArr: ClassObservation[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_OBSERVATIONS.forEach((o) => syncDocToFirestore('observations', o.id, o));
-        setObservationList((prev) => (prev.length > 0 ? prev : INITIAL_OBSERVATIONS));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_OBSERVATIONS;
+        toInit.forEach((o) => syncDocToFirestore('observations', o.id, o));
+        setObservationList(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as ClassObservation);
-        setObservationList(items);
+        const map = new Map<string, ClassObservation>();
+        items.forEach((o) => { if (o && o.id) map.set(o.id, o); });
+        localArr.forEach((o) => {
+          if (o && o.id && !map.has(o.id)) {
+            map.set(o.id, o);
+            syncDocToFirestore('observations', o.id, o);
+          }
+        });
+        const finalObs = Array.from(map.values());
+        setObservationList(finalObs);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`, JSON.stringify(finalObs));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'observations'));
 
     // Monitoring Listener
     const unsubMon = onSnapshot(collection(db, 'monitoring'), (snapshot) => {
+      let localArr: FacultyDailyMonitoring[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_DAILY_MONITORING.forEach((m) => syncDocToFirestore('monitoring', m.id, m));
-        setMonitoringList((prev) => (prev.length > 0 ? prev : INITIAL_DAILY_MONITORING));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_DAILY_MONITORING;
+        toInit.forEach((m) => syncDocToFirestore('monitoring', m.id, m));
+        setMonitoringList(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as FacultyDailyMonitoring);
-        setMonitoringList(items);
+        const map = new Map<string, FacultyDailyMonitoring>();
+        items.forEach((m) => { if (m && m.id) map.set(m.id, m); });
+        localArr.forEach((m) => {
+          if (m && m.id && !map.has(m.id)) {
+            map.set(m.id, m);
+            syncDocToFirestore('monitoring', m.id, m);
+          }
+        });
+        const finalMon = Array.from(map.values());
+        setMonitoringList(finalMon);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`, JSON.stringify(finalMon));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'monitoring'));
 
     // Attendance Listener
     const unsubAtt = onSnapshot(collection(db, 'attendance'), (snapshot) => {
+      let localArr: StudentAttendanceRecord[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_ATTENDANCE_RECORDS.forEach((a) => syncDocToFirestore('attendance', a.id, a));
-        setAttendanceRecords((prev) => (prev.length > 0 ? prev : INITIAL_ATTENDANCE_RECORDS));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_ATTENDANCE_RECORDS;
+        toInit.forEach((a) => syncDocToFirestore('attendance', a.id, a));
+        setAttendanceRecords(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as StudentAttendanceRecord);
-        setAttendanceRecords(items);
+        const map = new Map<string, StudentAttendanceRecord>();
+        items.forEach((a) => { if (a && a.id) map.set(a.id, a); });
+        localArr.forEach((a) => {
+          if (a && a.id && !map.has(a.id)) {
+            map.set(a.id, a);
+            syncDocToFirestore('attendance', a.id, a);
+          }
+        });
+        const finalAtt = Array.from(map.values());
+        setAttendanceRecords(finalAtt);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(finalAtt));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'attendance'));
 
     // Lesson Plans Listener
     const unsubLp = onSnapshot(collection(db, 'lessonPlans'), (snapshot) => {
+      let localArr: LessonPlanItem[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_LESSON_PLANS.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
-        setLessonPlanList((prev) => (prev.length > 0 ? prev : INITIAL_LESSON_PLANS));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_LESSON_PLANS;
+        toInit.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
+        setLessonPlanList(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as LessonPlanItem);
-        setLessonPlanList(items);
+        const map = new Map<string, LessonPlanItem>();
+        items.forEach((lp) => { if (lp && lp.id) map.set(lp.id, lp); });
+        localArr.forEach((lp) => {
+          if (lp && lp.id && !map.has(lp.id)) {
+            map.set(lp.id, lp);
+            syncDocToFirestore('lessonPlans', lp.id, lp);
+          }
+        });
+        const finalLp = Array.from(map.values());
+        setLessonPlanList(finalLp);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`, JSON.stringify(finalLp));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'lessonPlans'));
 
     // Notifications Listener
     const unsubNotif = onSnapshot(collection(db, 'notifications'), (snapshot) => {
+      let localArr: AppNotification[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_NOTIFICATIONS.forEach((n) => syncDocToFirestore('notifications', n.id, n));
-        setNotifications((prev) => (prev.length > 0 ? prev : INITIAL_NOTIFICATIONS));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_NOTIFICATIONS;
+        toInit.forEach((n) => syncDocToFirestore('notifications', n.id, n));
+        setNotifications(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as AppNotification);
-        setNotifications(items);
+        const map = new Map<string, AppNotification>();
+        items.forEach((n) => { if (n && n.id) map.set(n.id, n); });
+        localArr.forEach((n) => {
+          if (n && n.id && !map.has(n.id)) {
+            map.set(n.id, n);
+            syncDocToFirestore('notifications', n.id, n);
+          }
+        });
+        const finalNotif = Array.from(map.values());
+        setNotifications(finalNotif);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`, JSON.stringify(finalNotif));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'notifications'));
 
     // Events Listener
     const unsubEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
+      let localArr: EventRecord[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}events`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        INITIAL_EVENTS.forEach((e) => syncDocToFirestore('events', e.id, e));
-        setEventsList((prev) => (prev.length > 0 ? prev : INITIAL_EVENTS));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_EVENTS;
+        toInit.forEach((e) => syncDocToFirestore('events', e.id, e));
+        setEventsList(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as EventRecord);
-        setEventsList(items);
+        const map = new Map<string, EventRecord>();
+        items.forEach((e) => { if (e && e.id) map.set(e.id, e); });
+        localArr.forEach((e) => {
+          if (e && e.id && !map.has(e.id)) {
+            map.set(e.id, e);
+            syncDocToFirestore('events', e.id, e);
+          }
+        });
+        const finalEvents = Array.from(map.values());
+        setEventsList(finalEvents);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(finalEvents));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'events'));
 
     // Skill Bank Students Listener
     const unsubSkill = onSnapshot(collection(db, 'skillBankStudents'), (snapshot) => {
+      let localArr: StudentSkillBankData[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localArr = parsed;
+        }
+      } catch {}
+
       if (snapshot.empty) {
-        INITIAL_STUDENTS_SKILL_BANK.forEach((st) => {
-          const docId = getStudentDocId(st);
-          if (docId) syncDocToFirestore('skillBankStudents', docId, st);
-        });
-        setSkillBankStudents((prev) => (prev.length > 0 ? prev : INITIAL_STUDENTS_SKILL_BANK));
+        if (localArr.length > 0) {
+          localArr.forEach((st) => {
+            const docId = getStudentDocId(st);
+            if (docId) syncDocToFirestore('skillBankStudents', docId, st);
+          });
+          setSkillBankStudents(localArr);
+        } else {
+          INITIAL_STUDENTS_SKILL_BANK.forEach((st) => {
+            const docId = getStudentDocId(st);
+            if (docId) syncDocToFirestore('skillBankStudents', docId, st);
+          });
+          setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK);
+        }
       } else {
         const items = snapshot.docs.map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData));
-        setSkillBankStudents(items);
+        const map = new Map<string, StudentSkillBankData>();
+        items.forEach((st) => {
+          const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
+          if (key) map.set(key, st);
+        });
+        localArr.forEach((st) => {
+          const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
+          if (key && !map.has(key)) {
+            map.set(key, st);
+            const docId = getStudentDocId(st);
+            if (docId) syncDocToFirestore('skillBankStudents', docId, st);
+          }
+        });
+        const finalStudents = Array.from(map.values());
+        setSkillBankStudents(finalStudents);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(finalStudents));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
 
     // Daily Report Listener
     const unsubReport = onSnapshot(doc(db, 'settings', 'dailyReport'), (docSnap) => {
       if (docSnap.exists()) {
-        setDailyReport(docSnap.data() as DailyHODReport);
+        const reportData = docSnap.data() as DailyHODReport;
+        if (reportData.hodName?.includes('DHANANJEIYAN') || reportData.hodEmail?.includes('dhananjeiyan')) {
+          const fixedReport: DailyHODReport = {
+            ...reportData,
+            hodName: 'Dr. C. HOD (AI & DS)',
+            hodEmail: 'hodcs@sasurie.com',
+          };
+          syncDocToFirestore('settings', 'dailyReport', fixedReport);
+          setDailyReport(fixedReport);
+        } else {
+          setDailyReport(reportData);
+        }
       } else {
         syncDocToFirestore('settings', 'dailyReport', INITIAL_HOD_REPORT);
         setDailyReport(INITIAL_HOD_REPORT);
@@ -732,6 +964,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'admin@sasuire.com',
       'admin@sasurie.com',
       'admin@sasurie.in',
+      'dhananjeiyan.b@sasurie.com',
       'dhananjeiyan.backup@gmail.com',
       'hodcs@sasurie.com',
       'hod.cse@apex.edu.in',
@@ -749,6 +982,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'faculty.aids@gmail.com',
       'admin',
       'adm001',
+      'fac019',
+      'cse01',
+      '613',
+      'sasidharan',
+      'suma',
       'hodcs',
       'principal',
       'secretary',
@@ -794,6 +1032,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lowUser === 'admin' ||
       lowUser === 'adm001';
 
+    const isPrincipalUser =
+      lowUser === 'sceprincipal@sasurie.com' ||
+      lowUser === 'scepricipal@sasurie.com' ||
+      lowUser === 'principal@sasurie.com' ||
+      lowUser === 'principal' ||
+      lowUser === 'pri001' ||
+      lowUser === 'pri';
+
     const isSecretaryUser =
       lowUser === 'secretary@sasurie.com' ||
       lowUser === 'secretary' ||
@@ -812,14 +1058,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lowUser === 'secretarypa' ||
       lowUser === 'secpa001';
 
-    const isPrincipalUser =
-      lowUser === 'sceprincipal@sasurie.com' ||
-      lowUser === 'scepricipal@sasurie.com' ||
-      lowUser === 'principal@sasurie.com' ||
-      lowUser === 'principal' ||
-      lowUser === 'pri001' ||
-      lowUser === 'pri';
-
     // System Super Admin Login (All Colleges & All Staff Access)
     if (isSuperAdminAccount && checkPasswordValid(lowUser, lowPass)) {
       const email = lowUser.includes('@') ? lowUser : 'admin@sasurie.com';
@@ -835,6 +1073,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'admin'),
       };
       setCurrentUser(superAdminUser);
+      return { success: true };
+    }
+
+    // Principal Login
+    if (isPrincipalUser && checkPasswordValid(lowUser, lowPass)) {
+      const matchingStaff = staffList.find((s) => s.role === 'principal');
+      const email = matchingStaff?.email || 'principal@sasurie.com';
+      const name = matchingStaff?.facultyName || dailyReport.principalName || 'Prof. Dr. Kiruba Shankar R (Principal)';
+      const inst = matchingStaff?.institution || dailyReport.collegeName || 'Sasurie College of Engineering';
+      const principalUser: User = {
+        username: email,
+        role: 'principal',
+        staffId: matchingStaff?.id || 'PRI001',
+        name,
+        department: 'College Principal Office',
+        institution: inst,
+        email,
+        googleConnected: false,
+        avatarUrl: getGoogleAvatarUrl(email, name, 'principal'),
+      };
+      setCurrentUser(principalUser);
       return { success: true };
     }
 
@@ -858,14 +1117,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Principal PA Login
     if (isPrincipalPaUser && checkPasswordValid(lowUser, lowPass)) {
-      const email = 'principal.pa@sasurie.com';
-      const name = 'Er. R. Ramesh (Principal PA)';
+      const matchingStaff = staffList.find((s) => s.role === 'principal_pa');
+      const email = matchingStaff?.email || 'principal.pa@sasurie.com';
+      const name = matchingStaff?.facultyName || 'Er. R. Ramesh (Principal PA)';
+      const inst = matchingStaff?.institution || dailyReport.collegeName || 'Sasurie College of Engineering';
       const priPaUser: User = {
         username: email,
         role: 'principal_pa',
-        staffId: 'PRIPA001',
+        staffId: matchingStaff?.id || 'PRIPA001',
         name,
         department: 'College Principal Office',
+        institution: inst,
         email,
         googleConnected: false,
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal_pa'),
@@ -892,23 +1154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: true };
     }
 
-    // Principal Login
-    if (isPrincipalUser && checkPasswordValid(lowUser, lowPass)) {
-      const email = 'principal@sasurie.com';
-      const name = dailyReport.principalName || 'Prof. Dr. Kiruba Shankar R (Principal)';
-      const principalUser: User = {
-        username: email,
-        role: 'principal',
-        staffId: 'PRI001',
-        name,
-        department: 'College Principal Office',
-        email,
-        googleConnected: false,
-        avatarUrl: getGoogleAvatarUrl(email, name, 'principal'),
-      };
-      setCurrentUser(principalUser);
-      return { success: true };
-    }
+
 
     // Librarian Login
     const isLibrarianUser =
@@ -967,16 +1213,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const isHodUser =
       (foundStaff && foundStaff.role === 'admin') ||
-      lowUser === 'dhananjeiyan.backup@gmail.com' ||
       lowUser === 'hodcs@sasurie.com' ||
       lowUser === 'hodcs' ||
       lowUser === 'admin' ||
-      lowUser.includes('hod');
+      (lowUser.includes('hod') && !lowUser.includes('dhananjeiyan'));
 
     // HOD Admin Login
     if (isHodUser && checkPasswordValid(lowUser, lowPass, foundStaff)) {
-      const email = foundStaff?.email || 'dhananjeiyan.backup@gmail.com';
-      const name = foundStaff?.facultyName || dailyReport.hodName || 'DHANANJEIYAN B (HOD)';
+      const email = foundStaff?.email || 'hodcs@sasurie.com';
+      const name = foundStaff?.facultyName || dailyReport.hodName || 'Dr. C. HOD (AI & DS)';
       const department = foundStaff?.department || dailyReport.department || 'Artificial Intelligence & Data Science (AI & DS)';
       const adminUser: User = {
         username: foundStaff?.id || email,
@@ -1003,6 +1248,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         staffId: foundStaff.id,
         name: foundStaff.facultyName,
         department: foundStaff.department,
+        institution: foundStaff.institution || dailyReport.collegeName,
         email: foundStaff.email,
         mobile: foundStaff.mobile,
         googleConnected: false,
@@ -1076,7 +1322,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       staffId = 'INC001';
     } else if (lowEmail.includes('hod') || lowEmail.includes('admin') || targetRole === 'admin') {
       role = 'admin';
-      name = customName || (dailyReport.hodName || 'DHANANJEIYAN B (HOD)');
+      name = customName || (dailyReport.hodName || 'Dr. C. HOD (AI & DS)');
       department = 'Artificial Intelligence & Data Science (AI & DS)';
       staffId = 'HOD001';
     } else {
@@ -1110,6 +1356,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         staffId: 'PRI001',
         name,
         department: 'College Principal Office',
+        institution: dailyReport.collegeName || 'Sasurie College of Engineering',
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal'),
@@ -1184,8 +1431,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? staffList.find((s) => s.id === staffId)
         : staffList.find((s) => s.role === 'admin');
 
-      const email = targetStaff?.email || 'dhananjeiyan.backup@gmail.com';
-      const name = targetStaff?.facultyName || dailyReport.hodName || 'DHANANJEIYAN B (HOD)';
+      const email = targetStaff?.email || 'hodcs@sasurie.com';
+      const name = targetStaff?.facultyName || dailyReport.hodName || 'Dr. C. HOD (AI & DS)';
       const department = targetStaff?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
       const newUser: User = {
@@ -1241,13 +1488,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // CRUD Staff
-  const addStaff = (staffData: Omit<Staff, 'id'> & { id?: string }) => {
+  const addStaff = async (staffData: Omit<Staff, 'id'> & { id?: string }) => {
     const customId = staffData.id?.trim().toUpperCase();
     const nextIdNum = staffList.length + 1;
     const newId = customId || `FAC${String(nextIdNum).padStart(3, '0')}`;
-    const newStaff: Staff = { ...staffData, id: newId };
-    setStaffList((prev) => [...prev, newStaff]);
-    syncDocToFirestore('staff', newStaff.id, newStaff);
+    const pass = staffData.password || 'sasurie';
+    const newStaff: Staff = {
+      ...staffData,
+      id: newId,
+      facultyName: staffData.facultyName || 'New Faculty Member',
+      designation: staffData.designation || 'Assistant Professor',
+      department: staffData.department || dailyReport?.department || 'Artificial Intelligence & Data Science (AI & DS)',
+      institution: staffData.institution || dailyReport?.collegeName || 'Sasurie College of Engineering',
+      mobile: staffData.mobile || '',
+      email: staffData.email || '',
+      password: pass,
+      role: staffData.role || 'staff',
+      coordinatorRole: staffData.coordinatorRole || 'General Faculty',
+      status: staffData.status || 'Active',
+    };
+    
+    setStaffList((prev) => {
+      const filtered = prev.filter((s) => s.id !== newId);
+      const updated = [...filtered, newStaff];
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(updated));
+      return updated;
+    });
+
+    // Save custom password for instant login capability
+    if (pass) {
+      setCustomPasswords((prev) => ({
+        ...prev,
+        [newId.toLowerCase()]: pass,
+        ...(newStaff.email ? { [newStaff.email.toLowerCase()]: pass } : {}),
+      }));
+    }
+    
+    await syncDocToFirestore('staff', newStaff.id, newStaff);
 
     // Also add to daily monitoring
     const todayStr = new Date().toISOString().split('T')[0];
@@ -1264,20 +1541,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       classObservationDone: false,
       remarks: 'New staff added.',
     };
-    setMonitoringList((prev) => [...prev, newMon]);
-    syncDocToFirestore('monitoring', newMon.id, newMon);
+    setMonitoringList((prev) => {
+      const updated = [...prev, newMon];
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`, JSON.stringify(updated));
+      return updated;
+    });
+    await syncDocToFirestore('monitoring', newMon.id, newMon);
   };
 
-  const updateStaff = (id: string, updates: Partial<Staff>) => {
+  const updateStaff = async (id: string, updates: Partial<Staff>) => {
     const targetId = updates.id ? updates.id.trim().toUpperCase() : id;
-    setStaffList((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates, id: targetId } : s)));
+    let fullUpdatedStaff: Staff | null = null;
 
-    const existing = staffList.find((s) => s.id === id);
-    if (existing) {
-      const updatedStaff = { ...existing, ...updates, id: targetId };
-      syncDocToFirestore('staff', targetId, updatedStaff);
+    setStaffList((prev) => {
+      const updated = prev.map((s) => {
+        if (s.id === id) {
+          fullUpdatedStaff = { ...s, ...updates, id: targetId };
+          return fullUpdatedStaff;
+        }
+        return s;
+      });
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(updated));
+      return updated;
+    });
+
+    if (fullUpdatedStaff) {
+      const staffToSave: Staff = fullUpdatedStaff;
+      await syncDocToFirestore('staff', targetId, staffToSave);
       if (id !== targetId) {
-        deleteDocFromFirestore('staff', id);
+        await deleteDocFromFirestore('staff', id);
+      }
+
+      if (staffToSave.password) {
+        const pass = staffToSave.password;
+        setCustomPasswords((prev) => ({
+          ...prev,
+          [targetId.toLowerCase()]: pass,
+          ...(staffToSave.email ? { [staffToSave.email.toLowerCase()]: pass } : {}),
+        }));
       }
 
       if (currentUser && (currentUser.staffId === id || currentUser.username === id)) {
@@ -1286,11 +1587,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? {
                 ...prev,
                 staffId: targetId,
-                coordinatorRole: updatedStaff.coordinatorRole,
-                role: updatedStaff.role || prev.role,
-                name: updatedStaff.facultyName || prev.name,
-                email: updatedStaff.email || prev.email,
-                department: updatedStaff.department || prev.department,
+                coordinatorRole: staffToSave.coordinatorRole,
+                role: staffToSave.role || prev.role,
+                name: staffToSave.facultyName || prev.name,
+                email: staffToSave.email || prev.email,
+                department: staffToSave.department || prev.department,
               }
             : null
         );
@@ -1324,25 +1625,80 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const deleteStaff = (id: string) => {
-    const target = staffList.find((s) => s.id === id);
-    if (target && isKeepStaff(target)) {
-      return;
+  const deleteStaff = async (id: string) => {
+    const targetStaff = staffList.find((s) => s.id === id || s.id.toLowerCase() === id.toLowerCase());
+    const targetEmail = targetStaff?.email?.toLowerCase();
+
+    setStaffList((prev) => {
+      const updated = prev.filter((s) => {
+        if (s.id === id || s.id.toLowerCase() === id.toLowerCase()) return false;
+        if (targetEmail && s.email && s.email.toLowerCase() === targetEmail) return false;
+        return true;
+      });
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(updated));
+      return updated;
+    });
+
+    const cleanId = String(id).trim().replace(/\//g, '_');
+    try {
+      await deleteDocFromFirestore('staff', cleanId);
+      if (cleanId.toUpperCase() !== cleanId) {
+        await deleteDocFromFirestore('staff', cleanId.toUpperCase());
+      }
+      if (cleanId.toLowerCase() !== cleanId) {
+        await deleteDocFromFirestore('staff', cleanId.toLowerCase());
+      }
+
+      // Query Firestore collection to remove any document with matching staff id or email
+      const snap = await getDocs(collection(db, 'staff'));
+      for (const d of snap.docs) {
+        const data = d.data();
+        const docStaffId = data?.id ? String(data.id).toLowerCase() : '';
+        const docEmail = data?.email ? String(data.email).toLowerCase() : '';
+        if (
+          d.id.toLowerCase() === cleanId.toLowerCase() ||
+          docStaffId === cleanId.toLowerCase() ||
+          (targetEmail && docEmail && docEmail === targetEmail)
+        ) {
+          await deleteDoc(doc(db, 'staff', d.id));
+        }
+      }
+    } catch (err) {
+      console.error('Error deleting staff from Firestore:', err);
     }
-    setStaffList((prev) => prev.filter((s) => s.id !== id));
-    deleteDocFromFirestore('staff', id);
   };
 
-  const clearAllStaff = () => {
-    staffList.forEach((s) => {
-      if (s && s.id && !isKeepStaff(s)) {
-        deleteDocFromFirestore('staff', s.id);
+  const clearAllStaff = async () => {
+    try {
+      // 1. Delete all currently loaded staff from Firestore
+      for (const s of staffList) {
+        if (s && s.id) {
+          await deleteDocFromFirestore('staff', s.id);
+        }
       }
-    });
-    const kept = staffList.filter(isKeepStaff);
-    const finalStaff = kept.length > 0 ? kept : INITIAL_STAFF;
-    setStaffList(finalStaff);
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(finalStaff));
+
+      // 2. Query and delete any remaining documents in Firestore 'staff' collection
+      const snap = await getDocs(collection(db, 'staff'));
+      for (const docSnap of snap.docs) {
+        await deleteDoc(doc(db, 'staff', docSnap.id));
+      }
+    } catch (e) {
+      console.error('Error clearing staff from Firestore:', e);
+    }
+
+    // 3. Clear local state and mark initialized so empty is preserved
+    setStaffList([]);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
+  };
+
+  const restoreDemoStaff = async () => {
+    setStaffList(INITIAL_STAFF);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(INITIAL_STAFF));
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
+    for (const s of INITIAL_STAFF) {
+      await syncDocToFirestore('staff', s.id, s);
+    }
   };
 
   // CRUD Classes
@@ -1666,6 +2022,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteAttendanceRecord = (id: string) => {
     setAttendanceRecords((prev) => prev.filter((r) => r.id !== id));
     deleteDocFromFirestore('attendance', id);
+  };
+
+  const clearAllAttendance = async () => {
+    setAttendanceRecords([]);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify([]));
+    updateDailyReport({ studentAttendanceSummaries: [] });
+    try {
+      const snap = await getDocs(collection(db, 'attendance'));
+      snap.docs.forEach((d) => {
+        deleteDocFromFirestore('attendance', d.id);
+      });
+    } catch (err) {
+      console.error('Error clearing attendance records:', err);
+    }
   };
 
   // Notifications
@@ -2232,6 +2602,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateStaff,
         deleteStaff,
         clearAllStaff,
+        restoreDemoStaff,
         classList,
         addClass,
         updateClass,
@@ -2256,6 +2627,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addAttendanceRecord,
         updateAttendanceRecord,
         deleteAttendanceRecord,
+        clearAllAttendance,
         notifications,
         markNotificationRead,
         clearAllNotifications,

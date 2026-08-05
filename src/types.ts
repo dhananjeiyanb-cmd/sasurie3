@@ -75,6 +75,7 @@ export interface ClassRoom {
   academicYear: string; // e.g., '2025-2026'
   courseCode?: string; // e.g., 'CS3501'
   courseName?: string; // e.g., 'Compiler Design'
+  totalStudents?: number; // Fixed Student Strength set by HOD
 }
 
 export interface Task {

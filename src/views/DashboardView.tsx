@@ -32,6 +32,9 @@ import {
   UserCheck,
   ChevronRight,
   Building2,
+  Lock,
+  Trash2,
+  Filter,
 } from 'lucide-react';
 import {
   PieChart,
@@ -78,6 +81,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     updateDailyReport,
     skillBankStudents,
     attendanceRecords,
+    clearAllAttendance,
   } = useApp();
 
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
@@ -88,8 +92,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const isHod = currentUser?.role === 'admin';
   const isPrincipal = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
   const isSecretary = currentUser?.role === 'secretary' || currentUser?.role === 'secretary_pa';
+  const isManagementUser = isPrincipal || isSecretary || (currentUser?.role === 'admin' && currentUser?.username === 'ADM001');
+  const isReadOnlyUser = isPrincipal || isSecretary;
   const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
   const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
+
+  const availableAttendanceDepts = isManagementUser
+    ? DEPARTMENTS
+    : DEPARTMENTS.filter((d) => isSameDept(d, hodDepartment));
 
   const selectedDept = (isPrincipal || isSecretary)
     ? (filterState.department || dailyReport?.department || 'All Departments')
@@ -167,7 +177,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Student Attendance Calculations
   const rawStudentAttendanceList = dailyReport.studentAttendanceSummaries || [];
-  const activeAttendanceDept = isPrincipal
+  const activeAttendanceDept = isManagementUser
     ? selectedDept
     : hodDepartment;
 
@@ -732,84 +742,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* PRINCIPAL MENTOR-MENTEE MONITORING & HOD DEPARTMENT MAPPING CARD */}
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500 text-slate-950 font-black shadow-sm">
-              <UserCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                MENTOR-MENTEE MONITORING & HOD DEPARTMENT MAPPING
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Department-wise breakdown of HOD leadership, assigned faculty mentors, and student mentee allocations
-              </p>
-            </div>
-          </div>
 
-          <button
-            onClick={() => setActiveTab('mentor_mapping')}
-            className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
-          >
-            Manage Mentor Mappings <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Department-wise Mentor Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
-          {(selectedDept === 'all' || selectedDept === 'All Departments'
-            ? DEPARTMENTS
-            : DEPARTMENTS.filter((dept) => isSameDept(dept, selectedDept))
-          ).map((dept) => {
-            const deptHod = getDeptHodName(staffList, dept, currentUser, 'HOD');
-            const deptStaffCount = staffList.filter((s) => isSameDept(s.department, dept)).length;
-            const deptStudents = skillBankStudents.filter((s) => isSameDept(s.studentProfile.department, dept));
-            const mappedStudents = deptStudents.filter((s) => s.studentProfile.mentorFaculty && s.studentProfile.mentorFaculty.trim() !== '');
-            const unmappedCount = deptStudents.length - mappedStudents.length;
-
-            return (
-              <div
-                key={dept}
-                onClick={() => setActiveTab('mentor_mapping')}
-                className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700/80 hover:border-amber-400 dark:hover:border-amber-500 transition-all cursor-pointer space-y-2.5 group"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">
-                    {(dept || '').split(' ')[0]}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-500 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-md">
-                    {deptStaffCount} Staff
-                  </span>
-                </div>
-
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
-                    {dept}
-                  </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    HOD: <strong className="text-slate-800 dark:text-slate-200">{deptHod}</strong>
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-slate-500 text-[10px] block">Mapped Mentees:</span>
-                    <strong className="text-emerald-600 dark:text-emerald-400 font-black">{mappedStudents.length} Students</strong>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-slate-500 text-[10px] block">Unmapped:</span>
-                    <strong className={unmappedCount > 0 ? 'text-amber-600 font-bold' : 'text-slate-400 font-normal'}>
-                      {unmappedCount} Students
-                    </strong>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
 
       {/* EXECUTIVE RECHARTS ANALYTICS DASHBOARD SUMMARY */}
       <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-6">
@@ -1124,131 +1057,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* FACULTY 5-UNIT LESSON PLAN COMPLETION CARD (FOR HOD, PRINCIPAL & STAFF) */}
-      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                FACULTY LESSON PLAN 5-UNIT SYLLABUS STATUS
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {isStaff
-                  ? 'Track your 5-unit syllabus progress'
-                  : isHod
-                  ? `${hodDepartment} Faculty 5-Unit Progress`
-                  : `Faculty 5-Unit Progress (${selectedDept === 'all' || selectedDept === 'All Departments' ? 'All Departments' : selectedDept})`}
-              </p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-3">
-            {isPrincipal && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500 font-bold">Dept:</span>
-                <select
-                  value={selectedDept}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFilterState((prev) => ({ ...prev, department: val }));
-                    updateDailyReport({ department: val });
-                  }}
-                  className="px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg font-bold text-slate-900 dark:text-white cursor-pointer"
-                >
-                  <option value="All Departments">🏢 All Departments</option>
-                  {DEPARTMENTS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
 
-            <button
-              onClick={() => setActiveTab('lesson_plan')}
-              className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 font-bold flex items-center gap-1"
-            >
-              Manage Lesson Plans <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {staffList
-            .filter((staff) => {
-              if (isStaff) {
-                return (
-                  (staff.facultyName && currentUser?.name && staff.facultyName.toLowerCase() === currentUser.name.toLowerCase()) ||
-                  staff.id === currentUser?.staffId ||
-                  (currentUser?.email && staff.email && staff.email.toLowerCase() === currentUser.email.toLowerCase())
-                );
-              }
-              if (isHod) {
-                return (staff.department || '').toLowerCase() === hodDepartment.toLowerCase();
-              }
-              if (isPrincipal) {
-                return isDeptMatch(staff.department, selectedDept);
-              }
-              return true;
-            })
-            .slice(0, 6)
-            .map((staff, staffIdx) => {
-              const staffPlans = lessonPlanList.filter(
-                (lp) =>
-                  (lp.staffName && staff.facultyName && lp.staffName.toLowerCase().includes(staff.facultyName.toLowerCase())) ||
-                  lp.staffId === staff.id
-              );
-
-              const units = ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4', 'Unit 5'] as const;
-              const completedCount = staffPlans.filter((lp) => lp.status === 'Completed').length;
-              const totalCount = staffPlans.length;
-              const overallPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-
-              return (
-                <div
-                  key={staff.id || `staff-lp-${staffIdx}`}
-                  onClick={() => setActiveTab('lesson_plan')}
-                  className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700/80 hover:border-indigo-400 transition-all cursor-pointer space-y-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-900 dark:text-white">{staff.facultyName}</h4>
-                      <p className="text-[10px] text-slate-500">{staff.designation}</p>
-                    </div>
-                    <span className="text-xs font-black px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-300">
-                      {overallPct}%
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-5 gap-1 pt-1">
-                    {units.map((u) => {
-                      const uItems = staffPlans.filter((lp) => lp.unitNo === u);
-                      const uDone = uItems.length > 0 && uItems.every((lp) => lp.status === 'Completed');
-                      const uProg = uItems.some((lp) => lp.status === 'In Progress' || lp.status === 'Completed');
-
-                      return (
-                        <div key={u} className="text-center">
-                          <div
-                            className={`h-2 rounded-full mb-1 ${
-                              uDone ? 'bg-emerald-500' : uProg ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
-                            }`}
-                          />
-                          <span className="text-[9px] font-bold text-slate-500">{u.replace('Unit ', 'U')}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-        </div>
-      </div>
-
-      {/* STUDENT ATTENDANCE SUMMARY (TODAY) CARD */}
+      {/* STUDENT ATTENDANCE SUMMARY (TODAY) CARD - DEPARTMENT-WISE SINGLE VIEW */}
       <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-700">
           <div className="flex items-center gap-2.5">
@@ -1260,7 +1071,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 STUDENT ATTENDANCE SUMMARY (TODAY)
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Live section-wise student attendance log for {todayStr}
+                Live department-wise student attendance log for {todayStr}
               </p>
             </div>
           </div>
@@ -1273,143 +1084,282 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="text-[10px] text-slate-500">{totalAbsentCount} Students Absent Today</div>
             </div>
 
-            <button
-              onClick={() => setIsAttendanceModalOpen(true)}
-              className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0"
-            >
-              <Edit3 className="w-3.5 h-3.5" /> Enter / Update Attendance
-            </button>
+            {isReadOnlyUser ? (
+              <div className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs">
+                <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                Read-Only Principal View
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={async () => {
+                    if (window.confirm("Are you sure you want to clear all student attendance data for today?")) {
+                      await clearAllAttendance();
+                    }
+                  }}
+                  className="px-3 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="Clear all today's attendance entries"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Clear Data
+                </button>
+                <button
+                  onClick={() => setIsAttendanceModalOpen(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5" /> Enter / Update Attendance
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Section Table Grid */}
-        {studentAttendanceList.length === 0 ? (
-          <div className="p-6 text-center text-slate-400 text-xs bg-slate-50 dark:bg-slate-900/40 rounded-xl">
-            No attendance summaries entered yet.{' '}
-            <button
-              onClick={() => setIsAttendanceModalOpen(true)}
-              className="text-blue-600 dark:text-blue-400 font-bold underline"
-            >
-              Click here to manually enter student attendance.
-            </button>
-          </div>
-        ) : (
-          <div>
-            {/* Variation Alert Banner for HOD and Principal */}
-            {(() => {
-              const totalVar = studentAttendanceList.reduce((acc, curr) => {
-                const m = curr.morningPresent ?? curr.presentStudents ?? 0;
-                const e = curr.eveningPresent ?? curr.presentStudents ?? 0;
-                return acc + Math.abs(m - e);
-              }, 0);
+        {/* Department Filter Pills Bar */}
+        <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0 mr-1">
+            <Filter className="w-3 h-3" /> Dept:
+          </span>
+          {isManagementUser ? (
+            <>
+              <button
+                onClick={() => setFilterState((prev) => ({ ...prev, department: 'all' }))}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                  !filterState.department || filterState.department === 'all' || filterState.department === 'All Departments'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                All Departments Overview
+              </button>
+              {availableAttendanceDepts.map((dept) => {
+                const isSel = isSameDept(filterState.department, dept);
+                const deptItems = rawStudentAttendanceList.filter((sa) => isSameDept(sa.department, dept));
+                const deptTot = deptItems.reduce((a, b) => a + Number(b.totalStudents || 0), 0);
+                const deptPres = deptItems.reduce((a, b) => a + Number(b.presentStudents || 0), 0);
+                const deptPct = deptTot > 0 ? ((deptPres / deptTot) * 100).toFixed(0) : '0';
 
-              if (totalVar > 0) {
                 return (
-                  <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between text-amber-900 dark:text-amber-200 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-amber-600 text-white font-extrabold rounded text-[10px] uppercase">
-                        Variation Alert
+                  <button
+                    key={dept}
+                    onClick={() => setFilterState((prev) => ({ ...prev, department: dept }))}
+                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 ${
+                      isSel
+                        ? 'bg-blue-600 text-white shadow-xs font-bold'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>{dept.replace(/ \(.*\)/, '')}</span>
+                    {deptTot > 0 && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold ${
+                          isSel
+                            ? 'bg-white/20 text-white'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'
+                        }`}
+                      >
+                        {deptPct}%
                       </span>
-                      <span className="font-semibold">
-                        {totalVar} student attendance variation(s) detected between Morning and Evening Mentor Hours across sections.
-                      </span>
-                    </div>
-                    <span className="font-bold text-[11px] text-amber-700 dark:text-amber-300">
-                      HOD & Principal Review Required
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          ) : (
+            <div className="px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0">
+              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+              <span>Department: <strong>{hodDepartment}</strong></span>
+            </div>
+          )}
+        </div>
+
+        {/* Variation Alert Banner */}
+        {(() => {
+          const totalVar = studentAttendanceList.reduce((acc, curr) => {
+            const m = curr.morningPresent ?? curr.presentStudents ?? 0;
+            const e = curr.eveningPresent ?? curr.presentStudents ?? 0;
+            return acc + Math.abs(m - e);
+          }, 0);
+
+          if (totalVar > 0) {
+            return (
+              <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between text-amber-900 dark:text-amber-200 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-amber-600 text-white font-extrabold rounded text-[10px] uppercase">
+                    Variation Alert
+                  </span>
+                  <span className="font-semibold">
+                    {totalVar} student attendance variation(s) detected between Morning and Evening Mentor Hours across sections.
+                  </span>
+                </div>
+                <span className="font-bold text-[11px] text-amber-700 dark:text-amber-300">
+                  Principal Review Required
+                </span>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
+        {/* Department-Wise UI Grid */}
+        <div className="space-y-6">
+          {availableAttendanceDepts.filter((dept) => {
+            if (!filterState.department || filterState.department === 'all' || filterState.department === 'All Departments') {
+              return true;
+            }
+            return isSameDept(filterState.department, dept);
+          }).map((deptName) => {
+            const deptSections = getDepartmentAttendanceSummaries(
+              rawStudentAttendanceList,
+              classList,
+              deptName,
+              attendanceRecords
+            );
+
+            const deptTotStrength = deptSections.reduce((acc, curr) => acc + Number(curr.totalStudents || 0), 0);
+            const deptMorPres = deptSections.reduce((acc, curr) => acc + Number(curr.morningPresent ?? curr.presentStudents ?? 0), 0);
+            const deptEvePres = deptSections.reduce((acc, curr) => acc + Number(curr.eveningPresent ?? curr.presentStudents ?? 0), 0);
+            const deptOverallPct = deptTotStrength > 0 ? Number(((deptEvePres / deptTotStrength) * 100).toFixed(1)) : 0;
+            const hodName = getDeptHodName(staffList, deptName, currentUser);
+
+            return (
+              <div
+                key={deptName}
+                className="bg-slate-50/70 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700/70 overflow-hidden"
+              >
+                {/* Department Card Header */}
+                <div className="p-3.5 bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+                      {deptName}
+                    </h4>
+                    <span className="text-[10px] font-semibold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                      HOD: {hodName}
                     </span>
                   </div>
-                );
-              }
-              return null;
-            })()}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-900/60 text-slate-600 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-700">
-                    <th className="p-3">Year / Class Section</th>
-                    <th className="p-3 text-center">Total Strength (Fixed)</th>
-                    <th className="p-3 text-center text-emerald-700 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20">
-                      Morning Session <span className="block text-[10px] font-normal text-emerald-600">(Mentor Hour)</span>
-                    </th>
-                    <th className="p-3 text-center text-blue-700 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20">
-                      Evening Session <span className="block text-[10px] font-normal text-blue-600">(Mentor Hour)</span>
-                    </th>
-                    <th className="p-3 text-center text-amber-700 dark:text-amber-400">
-                      Variation <span className="block text-[10px] font-normal text-amber-600">(Mor vs Eve)</span>
-                    </th>
-                    <th className="p-3 text-center">Attendance %</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
-                  {studentAttendanceList.map((sa, idx) => {
-                    const mPres = sa.morningPresent ?? sa.presentStudents ?? 0;
-                    const ePres = sa.eveningPresent ?? sa.presentStudents ?? 0;
-                    const mAbs = sa.morningAbsent ?? Math.max(0, sa.totalStudents - mPres);
-                    const eAbs = sa.eveningAbsent ?? Math.max(0, sa.totalStudents - ePres);
-                    const mOd = sa.morningOd ?? sa.odStudents ?? 0;
-                    const eOd = sa.eveningOd ?? sa.odStudents ?? 0;
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Strength: <span className="text-slate-900 dark:text-white">{deptTotStrength}</span>
+                    </div>
+                    <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                      Mor: <span>{deptMorPres}</span>
+                    </div>
+                    <div className="text-xs font-bold text-blue-700 dark:text-blue-400">
+                      Eve: <span>{deptEvePres}</span>
+                    </div>
+                    <span
+                      className={`px-2.5 py-0.5 rounded text-xs font-extrabold ${
+                        deptOverallPct >= 90
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          : deptOverallPct >= 75
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                          : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                      }`}
+                    >
+                      {deptOverallPct}% Overall
+                    </span>
+                  </div>
+                </div>
 
-                    const varVal = mPres - ePres;
-                    const hasVar = varVal !== 0;
-                    const pct = sa.eveningPercentage || sa.attendancePercentage;
-                    const isHigh = pct >= 90;
-                    const isMed = pct >= 75 && pct < 90;
+                {/* Section Table */}
+                {deptSections.length === 0 ? (
+                  <div className="p-4 text-center text-slate-400 text-xs italic">
+                    No section attendance records for {deptName} today.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="bg-white/60 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 font-bold text-[11px] border-b border-slate-200/80 dark:border-slate-700/60 uppercase">
+                          <th className="p-2.5 pl-4">Year / Class Section</th>
+                          <th className="p-2.5 text-center">Strength</th>
+                          <th className="p-2.5 text-center text-emerald-700 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20">
+                            Morning (Mentor)
+                          </th>
+                          <th className="p-2.5 text-center text-blue-700 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">
+                            Evening (Mentor)
+                          </th>
+                          <th className="p-2.5 text-center text-amber-700 dark:text-amber-400">
+                            Variation
+                          </th>
+                          <th className="p-2.5 text-center pr-4">Attendance %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200/50 dark:divide-slate-700/40">
+                        {deptSections.map((sa, idx) => {
+                          const mPres = sa.morningPresent ?? sa.presentStudents ?? 0;
+                          const ePres = sa.eveningPresent ?? sa.presentStudents ?? 0;
+                          const mAbs = sa.morningAbsent ?? Math.max(0, sa.totalStudents - mPres);
+                          const eAbs = sa.eveningAbsent ?? Math.max(0, sa.totalStudents - ePres);
+                          const mOd = sa.morningOd ?? sa.odStudents ?? 0;
+                          const eOd = sa.eveningOd ?? sa.odStudents ?? 0;
 
-                    return (
-                      <tr key={sa.classId ? `${sa.classId}-${idx}` : `sa-${idx}`} className="hover:bg-slate-50/60 dark:hover:bg-slate-900/30">
-                        <td className="p-3 font-bold text-slate-900 dark:text-white">
-                          {sa.className}
-                        </td>
-                        <td className="p-3 text-center font-bold text-slate-700 dark:text-slate-300">
-                          <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
-                            {sa.totalStudents}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center bg-emerald-50/20 dark:bg-emerald-950/10 font-medium">
-                          <span className="font-bold text-emerald-700 dark:text-emerald-400">{mPres} Pres</span>
-                          <span className="text-[10px] text-slate-500 block">{mAbs} Abs | {mOd} OD</span>
-                        </td>
-                        <td className="p-3 text-center bg-blue-50/20 dark:bg-blue-950/10 font-medium">
-                          <span className="font-bold text-blue-700 dark:text-blue-400">{ePres} Pres</span>
-                          <span className="text-[10px] text-slate-500 block">{eAbs} Abs | {eOd} OD</span>
-                        </td>
-                        <td className="p-3 text-center">
-                          {hasVar ? (
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-[10px] font-black ${
-                              varVal > 0
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300'
-                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300'
-                            }`}>
-                              {varVal > 0 ? `+${varVal} (Mor > Eve)` : `${varVal} (Eve > Mor)`}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                              0 (Match)
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 text-center font-extrabold text-slate-900 dark:text-white">
-                          <span
-                            className={`inline-block px-2.5 py-1 rounded text-xs ${
-                              isHigh
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                : isMed
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                            }`}
-                          >
-                            {pct}%
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                          const varVal = mPres - ePres;
+                          const hasVar = varVal !== 0;
+                          const pct = sa.eveningPercentage || sa.attendancePercentage;
+                          const isHigh = pct >= 90;
+                          const isMed = pct >= 75 && pct < 90;
+
+                          return (
+                            <tr
+                              key={sa.classId ? `${sa.classId}-${idx}` : `sa-${deptName}-${idx}`}
+                              className="hover:bg-white dark:hover:bg-slate-800/60 transition-colors"
+                            >
+                              <td className="p-2.5 pl-4 font-bold text-slate-900 dark:text-white">
+                                {sa.className}
+                              </td>
+                              <td className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">
+                                {sa.totalStudents}
+                              </td>
+                              <td className="p-2.5 text-center bg-emerald-50/20 dark:bg-emerald-950/10 font-medium">
+                                <span className="font-bold text-emerald-700 dark:text-emerald-400">{mPres} Pres</span>
+                                <span className="text-[10px] text-slate-500 block">{mAbs} Abs | {mOd} OD</span>
+                              </td>
+                              <td className="p-2.5 text-center bg-blue-50/20 dark:bg-blue-950/10 font-medium">
+                                <span className="font-bold text-blue-700 dark:text-blue-400">{ePres} Pres</span>
+                                <span className="text-[10px] text-slate-500 block">{eAbs} Abs | {eOd} OD</span>
+                              </td>
+                              <td className="p-2.5 text-center">
+                                {hasVar ? (
+                                  <span
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                      varVal > 0
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300'
+                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300'
+                                    }`}
+                                  >
+                                    {varVal > 0 ? `+${varVal} (Mor > Eve)` : `${varVal} (Eve > Mor)`}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    0 (Match)
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-center pr-4 font-extrabold text-slate-900 dark:text-white">
+                                <span
+                                  className={`inline-block px-2.5 py-0.5 rounded text-xs ${
+                                    isHigh
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                      : isMed
+                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                  }`}
+                                >
+                                  {pct}%
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* DISCIPLINE ISSUES, SPECIAL REMARKS & HOD OVERALL REMARKS CARD */}

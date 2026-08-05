@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { StudentAttendanceRecord, DEPARTMENTS } from '../types';
-import { isSameDept } from '../utils/departmentUtils';
+import { isSameDept, checkIsHodOrAdmin } from '../utils/departmentUtils';
 import {
   Users,
   CheckCircle2,
@@ -64,9 +64,9 @@ export const StudentAttendanceView: React.FC = () => {
     currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)'
   );
   const [newClassId, setNewClassId] = useState<string>(classList[0]?.id || 'CLS-104');
-  const [newPresent, setNewPresent] = useState<number>(60);
-  const [newAbsent, setNewAbsent] = useState<number>(4);
-  const [newOd, setNewOd] = useState<number>(2);
+  const [newPresent, setNewPresent] = useState<number>(0);
+  const [newAbsent, setNewAbsent] = useState<number>(0);
+  const [newOd, setNewOd] = useState<number>(0);
   const [newOthers, setNewOthers] = useState<number>(0);
   const [newRemarks, setNewRemarks] = useState<string>('');
 
@@ -77,6 +77,7 @@ export const StudentAttendanceView: React.FC = () => {
   const [editOthers, setEditOthers] = useState<number>(0);
   const [editRemarks, setEditRemarks] = useState<string>('');
 
+  const isHodOrAdmin = checkIsHodOrAdmin(currentUser);
   const isManagement = currentUser?.role === 'admin' || currentUser?.role === 'principal';
 
   // Available classes for selected department in add modal
@@ -593,17 +594,19 @@ export const StudentAttendanceView: React.FC = () => {
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('Delete this attendance record?')) {
-                                deleteAttendanceRecord(r.id);
-                              }
-                            }}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
-                            title="Delete Record"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {isHodOrAdmin && (
+                            <button
+                              onClick={() => {
+                                if (confirm('Delete this attendance record?')) {
+                                  deleteAttendanceRecord(r.id);
+                                }
+                              }}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg transition-colors"
+                              title="Delete Record (HOD Only)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -1016,6 +1019,19 @@ export const StudentAttendanceView: React.FC = () => {
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
+                          {isHodOrAdmin && (
+                            <button
+                              onClick={() => {
+                                if (confirm('Delete this attendance record?')) {
+                                  deleteAttendanceRecord(r.id);
+                                }
+                              }}
+                              className="p-1 text-rose-600 hover:bg-rose-50 rounded"
+                              title="Delete Record (HOD Only)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))

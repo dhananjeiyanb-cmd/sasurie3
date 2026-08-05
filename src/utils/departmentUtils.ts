@@ -18,14 +18,25 @@ export function normalizeDept(dept?: string): string {
   if (d.includes('artificial intelligence') || d.includes('ai & ds') || d.includes('ai&ds') || d.includes('aids') || d.includes('ai and ds')) {
     return 'ai & ds';
   }
+  if (d.includes('computer science') || d.includes('cse')) {
+    return 'cse';
+  }
   if (d.includes('cyber')) return 'cyber security';
-  if (d.includes('information technology') || d.includes('it')) return 'it';
+  if (d.includes('information technology') || /\b(it)\b/i.test(d)) return 'it';
   if (d.includes('electrical') || d.includes('eee')) return 'eee';
   if (d.includes('electronics') || d.includes('ece')) return 'ece';
-  if (d.includes('computer science') || d.includes('cse')) return 'cse';
   if (d.includes('mechanical') || d.includes('mech')) return 'mech';
   if (d.includes('civil')) return 'civil';
-  if (d.includes('science') || d.includes('humanities') || d.includes('s&h') || d.includes('s & h')) return 'science and humanities';
+  if (
+    d.includes('science and humanities') ||
+    d.includes('humanities') ||
+    d.includes('s&h') ||
+    d.includes('s & h') ||
+    d === 'science' ||
+    d === 's&h'
+  ) {
+    return 'science and humanities';
+  }
   return d;
 }
 
@@ -270,7 +281,7 @@ export function getDepartmentAttendanceSummaries(
   department: string,
   attendanceRecords?: StudentAttendanceRecord[]
 ): StudentAttendanceSummary[] {
-  if (!department) return existingSummaries || [];
+  if (!department) return [];
 
   // If department is 'all' or 'All Departments', aggregate summaries across all departments
   if (department === 'all' || department === 'All Departments') {
@@ -291,11 +302,23 @@ export function getDepartmentAttendanceSummaries(
     return y;
   };
 
-  // 1. Get all class definitions for this department from classList
-  let deptClasses = (classList || []).filter((c) => isSameDept(c.department, department));
+  const yearWeight = (y?: string) => {
+    const ny = normYear(y);
+    if (ny.includes('I Year') || ny.includes('1st')) return 1;
+    if (ny.includes('II Year') || ny.includes('2nd')) return 2;
+    if (ny.includes('III Year') || ny.includes('3rd')) return 3;
+    if (ny.includes('IV Year') || ny.includes('4th')) return 4;
+    return 5;
+  };
 
-  // Fallback if no classes found in classList for this department
-  if (deptClasses.length === 0) {
+  // 1. Get all class definitions for this department from classList
+  const realDeptClasses = (classList || []).filter((c) => isSameDept(c.department, department));
+  const hasRealClasses = realDeptClasses.length > 0;
+
+  let deptClasses = realDeptClasses;
+
+  // Fallback if no classes found in classList for this department (II, III, IV Year default classes)
+  if (!hasRealClasses) {
     deptClasses = [
       {
         id: `CLS-DEF-II-${deptTag}`,
@@ -306,6 +329,7 @@ export function getDepartmentAttendanceSummaries(
         roomNumber: '',
         semester: 'Semester 3',
         academicYear: '2025-2026',
+        totalStudents: 60,
       },
       {
         id: `CLS-DEF-III-${deptTag}`,
@@ -316,6 +340,7 @@ export function getDepartmentAttendanceSummaries(
         roomNumber: '',
         semester: 'Semester 5',
         academicYear: '2025-2026',
+        totalStudents: 60,
       },
       {
         id: `CLS-DEF-IV-${deptTag}`,
@@ -326,6 +351,7 @@ export function getDepartmentAttendanceSummaries(
         roomNumber: '',
         semester: 'Semester 7',
         academicYear: '2025-2026',
+        totalStudents: 60,
       },
     ];
   }
@@ -345,10 +371,13 @@ export function getDepartmentAttendanceSummaries(
 
   const matchedSummaries: StudentAttendanceSummary[] = [];
   const processedClassIds = new Set<string>();
+  const processedYearSecKeys = new Set<string>();
 
   // Construct a row for each class section belonging strictly to this department
   for (const c of deptClasses) {
     processedClassIds.add(c.id);
+    const yearSecKey = `${normYear(c.year)}_${(c.section || '').toLowerCase().replace(/sec\s*/, '')}`;
+    processedYearSecKeys.add(yearSecKey);
 
     // 1st Priority: Check if existingDeptSummaries has an entry for this class
     const foundSummary = existingDeptSummaries.find(
@@ -366,6 +395,7 @@ export function getDepartmentAttendanceSummaries(
         className: foundSummary.className || cName,
         department: department,
         year: normYear(c.year),
+        totalStudents: foundSummary.totalStudents || c.totalStudents || 60,
       });
       continue;
     }
@@ -385,7 +415,7 @@ export function getDepartmentAttendanceSummaries(
         className: foundRecord.className || cName,
         year: normYear(c.year),
         department: department,
-        totalStudents: foundRecord.totalStudents,
+        totalStudents: foundRecord.totalStudents || c.totalStudents || 60,
         presentStudents: foundRecord.presentStudents,
         absentStudents: foundRecord.absentStudents || 0,
         odStudents: foundRecord.odStudents || 0,
@@ -406,7 +436,7 @@ export function getDepartmentAttendanceSummaries(
       continue;
     }
 
-    // 3rd Priority: Default empty summary for this class section
+    // 3rd Priority: Default class section row for this department
     const secTag = c.section.startsWith('Sec') ? c.section : `Sec ${c.section}`;
     const cName = `${normYear(c.year)} ${deptTag} - ${secTag}`;
     matchedSummaries.push({
@@ -414,7 +444,7 @@ export function getDepartmentAttendanceSummaries(
       className: cName,
       year: normYear(c.year),
       department: department,
-      totalStudents: 60,
+      totalStudents: c.totalStudents || 60,
       presentStudents: 0,
       absentStudents: 0,
       odStudents: 0,
@@ -434,34 +464,47 @@ export function getDepartmentAttendanceSummaries(
     });
   }
 
-  // Include any extra summaries from existingDeptSummaries that were not mapped to deptClasses
+  // Include custom non-duplicate extra summaries from existingDeptSummaries
   for (const s of existingDeptSummaries) {
-    if (s.classId && !processedClassIds.has(s.classId)) {
+    if (!s.classId) continue;
+
+    const isAlreadyProcessed = processedClassIds.has(s.classId);
+    const sYearSecKey = `${normYear(s.year)}_${(s.className || '').toLowerCase().replace(/sec\s*/, '')}`;
+    const isYearSecDup = Array.from(processedYearSecKeys).some((key) => sYearSecKey.includes(key));
+
+    if (!isAlreadyProcessed && !isYearSecDup) {
       matchedSummaries.push({
         ...s,
         department: department,
       });
+      processedClassIds.add(s.classId);
     }
   }
 
   // Sort chronologically by year order (II Year, III Year, IV Year) and section
-  const yearWeight = (y?: string) => {
-    const ny = normYear(y);
-    if (ny.includes('I Year') || ny.includes('1st')) return 1;
-    if (ny.includes('II Year') || ny.includes('2nd')) return 2;
-    if (ny.includes('III Year') || ny.includes('3rd')) return 3;
-    if (ny.includes('IV Year') || ny.includes('4th')) return 4;
-    return 5;
-  };
-
   matchedSummaries.sort((a, b) => {
     const wA = yearWeight(a.year);
     const wB = yearWeight(b.year);
     if (wA !== wB) return wA - wB;
-    return a.className.localeCompare(b.className);
+    return (a.className || '').localeCompare(b.className || '');
   });
 
   return matchedSummaries;
+}
+
+export function checkIsHodOrAdmin(currentUser?: User | null): boolean {
+  if (!currentUser) return false;
+  const role = currentUser.role as string;
+  const u = currentUser as any;
+  const desig = String(u?.designation || u?.designationRole || u?.coordinatorRole || '').toLowerCase();
+  return (
+    role === 'admin' ||
+    role === 'principal' ||
+    role === 'hod' ||
+    desig.includes('hod') ||
+    desig.includes('head of department') ||
+    desig.includes('principal')
+  );
 }
 
 

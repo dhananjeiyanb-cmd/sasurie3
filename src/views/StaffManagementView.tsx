@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Staff, DEPARTMENTS, CoordinatorRole, Role, SASURIE_COLLEGES } from '../types';
-import { getCollegeLogoText, getUserCollege, isStaffInCollege, isSameCollege } from '../utils/departmentUtils';
+import { getCollegeLogoText, getUserCollege, isStaffInCollege, isSameCollege, isSuperAdmin } from '../utils/departmentUtils';
 import { StaffStatusBadge } from '../components/StatusBadge';
 import {
   Users,
@@ -29,7 +29,7 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
   isAddModalOpen = false,
   onCloseAddModal,
 }) => {
-  const { staffList, addStaff, updateStaff, deleteStaff, clearAllStaff, currentUser, loginAsDemo, filterState, updateUserPassword, dailyReport, updateDailyReport } = useApp();
+  const { staffList, addStaff, updateStaff, deleteStaff, clearAllStaff, restoreDemoStaff, currentUser, loginAsDemo, filterState, updateUserPassword, dailyReport, updateDailyReport } = useApp();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive'>('all');
@@ -37,6 +37,7 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
 
   const [showModal, setShowModal] = useState(isAddModalOpen);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Form states
   const [facultyId, setFacultyId] = useState('');
@@ -139,6 +140,7 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
       });
       updateUserPassword(cleanId, pass);
       if (email) updateUserPassword(email, pass);
+      setSuccessMsg(`Staff member "${facultyName}" (${cleanId}) updated and saved to database successfully.`);
     } else {
       addStaff({
         id: cleanId,
@@ -155,44 +157,48 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
       });
       updateUserPassword(cleanId, pass);
       if (email) updateUserPassword(email, pass);
+      setSuccessMsg(`New staff member "${facultyName}" (${cleanId}) created and saved to database successfully.`);
     }
+
+    // Reset filters so the new staff member is visible immediately
+    setSearch('');
+    setStatusFilter('all');
+    setDepartmentFilter('all');
 
     handleCloseModal();
   };
 
-  const handleDelete = (id: string, name: string) => {
-    if ((name || '').toUpperCase().includes('DHANANJEIYAN')) {
-      alert('DHANANJEIYAN B cannot be deleted.');
-      return;
-    }
+  const handleDelete = async (id: string, name: string) => {
     if (confirm(`Are you sure you want to delete staff member "${name}" (${id})?`)) {
-      deleteStaff(id);
+      await deleteStaff(id);
+      setSuccessMsg(`Staff member "${name}" (${id}) deleted successfully from database.`);
     }
   };
 
   const isHod = currentUser?.role === 'admin';
   const isSecretary = currentUser?.role === 'secretary' || currentUser?.role === 'secretary_pa';
   const isPrincipalUser = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
+  const isSuperAdminUser = isSuperAdmin(currentUser);
   const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
   const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
   const [collegeFilter, setCollegeFilter] = useState<string>('all');
 
+  // Active college selected globally or in dropdown
+  const activeCollege = isPrincipalUser
+    ? principalCollege
+    : (dailyReport?.collegeName && dailyReport.collegeName !== 'All Colleges' ? dailyReport.collegeName : collegeFilter !== 'all' ? collegeFilter : undefined);
+
   const filteredStaff = staffList.filter((s) => {
-    // Principal Scope: ONLY see staff belonging to their college
-    if (isPrincipalUser) {
-      if (!isStaffInCollege(s, principalCollege)) return false;
+    // Principal & College Scope: ONLY see staff belonging to their selected/fixed college
+    if (activeCollege) {
+      if (!isStaffInCollege(s, activeCollege)) return false;
     }
 
-    // Secretary Scope: See all staff across all colleges, or filter by specific college
-    if (isSecretary && collegeFilter !== 'all') {
-      if (!isStaffInCollege(s, collegeFilter)) return false;
-    }
-
-    // HOD Scope: Only see staff from their own department
-    if (isHod) {
+    // HOD Scope: Only filter by department if department filter is explicitly selected
+    if (isHod && !isSuperAdminUser && !isPrincipalUser && departmentFilter !== 'all') {
       const staffDept = (s.department || '').toLowerCase();
-      const userDept = (hodDepartment || '').toLowerCase();
+      const userDept = (departmentFilter || hodDepartment || '').toLowerCase();
       const isSameDept = staffDept === userDept || (staffDept.includes('ai & ds') && userDept.includes('ai & ds'));
       if (!isSameDept) return false;
     }
@@ -217,6 +223,21 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Success Notification Banner */}
+      {successMsg && (
+        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-2xl flex items-center justify-between text-xs font-bold shadow-sm animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+          <button
+            onClick={() => setSuccessMsg('')}
+            className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900 rounded-lg cursor-pointer"
+          >
+            <X className="w-4 h-4 text-emerald-700 dark:text-emerald-300" />
+          </button>
+        </div>
+      )}
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
         <div>
@@ -229,33 +250,44 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
           </p>
         </div>
 
-        {(currentUser?.role === 'admin' || currentUser?.role === 'principal') && (
-          <div className="flex items-center gap-2 shrink-0">
-            {staffList.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {staffList.length > 0 ? (
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm('Are you sure you want to clear all extra faculty members from the database except DHANANJEIYAN B? This action cannot be undone.')) {
-                    clearAllStaff();
+                onClick={async () => {
+                  if (confirm('Are you sure you want to clear the staff database in Firebase Firestore? All current staff records will be removed so you can enter your new staff members.')) {
+                    await clearAllStaff();
+                    setSuccessMsg('Staff database has been completely cleared from Firebase Firestore. You can now enter your new staff members using "One-Click Add Staff".');
                   }
                 }}
-                className="px-3 py-2 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5"
-                title="Clear all extra faculty members (except DHANANJEIYAN B)"
+                className="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                title="Wipe all staff members from Firebase database"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Clear Extra Faculty
+                <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                Clear Staff Database
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  await restoreDemoStaff();
+                  setSuccessMsg('Sample default staff restored to database.');
+                }}
+                className="px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Restore sample demo staff"
+              >
+                Restore Sample Staff
               </button>
             )}
 
             <button
               onClick={openAddModal}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-blue-600/20 transition-all flex items-center gap-2"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
               One-Click Add Staff
             </button>
           </div>
-        )}
       </div>
 
       {/* Controls: Search, Department Dropdown & Status Filter */}
@@ -342,8 +374,27 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
       {/* Staff Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredStaff.length === 0 ? (
-          <div className="col-span-full p-8 text-center bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 text-xs">
-            No faculty members found matching your search.
+          <div className="col-span-full p-10 text-center bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400">
+            {staffList.length === 0 ? (
+              <div className="max-w-md mx-auto space-y-3">
+                <div className="w-12 h-12 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto">
+                  <UserPlus className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Staff Database is Empty</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  The staff database has been cleared. You can now add your faculty members newly.
+                </p>
+                <button
+                  onClick={openAddModal}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all inline-flex items-center gap-2 cursor-pointer mt-2"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  One-Click Add Staff Member
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">No faculty members found matching your search filters.</p>
+            )}
           </div>
         ) : (
           filteredStaff.map((staff, idx) => (
@@ -447,11 +498,10 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
                 </div>
               </div>
 
-              {(currentUser?.role === 'admin' || currentUser?.role === 'principal') && (
                 <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-700/60">
                   <button
                     onClick={() => loginAsDemo(staff.role === 'admin' ? 'admin' : 'staff', staff.id)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors border ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors border cursor-pointer ${
                       staff.role === 'admin'
                         ? 'bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60'
                         : 'bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
@@ -463,19 +513,18 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => openEditModal(staff)}
-                      className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium flex items-center gap-1 transition-colors"
+                      className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       <Edit2 className="w-3.5 h-3.5" /> Edit
                     </button>
                     <button
                       onClick={() => handleDelete(staff.id, staff.facultyName)}
-                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-medium flex items-center gap-1 transition-colors"
+                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Delete
                     </button>
                   </div>
                 </div>
-              )}
             </div>
           ))
         )}
@@ -615,10 +664,14 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
                   >
                     <option value="staff">Faculty (Staff)</option>
                     <option value="admin">HOD (Department Admin)</option>
-                    <option value="principal">College Principal</option>
-                    <option value="secretary">College Secretary</option>
-                    <option value="principal_pa">Principal PA</option>
-                    <option value="secretary_pa">Secretary PA</option>
+                    {(isSuperAdminUser || (currentUser?.role === 'admin' && (currentUser?.username === 'ADM001' || currentUser?.email?.includes('admin')))) && (
+                      <>
+                        <option value="principal">🎓 College Principal (Admin Only)</option>
+                        <option value="principal_pa">💼 Principal PA (Admin Only)</option>
+                        <option value="secretary">🏛️ College Secretary (Admin Only)</option>
+                        <option value="secretary_pa">📋 Secretary PA (Admin Only)</option>
+                      </>
+                    )}
                     <option value="librarian">Central Librarian</option>
                     <option value="incucula">Incucula Cell Head</option>
                   </select>

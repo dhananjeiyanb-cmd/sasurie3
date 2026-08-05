@@ -134,8 +134,6 @@ const MainContent: React.FC = () => {
 
           {activeTab === 'skill_bank' && <SkillBankView />}
 
-          {activeTab === 'lesson_plan' && <LessonPlanView />}
-
           {activeTab === 'observations' && <ClassObservationView />}
 
           {activeTab === 'monitoring' && <FacultyMonitoringView />}

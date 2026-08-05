@@ -1,27 +1,53 @@
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
 
-export async function syncDocToFirestore(collectionName: string, docId: string, data: any) {
-  if (!docId || typeof docId !== 'string') {
-    console.warn(`[syncDocToFirestore] Skipping write: invalid docId "${docId}" for collection "${collectionName}"`);
+function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) {
+    return null as unknown as T;
+  }
+  if (data === null) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const key of Object.keys(data)) {
+      const val = (data as Record<string, any>)[key];
+      if (val !== undefined) {
+        cleaned[key] = sanitizeForFirestore(val);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}
+
+export async function syncDocToFirestore(collectionName: string, docId: string | number, data: any) {
+  if (docId === undefined || docId === null) {
+    console.warn(`[syncDocToFirestore] Skipping write: invalid docId for collection "${collectionName}"`);
     return;
   }
-  const cleanId = docId.trim();
+  const cleanId = String(docId).trim().replace(/\//g, '_');
   if (!cleanId) return;
   const path = `${collectionName}/${cleanId}`;
   try {
-    await setDoc(doc(db, collectionName, cleanId), data, { merge: true });
+    const sanitized = sanitizeForFirestore(data);
+    await setDoc(doc(db, collectionName, cleanId), sanitized, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
-export async function deleteDocFromFirestore(collectionName: string, docId: string) {
-  if (!docId || typeof docId !== 'string') {
-    console.warn(`[deleteDocFromFirestore] Skipping delete: invalid docId "${docId}" for collection "${collectionName}"`);
+export async function deleteDocFromFirestore(collectionName: string, docId: string | number) {
+  if (docId === undefined || docId === null) {
+    console.warn(`[deleteDocFromFirestore] Skipping delete: invalid docId for collection "${collectionName}"`);
     return;
   }
-  const cleanId = docId.trim();
+  const cleanId = String(docId).trim().replace(/\//g, '_');
   if (!cleanId) return;
   const path = `${collectionName}/${cleanId}`;
   try {

@@ -73,11 +73,11 @@ export const Header: React.FC<HeaderProps> = ({
 
   const hodName = currentUser?.role === 'admin'
     ? currentUser.name
-    : (deptHod?.facultyName || dailyReport.hodName || 'DHANANJEIYAN B');
+    : (deptHod?.facultyName || dailyReport.hodName || 'Dr. C. HOD (AI & DS)');
 
   const hodEmail = currentUser?.role === 'admin'
     ? (currentUser.email || 'hod@sasurie.com')
-    : (deptHod?.email || dailyReport.hodEmail || 'dhananjeiyan.backup@gmail.com');
+    : (deptHod?.email || dailyReport.hodEmail || 'hodcs@sasurie.com');
 
   const subText = currentUser
     ? currentUser.role === 'admin'

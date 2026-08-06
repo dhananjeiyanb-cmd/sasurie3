@@ -22,6 +22,7 @@ import {
   EventFeedbackResponse,
 } from '../types';
 import { StudentSkillBankData, GoogleSheetsConfig } from '../types/skillBank';
+import { FacultyKpiRecord, FacultyPillarClaim } from '../types/facultyKpi';
 import { CCMMeeting, CCMAgendaItem, CCMMeetingStatus } from '../types/ccm';
 import { INITIAL_CCM_MEETINGS, DEFAULT_CCM_AGENDA, buildDefaultAgenda } from '../data/ccmData';
 import {
@@ -153,6 +154,11 @@ interface AppContextType {
   clearAllSkillBankStudents: () => void;
   bulkMapStudentsToMentor: (registerNumbers: string[], staffId: string, mentorName: string) => void;
   importBulkSkillBankStudents: (newStudents: StudentSkillBankData[]) => void;
+
+  // Faculty KPI Cascade (Phase 1: auto B,C,E + self-claim A,D; HOD F in Phase 2)
+  facultyKpis: FacultyKpiRecord[];
+  upsertFacultyKpiClaim: (staffId: string, claim: FacultyPillarClaim) => void;
+  clearFacultyKpiForStaff: (staffId: string) => void;
 
   googleSheetsConfig: GoogleSheetsConfig;
   updateGoogleSheetsConfig: (updates: Partial<GoogleSheetsConfig>) => void;
@@ -334,6 +340,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_STUDENTS_SKILL_BANK;
   });
 
+    // Faculty KPI Cascade — persisted self-claims (Pillars A, D) + HOD claims (F, Phase 2).
+  // Auto pillars (B, C, E) are recomputed on the fly from the Skill Bank in the view.
+  const [facultyKpis, setFacultyKpis] = useState<FacultyKpiRecord[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`);
+    if (saved) {
+      try {
+        const parsed: FacultyKpiRecord[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (err) {
+        console.error('Error parsing saved faculty KPIs:', err);
+      }
+    }
+    return [];
+  });
+
   const [googleSheetsConfig, setGoogleSheetsConfig] = useState<GoogleSheetsConfig>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}google_sheets_config`);
     return saved
@@ -416,6 +437,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(skillBankStudents));
   }, [skillBankStudents]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(facultyKpis));
+  }, [facultyKpis]);
 
   // One-time auto-purge on boot to ensure database is completely cleared of any mock students
   useEffect(() => {
@@ -741,7 +766,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSkillBankStudents(finalStudents);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(finalStudents));
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
+        }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
+
+    // Faculty KPI Listeners — persisted self/HOD claims per staff.
+    const unsubKpi = onSnapshot(collection(db, 'facultyKpis'), (snapshot) => {
+      let localArr: FacultyKpiRecord[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localArr = parsed;
+        }
+      } catch {}
+
+      if (snapshot.empty) {
+        setFacultyKpis(localArr);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(localArr));
+      } else {
+        const map = new Map<string, FacultyKpiRecord>();
+        localArr.forEach((r) => {
+          if (r && r.staffId) map.set(r.staffId, r);
+        });
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as FacultyKpiRecord;
+          const key = data?.staffId || d.id;
+          if (key) map.set(key, data);
+        });
+        const finalKpis = Array.from(map.values());
+        setFacultyKpis(finalKpis);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(finalKpis));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'facultyKpis'));
 
     // Daily Report Listener
     const unsubReport = onSnapshot(doc(db, 'settings', 'dailyReport'), (docSnap) => {
@@ -773,7 +828,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubLp();
       unsubNotif();
       unsubEvents();
-      unsubSkill();
+            unsubSkill();
+      unsubKpi();
       unsubReport();
     };
   }, []);
@@ -2306,6 +2362,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const upsertFacultyKpiClaim = (staffId: string, claim: FacultyPillarClaim) => {
+  const cleanId = (staffId || '').trim();
+  if (!cleanId) {
+    console.warn('[upsertFacultyKpiClaim] Missing staffId — claim not saved.');
+    return;
+  }
+  setFacultyKpis((prev) => {
+    const existing = prev.find((r) => r.staffId === cleanId);
+    const now = new Date().toISOString();
+    if (existing) {
+      const filtered = existing.claims.filter((c) => c.pillar !== claim.pillar);
+      const updated: FacultyKpiRecord = {
+        ...existing,
+        claims: [...filtered, { ...claim, claimedAt: now }],
+        lastComputedAt: now,
+      };
+      syncDocToFirestore('facultyKpis', cleanId, updated);
+      return prev.map((r) => (r.staffId === cleanId ? updated : r));
+    }
+    const created: FacultyKpiRecord = {
+      staffId: cleanId,
+      facultyName: claim.claimedBy,
+      department: '',
+      academicYear: '',
+      claims: [{ ...claim, claimedAt: now }],
+      lastComputedAt: now,
+    };
+    syncDocToFirestore('facultyKpis', cleanId, created);
+    return [created, ...prev];
+  });
+  };
+
+  const clearFacultyKpiForStaff = async (staffId: string) => {
+    const cleanId = (staffId || '').trim();
+    if (!cleanId) return;
+    setFacultyKpis((prev) => prev.filter((r) => r.staffId !== cleanId));
+    deleteDocFromFirestore('facultyKpis', cleanId);
+  };
+
   const updateGoogleSheetsConfig = (updates: Partial<GoogleSheetsConfig>) => {
     setGoogleSheetsConfig((prev) => ({ ...prev, ...updates }));
   };
@@ -2754,6 +2849,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearAllSkillBankStudents,
         bulkMapStudentsToMentor,
         importBulkSkillBankStudents,
+        facultyKpis,
+        upsertFacultyKpiClaim,
+        clearFacultyKpiForStaff,
         googleSheetsConfig,
         updateGoogleSheetsConfig,
         syncSkillBankToGoogleSheets,

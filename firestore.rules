@@ -46,7 +46,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    match /skillBankStudents/{docId} {
+        match /skillBankStudents/{docId} {
+      allow read, write: if true;
+    }
+
+    match /facultyKpis/{docId} {
       allow read, write: if true;
     }
 

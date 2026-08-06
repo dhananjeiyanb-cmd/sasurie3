@@ -1,0 +1,212 @@
+{
+  "entities": {
+    "Staff": {
+      "title": "Staff Entity",
+      "description": "Faculty and staff member profiles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "facultyName": { "type": "string" },
+        "designation": { "type": "string" },
+        "department": { "type": "string" },
+        "mobile": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "facultyName", "department", "email", "role"]
+    },
+    "ClassRoom": {
+      "title": "ClassRoom Entity",
+      "description": "Department academic classrooms",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "year": { "type": "string" },
+        "department": { "type": "string" },
+        "section": { "type": "string" },
+        "classAdvisor": { "type": "string" },
+        "roomNumber": { "type": "string" },
+        "semester": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "courseCode": { "type": "string" },
+        "courseName": { "type": "string" }
+      },
+      "required": ["id", "department", "section", "roomNumber"]
+    },
+    "Task": {
+      "title": "Task Entity",
+      "description": "Tasks assigned by HOD or Principal to faculty",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "assignedToStaffId": { "type": "string" },
+        "assignedToName": { "type": "string" },
+        "priority": { "type": "string" },
+        "assignedDate": { "type": "string" },
+        "targetDate": { "type": "string" },
+        "status": { "type": "string" },
+        "remarks": { "type": "string" },
+        "completionRemarks": { "type": "string" },
+        "attachmentUrl": { "type": "string" },
+        "attachmentName": { "type": "string" }
+      },
+      "required": ["id", "title", "assignedToStaffId", "status"]
+    },
+    "ClassObservation": {
+      "title": "ClassObservation Entity",
+      "description": "HOD classroom teaching observations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "staffId": { "type": "string" },
+        "facultyName": { "type": "string" },
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "hour": { "type": "string" },
+        "subject": { "type": "string" },
+        "observation": { "type": "string" },
+        "remarks": { "type": "string" }
+      },
+      "required": ["id", "date", "staffId", "facultyName", "observation"]
+    },
+    "FacultyDailyMonitoring": {
+      "title": "FacultyDailyMonitoring Entity",
+      "description": "Daily monitoring logs for faculty",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "staffId": { "type": "string" },
+        "facultyName": { "type": "string" },
+        "classesHandled": { "type": "string" },
+        "attendanceUpdated": { "type": "boolean" },
+        "syllabusUpdated": { "type": "boolean" },
+        "assignedDuties": { "type": "string" },
+        "remarks": { "type": "string" }
+      },
+      "required": ["id", "date", "staffId"]
+    },
+    "StudentAttendanceRecord": {
+      "title": "StudentAttendanceRecord Entity",
+      "description": "Student daily attendance logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "department": { "type": "string" },
+        "classId": { "type": "string" },
+        "className": { "type": "string" },
+        "totalStudents": { "type": "number" },
+        "presentStudents": { "type": "number" },
+        "attendancePercentage": { "type": "number" }
+      },
+      "required": ["id", "date", "classId", "attendancePercentage"]
+    },
+    "LessonPlanItem": {
+      "title": "LessonPlanItem Entity",
+      "description": "Faculty lesson plan syllabus tracker",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "staffId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "className": { "type": "string" },
+        "courseCode": { "type": "string" },
+        "courseName": { "type": "string" },
+        "topicName": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "staffId", "courseCode", "topicName"]
+    },
+    "DailyHODReport": {
+      "title": "DailyHODReport Entity",
+      "description": "HOD daily summary report settings and logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "department": { "type": "string" },
+        "hodName": { "type": "string" },
+        "collegeName": { "type": "string" }
+      },
+      "required": ["id", "date", "department", "hodName"]
+    },
+    "AppNotification": {
+      "title": "AppNotification Entity",
+      "description": "System alerts and notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "title", "message", "read"]
+    },
+    "EventRecord": {
+      "title": "EventRecord Entity",
+      "description": "Institutional and Department Events, Workshops, Seminars, Guest Lectures and Club Activities",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "eventTitle": { "type": "string" },
+        "eventType": { "type": "string" },
+        "department": { "type": "string" },
+        "association": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "semester": { "type": "string" },
+        "plannedDate": { "type": "string" },
+        "eventStatus": { "type": "string" }
+      },
+      "required": ["id", "eventTitle", "eventType", "department", "eventStatus"]
+    }
+  },
+  "firestore": {
+    "/events/{eventDocId}": {
+      "schema": { "$ref": "#/entities/EventRecord" },
+      "description": "Collection of events, participants, guest details, documents and feedback"
+    },
+    "/staff/{staffDocId}": {
+      "schema": { "$ref": "#/entities/Staff" },
+      "description": "Collection of faculty members"
+    },
+    "/classes/{classDocId}": {
+      "schema": { "$ref": "#/entities/ClassRoom" },
+      "description": "Collection of department classrooms"
+    },
+    "/tasks/{taskDocId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Collection of tasks"
+    },
+    "/observations/{obsDocId}": {
+      "schema": { "$ref": "#/entities/ClassObservation" },
+      "description": "Collection of classroom observations"
+    },
+    "/monitoring/{monitoringDocId}": {
+      "schema": { "$ref": "#/entities/FacultyDailyMonitoring" },
+      "description": "Collection of daily monitoring logs"
+    },
+    "/attendance/{attDocId}": {
+      "schema": { "$ref": "#/entities/StudentAttendanceRecord" },
+      "description": "Collection of student attendance records"
+    },
+    "/lessonPlans/{planDocId}": {
+      "schema": { "$ref": "#/entities/LessonPlanItem" },
+      "description": "Collection of lesson plans"
+    },
+    "/hodReports/{reportDocId}": {
+      "schema": { "$ref": "#/entities/DailyHODReport" },
+      "description": "Collection of daily HOD reports"
+    },
+    "/notifications/{notifDocId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "Collection of notifications"
+    }
+  }
+}

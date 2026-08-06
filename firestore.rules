@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /system/connection_test {
+      allow read, write: if true;
+    }
+
+    match /staff/{docId} {
+      allow read, write: if true;
+    }
+
+    match /classes/{docId} {
+      allow read, write: if true;
+    }
+
+    match /tasks/{docId} {
+      allow read, write: if true;
+    }
+
+    match /observations/{docId} {
+      allow read, write: if true;
+    }
+
+    match /monitoring/{docId} {
+      allow read, write: if true;
+    }
+
+    match /attendance/{docId} {
+      allow read, write: if true;
+    }
+
+    match /lessonPlans/{docId} {
+      allow read, write: if true;
+    }
+
+    match /hodReports/{docId} {
+      allow read, write: if true;
+    }
+
+    match /notifications/{docId} {
+      allow read, write: if true;
+    }
+
+    match /skillBankStudents/{docId} {
+      allow read, write: if true;
+    }
+
+    match /events/{docId} {
+      allow read, write: if true;
+    }
+
+    match /settings/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

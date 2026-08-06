@@ -1,0 +1,2072 @@
+import { StudentSkillBankData, StudentProfile, MonthKey, MONTH_LIST } from '../types/skillBank';
+
+// Helper to calculate Attendance coins from percentage
+export function calculateAttendanceCoins(pct: number): number {
+  if (pct >= 95) return 8000;
+  if (pct >= 91) return 5000;
+  if (pct >= 81) return 3000;
+  return 0;
+}
+
+// Calculate Dimension 1 Total with Cap 40,000
+export function calculateDimension1(record: StudentSkillBankData): {
+  attendanceCoins: number;
+  libraryCoins: number;
+  libraryUtilCoins: number;
+  feeCoins: number;
+  miniProjectCoins: number;
+  ictToolsCoins: number;
+  examCoins: number;
+  learnerCatCoins: number;
+  endSemCoins: number;
+  rawTotal: number;
+  cappedTotal: number;
+  isCapped: boolean;
+} {
+  if (!record) {
+    return { attendanceCoins: 0, libraryCoins: 0, libraryUtilCoins: 0, feeCoins: 0, miniProjectCoins: 0, ictToolsCoins: 0, examCoins: 0, learnerCatCoins: 0, endSemCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
+  let attCoins = 0;
+  if (record.attendanceMonths) {
+    let totDays = 0;
+    let attDays = 0;
+    MONTH_LIST.forEach((m) => {
+      const entry = record.attendanceMonths[m];
+      if (entry) {
+        totDays += entry.totalDays || 0;
+        attDays += entry.daysAttended || 0;
+      }
+    });
+    if (totDays > 0) {
+      const overallPct = Number(((attDays / totDays) * 100).toFixed(1));
+      attCoins = calculateAttendanceCoins(overallPct);
+    } else {
+      MONTH_LIST.forEach((m) => {
+        attCoins += record.attendanceMonths[m]?.coinsEarned || 0;
+      });
+    }
+  }
+  const attendanceCoins = Math.min(8000, attCoins);
+
+  let libraryCoins = 0;
+  if (record.libraryChecklist) {
+    libraryCoins = record.libraryChecklist.coinsEarned || 0;
+  } else if (record.libraryBooks && Array.isArray(record.libraryBooks)) {
+    const libBooksCount = record.libraryBooks.filter((b) => b?.verifiedByLibrarian && b?.returnedOnTime).length;
+    libraryCoins = Math.min(3000, Math.max(1500, Math.floor(libBooksCount / 5) * 1500));
+  }
+  libraryCoins = Math.min(3000, libraryCoins);
+
+  const libVisitsCount = record.libraryVisits && Array.isArray(record.libraryVisits) ? record.libraryVisits.filter((v) => v?.verified).length : 0;
+  const libraryUtilCoins = Math.min(500, libVisitsCount * 20);
+
+  const feeCoins = Math.min(5000, record.feePayment?.coinsEarned || 0);
+  const miniProjectCoins = Math.min(2500, record.miniProjectChecklist?.coinsEarned || 0);
+  const ictToolsCoins = Math.min(2500, record.ictToolsChecklist?.coinsEarned || 0);
+  const examCoins = Math.min(12000, record.examPerformance?.coinsEarned || 0);
+  const learnerCatCoins = record.learnerCategory?.coinsEarned || 0;
+  const endSemCoins = record.endSemResults?.coinsEarned || 0;
+
+  const rawTotal =
+    attendanceCoins +
+    libraryCoins +
+    libraryUtilCoins +
+    feeCoins +
+    miniProjectCoins +
+    ictToolsCoins +
+    examCoins +
+    learnerCatCoins +
+    endSemCoins;
+
+  const cappedTotal = Math.min(40000, rawTotal);
+
+  return {
+    attendanceCoins,
+    libraryCoins,
+    libraryUtilCoins,
+    feeCoins,
+    miniProjectCoins,
+    ictToolsCoins,
+    examCoins,
+    learnerCatCoins,
+    endSemCoins,
+    rawTotal,
+    cappedTotal,
+    isCapped: rawTotal > 40000,
+  };
+}
+
+// Calculate Dimension 2 Total with Cap 15,000
+export function calculateDimension2(record: StudentSkillBankData): {
+  nptelCoins: number;
+  leetCodeCoins: number;
+  onlineBasicCoins: number;
+  advancedCourseCoins: number;
+  paperCoins: number;
+  rawTotal: number;
+  cappedTotal: number;
+  isCapped: boolean;
+} {
+  if (!record) {
+    return { nptelCoins: 0, leetCodeCoins: 0, onlineBasicCoins: 0, advancedCourseCoins: 0, paperCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
+  let nptel = 0;
+  if (record.nptelMonths) {
+    MONTH_LIST.forEach((m) => {
+      nptel += record.nptelMonths[m]?.coinsEarned || 0;
+    });
+  }
+  const nptelCoins = Math.min(3000, nptel);
+
+  let leet = 0;
+  if (record.leetCodeMonths) {
+    MONTH_LIST.forEach((m) => {
+      leet += record.leetCodeMonths[m]?.coinsEarned || 0;
+    });
+  }
+  const leetCodeCoins = Math.min(2000, leet);
+
+  const basicSum = (record.onlineCertBasic || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const onlineBasicCoins = Math.min(1000, basicSum);
+
+  const advSum = (record.advancedCourses || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const advancedCourseCoins = Math.min(2000, advSum);
+
+  const paperSum = (record.paperPresentations || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const paperCoins = Math.min(2000, paperSum);
+
+  const rawTotal = nptelCoins + leetCodeCoins + onlineBasicCoins + advancedCourseCoins + paperCoins;
+  const cappedTotal = Math.min(15000, rawTotal);
+
+  return {
+    nptelCoins,
+    leetCodeCoins,
+    onlineBasicCoins,
+    advancedCourseCoins,
+    paperCoins,
+    rawTotal,
+    cappedTotal,
+    isCapped: rawTotal > 15000,
+  };
+}
+
+// Calculate Dimension 3 Total with Cap 15,000
+export function calculateDimension3(record: StudentSkillBankData): {
+  aptitudeCoins: number;
+  resumeCoins: number;
+  mockInterviewCoins: number;
+  linkedInCoins: number;
+  gitHubCoins: number;
+  socialMediaCoins: number;
+  hackathonCoins: number;
+  internshipCoins: number;
+  rawTotal: number;
+  cappedTotal: number;
+  isCapped: boolean;
+} {
+  if (!record) {
+    return { aptitudeCoins: 0, resumeCoins: 0, mockInterviewCoins: 0, linkedInCoins: 0, gitHubCoins: 0, socialMediaCoins: 0, hackathonCoins: 0, internshipCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
+  let apt = 0;
+  if (record.aptitudeMonths) {
+    MONTH_LIST.forEach((m) => {
+      apt += record.aptitudeMonths[m]?.coinsEarned || 0;
+    });
+  }
+  const aptitudeCoins = Math.min(3000, apt);
+
+  const resumeCoins = Math.min(2000, record.resume?.coinsEarned || 0);
+  const mockInterviewCoins = Math.min(2000, record.mockInterview?.coinsEarned || 0);
+  const linkedInCoins = Math.min(2000, record.linkedIn?.coinsEarned || 0);
+  const gitHubCoins = Math.min(1000, record.gitHub?.coinsEarned || 0);
+  const socialMediaCoins = record.socialMedia?.coinsEarned || 0;
+
+  const hackSum = (record.hackathons || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const hackathonCoins = Math.min(2000, hackSum);
+
+  const internshipCoins = Math.min(1000, record.internship?.coinsEarned || 0);
+
+  const rawTotal =
+    aptitudeCoins +
+    resumeCoins +
+    mockInterviewCoins +
+    linkedInCoins +
+    gitHubCoins +
+    socialMediaCoins +
+    hackathonCoins +
+    internshipCoins;
+
+  const cappedTotal = Math.min(15000, rawTotal);
+
+  return {
+    aptitudeCoins,
+    resumeCoins,
+    mockInterviewCoins,
+    linkedInCoins,
+    gitHubCoins,
+    socialMediaCoins,
+    hackathonCoins,
+    internshipCoins,
+    rawTotal,
+    cappedTotal,
+    isCapped: rawTotal > 15000,
+  };
+}
+
+// Calculate Dimension 4 Total with Cap 15,000
+export function calculateDimension4(record: StudentSkillBankData): {
+  workshopCoins: number;
+  eventCoins: number;
+  volunteeringCoins: number;
+  membershipCoins: number;
+  rawTotal: number;
+  cappedTotal: number;
+  isCapped: boolean;
+} {
+  if (!record) {
+    return { workshopCoins: 0, eventCoins: 0, volunteeringCoins: 0, membershipCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
+  const workshopCoins = Math.min(4000, record.workshop?.coinsEarned || 0);
+  const eventCoins = Math.min(4000, record.collegeEvent?.coinsEarned || 0);
+  const volunteeringCoins = Math.min(4000, record.volunteering?.coinsEarned || 0);
+
+  const memSum = (record.professionalMemberships || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const membershipCoins = Math.min(3000, memSum);
+
+  const rawTotal = workshopCoins + eventCoins + volunteeringCoins + membershipCoins;
+  const cappedTotal = Math.min(15000, rawTotal);
+
+  return {
+    workshopCoins,
+    eventCoins,
+    volunteeringCoins,
+    membershipCoins,
+    rawTotal,
+    cappedTotal,
+    isCapped: rawTotal > 15000,
+  };
+}
+
+// Calculate Dimension 5 Total with Cap 15,000
+export function calculateDimension5(record: StudentSkillBankData): {
+  sportsCoins: number;
+  artsCoins: number;
+  clubCoins: number;
+  rawTotal: number;
+  cappedTotal: number;
+  isCapped: boolean;
+} {
+  if (!record) {
+    return { sportsCoins: 0, artsCoins: 0, clubCoins: 0, rawTotal: 0, cappedTotal: 0, isCapped: false };
+  }
+  const sportsSum = (record.sportsLogs || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const sportsCoins = Math.min(5000, sportsSum);
+
+  const artsSum = (record.artsLogs || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const artsCoins = Math.min(5000, artsSum);
+
+  const clubSum = (record.clubLogs || []).reduce((sum, item) => sum + (item?.coinsEarned || 0), 0);
+  const clubCoins = Math.min(5000, clubSum);
+
+  const rawTotal = sportsCoins + artsCoins + clubCoins;
+  const cappedTotal = Math.min(15000, rawTotal);
+
+  return {
+    sportsCoins,
+    artsCoins,
+    clubCoins,
+    rawTotal,
+    cappedTotal,
+    isCapped: rawTotal > 15000,
+  };
+}
+
+// Full Grand Summary Calculator
+export function calculateStudentTotals(record: StudentSkillBankData) {
+  const d1 = calculateDimension1(record);
+  const d2 = calculateDimension2(record);
+  const d3 = calculateDimension3(record);
+  const d4 = calculateDimension4(record);
+  const d5 = calculateDimension5(record);
+
+  const totalGrossEarned = d1.cappedTotal + d2.cappedTotal + d3.cappedTotal + d4.cappedTotal + d5.cappedTotal;
+
+  let totalDeductions = 0;
+  if (record && record.violations) {
+    record.violations.forEach((v) => {
+      totalDeductions += v?.coinsDeducted || 0;
+    });
+  }
+
+  const grandTotalNetCoins = Math.max(0, totalGrossEarned - totalDeductions);
+  const percentageOfTarget = Math.round((grandTotalNetCoins / 100000) * 100);
+
+  return {
+    d1,
+    d2,
+    d3,
+    d4,
+    d5,
+    totalGrossEarned,
+    totalDeductions,
+    grandTotalNetCoins,
+    percentageOfTarget,
+  };
+}
+
+// Sample Mock Students Data
+export function stripSkillBankDates(student: StudentSkillBankData): StudentSkillBankData {
+  return student;
+}
+
+const RAW_INITIAL_STUDENTS_SKILL_BANK: StudentSkillBankData[] = [
+  {
+    studentProfile: {
+      id: 'STU-2026-000',
+      registerNumber: '732422104088',
+      studentName: 'DHANAPAL P.',
+      skillBankAccountNo: 'SSB-2026-AI-088',
+      degreeBranch: 'B.Tech. Artificial Intelligence & Data Science',
+      department: 'Artificial Intelligence & Data Science (AI & DS)',
+      batch: '2023-2027',
+      academicYear: '2026-2027',
+      semester: 'Odd Semester (Sem V)',
+      section: 'A',
+      admissionNumber: 'SCE2023AI088',
+      gender: 'Male',
+      age: 20,
+      bloodGroup: 'O+',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-1088',
+      dateOfBirth: '2005-04-12',
+      communicationAddress: '45, Main Road, Tirupur',
+      pinCode: '641601',
+      studentMobile: '9876543210',
+      studentEmail: 'dhanapal.p@sasurie.ac.in',
+      personalEmail: 'dhanapal.p2005@gmail.com',
+      fatherName: 'Periasamy K.',
+      fatherOccupation: 'Business',
+      fatherMobile: '9842109800',
+      fatherEmail: 'periasamy.k@gmail.com',
+      motherName: 'Lakshmi Periasamy',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9842109801',
+      motherEmail: 'lakshmi.p@gmail.com',
+      sslcSchool: 'KSC Boys Hr. Sec. School, Tirupur',
+      hscSchool: 'KSC Boys Hr. Sec. School, Tirupur',
+      yearOfPassing: '2023',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'M. Kaviyarasu',
+      mentorStaffId: 'STF001',
+      dreamCompany: 'Zoho / TCS Digital',
+      careerGoal: 'Full Stack Engineer & Data Analyst',
+      studentSigned: true,
+      studentSignedDate: '2026-07-01',
+      mentorSigned: true,
+      mentorSignedDate: '2026-07-02',
+      hodSigned: true,
+      hodSignedDate: '2026-07-03',
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 22, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Sep: { totalDays: 25, daysAttended: 25, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Oct: { totalDays: 20, daysAttended: 20, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Nov: { totalDays: 22, daysAttended: 22, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+    },
+    libraryChecklist: {
+      min5BooksBorrowed: true,
+      onTimeReturnVerified: true,
+      referenceAndJournalsBorrowed: true,
+      digitalLibraryAccess: true,
+      bookReviewSubmitted: true,
+      coinsEarned: 3000,
+      updatedByLibrarian: true,
+      librarianLastUpdatedDate: '28 Jul 2026',
+      librarianNotes: 'Updated by Central Librarian — All 5 criteria verified.',
+    },
+    libraryBooks: [
+      { id: 'LIB-DH01', month: 'Jul', bookName: 'Data Structures and Algorithms in Java', author: 'Robert Lafore', issueDate: '2026-07-02', returnDate: '2026-07-16', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+      { id: 'LIB-DH02', month: 'Jul', bookName: 'Database System Concepts', author: 'Silberschatz', issueDate: '2026-07-08', returnDate: '2026-07-22', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+      { id: 'LIB-DH03', month: 'Jul', bookName: 'Operating System Concepts', author: 'Galvin', issueDate: '2026-07-15', returnDate: '2026-07-29', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+    ],
+    libraryVisits: [
+      { id: 'LV-DH01', month: 'Jul', date: '2026-07-04', inTime: '09:30 AM', outTime: '11:00 AM', verified: true },
+      { id: 'LV-DH02', month: 'Jul', date: '2026-07-10', inTime: '02:00 PM', outTime: '03:30 PM', verified: true },
+      { id: 'LV-DH03', month: 'Jul', date: '2026-07-18', inTime: '04:00 PM', outTime: '05:00 PM', verified: true },
+    ],
+    feePayment: {
+      tuitionFeePaid: true,
+      hostelFeePaid: false,
+      transportFeePaid: true,
+      scholarshipReceived: true,
+      scholarshipAmount: 15000,
+      scholarshipDate: '2026-07-12',
+      examFeePaid: true,
+      dateOfPayment: '2026-07-15',
+      paymentBand: 'before_due',
+      coinsEarned: 6000,
+      signedByStaff: true,
+    },
+    miniProjectChecklist: {
+      topicSelectionApproved: true,
+      proposalPrepared: true,
+      literatureReview: true,
+      developmentPlagiarismCheck: true,
+      verificationDone: true,
+      presentationVivaIPR: true,
+      coinsEarned: 2500,
+    },
+    miniProjectDetails: [
+      { id: 'MP-DH01', subjectCode: 'CS3591', courseName: 'Mini Project', facultyName: 'M. Kaviyarasu', projectTitle: 'Central Library Skill Bank Automation', learningOutcome: 'Full Stack React Application' },
+    ],
+    ictToolsChecklist: {
+      joiningClassroom: true,
+      submittingAssignmentOnTime: true,
+      completingQuizTest: true,
+      activeParticipation: true,
+      disciplineEngagement: true,
+      coinsEarned: 2500,
+    },
+    examPerformance: {
+      ciat1Appeared: true,
+      ciat1Pct: 92,
+      ciat2Appeared: true,
+      ciat2Pct: 94,
+      endSemAllPass: true,
+      arrearCount: 0,
+      coinsEarned: 11000,
+    },
+    subjectMarkDetails: [
+      { id: 'SM-DH01', subjectCode: 'CS3501', subjectName: 'Compiler Design', ciat1Marks: 92, ciat2Marks: 94, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 96 },
+    ],
+    learnerCategory: {
+      ciat1Category: 'Fast',
+      ciat2Category: 'Fast',
+      remedialAttendancePct: 100,
+      remedialBonusEarned: false,
+      coinsEarned: 3000,
+    },
+    endSemResults: {
+      allPass: true,
+      arrearsCount: 0,
+      gpa: 9.1,
+      cgpa: 9.0,
+      coinsEarned: 5000,
+    },
+    nptelMonths: {
+      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+    },
+    leetCodeMonths: {
+      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Sep: { taskCompleted: true, attendanceBand: '70-79%', coinsEarned: 1500 },
+      Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+    },
+    onlineCertBasic: [
+      { id: 'OCB-DH01', month: 'Jul', platform: 'Coursera', courseName: 'Full Stack Web Development', durationHrs: 25, proofAttached: true, coinsEarned: 100 },
+    ],
+    advancedCourses: [
+      { id: 'ADV-DH01', month: 'Jul', platform: 'Udemy', courseName: 'React & Node.js Masterclass', durationHrs: 40, verifiedProof: true, remarks: 'Verified Developer', coinsEarned: 200 },
+    ],
+    paperPresentations: [],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 94, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1500 },
+    linkedIn: { profileCreated: true, originalPostCount: 12, repostCount: 15, coinsEarned: 1800 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '150+', coinsEarned: 1000 },
+    socialMedia: { profileCreated: true, originalPostCount: 8, repostCount: 8, coinsEarned: 1000 },
+    hackathons: [],
+    internship: { industryName: 'Software Development Internship', fromDate: '2026-06-01', toDate: '2026-06-30', totalDays: 30, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: true, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: true, coinsEarned: 4000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: true, coinsEarned: 4000 },
+    professionalMemberships: [],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [
+      { id: 'CLUB-DH01', clubName: 'Web Developers Club', role: 'Coordinator/Lead', activityDetails: 'React & State Sync Workshop', date: '2026-08-10', coinsEarned: 1000 },
+    ],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'Top performer in Computer Science & Engineering.',
+      skillReflection: 'Full Stack React & Node Developer.',
+      careerReflection: 'Prepared Portfolio & Skill Bank Passbook.',
+      coCurricularReflection: 'Web Developers Club Technical Lead.',
+      extraCurricularReflection: 'Class Representative.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 45000,
+      checkpoint1Grade: 'O (Outstanding)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 90000,
+      checkpoint2Grade: 'O (Outstanding)',
+      finalGradeCoin: 96500,
+      finalGradeLetter: 'O (Outstanding)',
+    },
+  },
+  {
+    studentProfile: {
+      id: 'STU-2026-001',
+      registerNumber: '732422104001',
+      studentName: 'Aarav K. Sharma',
+      skillBankAccountNo: 'SSB-2026-AI-001',
+      degreeBranch: 'B.Tech. Artificial Intelligence & Data Science',
+      department: 'Artificial Intelligence & Data Science (AI & DS)',
+      batch: '2023-2027',
+      academicYear: '2026-2027',
+      semester: 'Odd Semester (Sem V)',
+      section: 'A',
+      admissionNumber: 'SCE2023AI012',
+      gender: 'Male',
+      age: 20,
+      bloodGroup: 'O+',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-1098',
+      dateOfBirth: '2005-04-12',
+      communicationAddress: '124, Sasurie Nagar, Vijayamangalam, Tirupur Dt.',
+      pinCode: '638056',
+      studentMobile: '9876543210',
+      studentEmail: 'aarav.sharma@sasurie.ac.in',
+      personalEmail: 'aarav.sharma2005@gmail.com',
+      fatherName: 'Krishnan Sharma',
+      fatherOccupation: 'Senior Textile Executive',
+      fatherMobile: '9842109876',
+      fatherEmail: 'krishnan.textiles@gmail.com',
+      motherName: 'Latha Sharma',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9842109877',
+      motherEmail: 'latha.sharma@gmail.com',
+      sslcSchool: 'KSC Boys Higher Secondary School, Tirupur',
+      hscSchool: 'KSC Boys Higher Secondary School, Tirupur',
+      yearOfPassing: '2023',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'M. Kaviyarasu',
+      mentorStaffId: 'STF001',
+      dreamCompany: 'Google India / Zoho Corp',
+      careerGoal: 'Full Stack Cloud Architect & Entrepreneur',
+      studentSigned: true,
+      studentSignedDate: '2026-07-01',
+      mentorSigned: true,
+      mentorSignedDate: '2026-07-02',
+      hodSigned: true,
+      hodSignedDate: '2026-07-03',
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, additionalRemedialDays: 2, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 1, coinsEarned: 8000 },
+      Sep: { totalDays: 25, daysAttended: 24, attendancePct: 96, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Oct: { totalDays: 20, daysAttended: 19, attendancePct: 95, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Nov: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 1, coinsEarned: 8000 },
+      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+    },
+    libraryBooks: [
+      { id: 'LIB-001', month: 'Jul', bookName: 'Database System Concepts', author: 'A. Silberschatz', issueDate: '2026-07-05', returnDate: '2026-07-19', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+      { id: 'LIB-002', month: 'Jul', bookName: 'Clean Code Handbook', author: 'R. Martin', issueDate: '2026-07-20', returnDate: '2026-08-03', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+      { id: 'LIB-003', month: 'Aug', bookName: 'Introduction to Algorithms', author: 'T. Cormen', issueDate: '2026-08-05', returnDate: '2026-08-20', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+      { id: 'LIB-004', month: 'Sep', bookName: 'Operating System Concepts', author: 'P. Galvin', issueDate: '2026-09-02', returnDate: '2026-09-16', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+      { id: 'LIB-005', month: 'Oct', bookName: 'Computer Networking Top-Down', author: 'J. Kurose', issueDate: '2026-10-04', returnDate: '2026-10-18', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+    ],
+    libraryVisits: [
+      { id: 'LV-01', month: 'Jul', date: '2026-07-06', inTime: '09:15 AM', outTime: '10:15 AM', verified: true },
+      { id: 'LV-02', month: 'Jul', date: '2026-07-12', inTime: '01:30 PM', outTime: '02:30 PM', verified: true },
+      { id: 'LV-03', month: 'Aug', date: '2026-08-08', inTime: '10:00 AM', outTime: '11:30 AM', verified: true },
+    ],
+    feePayment: {
+      tuitionFeePaid: true,
+      hostelFeePaid: false,
+      transportFeePaid: true,
+      scholarshipReceived: true,
+      scholarshipAmount: 15000,
+      scholarshipDate: '2026-07-15',
+      examFeePaid: true,
+      dateOfPayment: '2026-07-18',
+      paymentBand: 'before_due',
+      coinsEarned: 6000,
+      signedByStaff: true,
+    },
+    miniProjectChecklist: {
+      topicSelectionApproved: true,
+      proposalPrepared: true,
+      literatureReview: true,
+      developmentPlagiarismCheck: true,
+      verificationDone: true,
+      presentationVivaIPR: true,
+      coinsEarned: 2500,
+    },
+    miniProjectDetails: [
+      { id: 'MP-01', subjectCode: 'CS3591', courseName: 'Mini Project', facultyName: 'Dr. M. Karthikeyan', projectTitle: 'Edge AI Attendance System', learningOutcome: 'Built Python OpenVINO pipeline' },
+    ],
+    ictToolsChecklist: {
+      joiningClassroom: true,
+      submittingAssignmentOnTime: true,
+      completingQuizTest: true,
+      activeParticipation: true,
+      disciplineEngagement: true,
+      coinsEarned: 2500,
+    },
+    examPerformance: {
+      ciat1Appeared: true,
+      ciat1Pct: 88,
+      ciat2Appeared: true,
+      ciat2Pct: 92,
+      endSemAllPass: true,
+      arrearCount: 0,
+      coinsEarned: 11000,
+    },
+    subjectMarkDetails: [
+      { id: 'SM-01', subjectCode: 'CS3501', subjectName: 'Compiler Design', ciat1Marks: 90, ciat2Marks: 94, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 95 },
+    ],
+    learnerCategory: {
+      ciat1Category: 'Fast',
+      ciat2Category: 'Fast',
+      remedialAttendancePct: 100,
+      remedialBonusEarned: false,
+      coinsEarned: 3000,
+    },
+    endSemResults: {
+      allPass: true,
+      arrearsCount: 0,
+      gpa: 8.95,
+      cgpa: 8.82,
+      coinsEarned: 5000,
+    },
+    nptelMonths: {
+      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+    },
+    leetCodeMonths: {
+      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Sep: { taskCompleted: true, attendanceBand: '70-79%', coinsEarned: 1500 },
+      Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+    },
+    onlineCertBasic: [
+      { id: 'OCB-1', month: 'Jul', platform: 'Coursera', courseName: 'Git & GitHub', durationHrs: 12, proofAttached: true, coinsEarned: 100 },
+    ],
+    advancedCourses: [
+      { id: 'ADV-1', month: 'Jul', platform: 'AWS', courseName: 'AWS Certified Cloud Practitioner', durationHrs: 30, verifiedProof: true, remarks: 'Verified badge ID 98213', coinsEarned: 200 },
+    ],
+    paperPresentations: [
+      { id: 'PP-1', month: 'Sep', level: 'National', symposiumName: 'INVENTO 2026 - PSG Tech', title: 'Edge AI in Smart ERP', venue: 'PSG Tech, Coimbatore', date: '2026-09-18', prizeWon: '1st Prize', hasCertificate: true, coinsEarned: 1750, remarks: 'Rs 5000 Cash Award' },
+    ],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: true, scoreBand: 'Score >= 60', coinsEarned: 2500 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 91, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1500 },
+    linkedIn: { profileCreated: true, originalPostCount: 8, repostCount: 10, coinsEarned: 1800 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '150+', coinsEarned: 1000 },
+    socialMedia: { profileCreated: true, originalPostCount: 5, repostCount: 5, coinsEarned: 1000 },
+    hackathons: [
+      { id: 'HACK-1', month: 'Aug', eventName: 'Smart India Hackathon 2026', participated: true, prizeWon: true, verifiedByEDC: true, coinsEarned: 2000 },
+    ],
+    internship: { industryName: 'Zoho Corporation', fromDate: '2026-06-01', toDate: '2026-06-28', totalDays: 28, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: false, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: true, coinsEarned: 4000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: true, coinsEarned: 4000 },
+    professionalMemberships: [
+      { id: 'PM-1', bodyName: 'IEEE Computer Society', membershipType: 'Annual', dateOfIssue: '2026-07-01', validity: '2027-06-30', coinsEarned: 1500 },
+      { id: 'PM-2', bodyName: 'CSI', membershipType: 'Life', dateOfIssue: '2026-07-10', validity: 'Lifetime', coinsEarned: 2000 },
+    ],
+    sportsLogs: [
+      { id: 'SP-1', gameSport: 'Badminton Doubles', participationLevel: 'Zonal', venue: 'Anna University Zone-X', date: '2026-08-14', resultPosition: 'Runner Up', verifiedByPhysicalDirector: true, coinsEarned: 2000 },
+    ],
+    artsLogs: [
+      { id: 'ART-1', culturalCategory: 'Flute', participationLevel: 'State Level', date: '2026-09-02', position: '1st Prize', coinsEarned: 2500 },
+    ],
+    clubLogs: [
+      { id: 'CLUB-1', clubName: 'Coding Club', role: 'Coordinator/Lead', activityDetails: 'Organized Hackathon', date: '2026-08-20', coinsEarned: 1000 },
+    ],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'Consistently maintained top attendance.',
+      skillReflection: 'Earned AWS Cloud Practitioner.',
+      careerReflection: 'Cracked Zoho Internship.',
+      coCurricularReflection: 'Led Coding Club.',
+      extraCurricularReflection: 'Represented SCE in Zonal Badminton.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 42000,
+      checkpoint1Grade: 'A+ (Exemplary)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 85000,
+      checkpoint2Grade: 'O (Outstanding)',
+      finalGradeCoin: 92550,
+      finalGradeLetter: 'O (Outstanding)',
+    },
+  },
+  {
+    studentProfile: {
+      id: 'STU-2026-002',
+      registerNumber: '732422104015',
+      studentName: 'Kavya S. Sundaram',
+      skillBankAccountNo: 'SSB-2026-AI-015',
+      degreeBranch: 'B.Tech. Artificial Intelligence & Data Science',
+      department: 'Artificial Intelligence & Data Science (AI & DS)',
+      batch: '2023-2027',
+      academicYear: '2026-2027',
+      semester: 'Odd Semester (Sem V)',
+      section: 'A',
+      admissionNumber: 'SCE2023AI025',
+      gender: 'Female',
+      age: 20,
+      bloodGroup: 'B+',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-1015',
+      dateOfBirth: '2005-08-21',
+      communicationAddress: '45, Main Road, Perundurai, Erode Dt.',
+      pinCode: '638052',
+      studentMobile: '9876543220',
+      studentEmail: 'kavya.sundaram@sasurie.ac.in',
+      personalEmail: 'kavya.sundaram2005@gmail.com',
+      fatherName: 'Sundaram S.',
+      fatherOccupation: 'Government Officer',
+      fatherMobile: '9842109900',
+      fatherEmail: 'sundaram.s@gmail.com',
+      motherName: 'Meenakshi Sundaram',
+      motherOccupation: 'Teacher',
+      motherMobile: '9842109901',
+      motherEmail: 'meenakshi.s@gmail.com',
+      sslcSchool: 'Government Girls Higher Secondary School, Erode',
+      hscSchool: 'Government Girls Higher Secondary School, Erode',
+      yearOfPassing: '2023',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Prof. S. Anurooba',
+      mentorStaffId: 'STF003',
+      dreamCompany: 'Zoho Corporation',
+      careerGoal: 'Full Stack Java Developer',
+      studentSigned: true,
+      studentSignedDate: '2026-07-01',
+      mentorSigned: true,
+      mentorSignedDate: '2026-07-02',
+      hodSigned: true,
+      hodSignedDate: '2026-07-03',
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, additionalRemedialDays: 1, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 22, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Sep: { totalDays: 25, daysAttended: 24, attendancePct: 96, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Oct: { totalDays: 20, daysAttended: 20, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Nov: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+    },
+    libraryBooks: [
+      { id: 'LIB-K01', month: 'Jul', bookName: 'Core Java Programming', author: 'E. Balagurusamy', issueDate: '2026-07-02', returnDate: '2026-07-16', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+    ],
+    libraryVisits: [
+      { id: 'LV-K01', month: 'Jul', date: '2026-07-05', inTime: '09:30 AM', outTime: '10:30 AM', verified: true },
+    ],
+    feePayment: {
+      tuitionFeePaid: true,
+      hostelFeePaid: true,
+      transportFeePaid: false,
+      scholarshipReceived: true,
+      scholarshipAmount: 12000,
+      scholarshipDate: '2026-07-12',
+      examFeePaid: true,
+      dateOfPayment: '2026-07-14',
+      paymentBand: 'before_due',
+      coinsEarned: 6000,
+      signedByStaff: true,
+    },
+    miniProjectChecklist: {
+      topicSelectionApproved: true,
+      proposalPrepared: true,
+      literatureReview: true,
+      developmentPlagiarismCheck: true,
+      verificationDone: true,
+      presentationVivaIPR: true,
+      coinsEarned: 2500,
+    },
+    miniProjectDetails: [
+      { id: 'MP-K01', subjectCode: 'CS3591', courseName: 'Mini Project', facultyName: 'M. Kaviyarasu', projectTitle: 'AI Student Attendance Tracker', learningOutcome: 'Built React Native App' },
+    ],
+    ictToolsChecklist: {
+      joiningClassroom: true,
+      submittingAssignmentOnTime: true,
+      completingQuizTest: true,
+      activeParticipation: true,
+      disciplineEngagement: true,
+      coinsEarned: 2500,
+    },
+    examPerformance: {
+      ciat1Appeared: true,
+      ciat1Pct: 91,
+      ciat2Appeared: true,
+      ciat2Pct: 94,
+      endSemAllPass: true,
+      arrearCount: 0,
+      coinsEarned: 11000,
+    },
+    subjectMarkDetails: [
+      { id: 'SM-K01', subjectCode: 'CS3501', subjectName: 'Compiler Design', ciat1Marks: 92, ciat2Marks: 95, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 96 },
+    ],
+    learnerCategory: {
+      ciat1Category: 'Fast',
+      ciat2Category: 'Fast',
+      remedialAttendancePct: 100,
+      remedialBonusEarned: false,
+      coinsEarned: 3000,
+    },
+    endSemResults: {
+      allPass: true,
+      arrearsCount: 0,
+      gpa: 9.1,
+      cgpa: 9.05,
+      coinsEarned: 5000,
+    },
+    nptelMonths: {
+      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+    },
+    leetCodeMonths: {
+      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Sep: { taskCompleted: true, attendanceBand: '70-79%', coinsEarned: 1800 },
+      Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+    },
+    onlineCertBasic: [
+      { id: 'OCB-K1', month: 'Jul', platform: 'NPTEL', courseName: 'Programming in Java', durationHrs: 20, proofAttached: true, coinsEarned: 100 },
+    ],
+    advancedCourses: [
+      { id: 'ADV-K1', month: 'Jul', platform: 'Oracle', courseName: 'Oracle Certified Java SE Associate', durationHrs: 40, verifiedProof: true, remarks: 'Passed with 94%', coinsEarned: 200 },
+    ],
+    paperPresentations: [
+      { id: 'PP-K1', month: 'Sep', level: 'State', symposiumName: 'TECHFEST 2026 - CIT', title: 'Deep Learning in Smart Agriculture', venue: 'Coimbatore Institute of Technology', date: '2026-09-12', prizeWon: '1st Prize', hasCertificate: true, coinsEarned: 1750, remarks: 'Cash prize Rs 3000' },
+    ],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 94, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1500 },
+    linkedIn: { profileCreated: true, originalPostCount: 12, repostCount: 15, coinsEarned: 1800 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '150+', coinsEarned: 1000 },
+    socialMedia: { profileCreated: true, originalPostCount: 8, repostCount: 8, coinsEarned: 1000 },
+    hackathons: [
+      { id: 'HACK-K1', month: 'Aug', eventName: 'Hacktoberfest 2026', participated: true, prizeWon: true, verifiedByEDC: true, coinsEarned: 2000 },
+    ],
+    internship: { industryName: 'Zoho Corporation', fromDate: '2026-06-01', toDate: '2026-06-30', totalDays: 30, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: true, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: true, coinsEarned: 4000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: true, coinsEarned: 4000 },
+    professionalMemberships: [
+      { id: 'PM-K1', bodyName: 'IEEE WIE', membershipType: 'Annual', dateOfIssue: '2026-07-01', validity: '2027-06-30', coinsEarned: 1500 },
+    ],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [
+      { id: 'CLUB-K1', clubName: 'Women in Tech Club', role: 'Coordinator/Lead', activityDetails: 'Organized Coding Contest', date: '2026-08-15', coinsEarned: 1000 },
+    ],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'Consistently 90%+ in tests.',
+      skillReflection: 'Java SE Oracle Certification completed.',
+      careerReflection: 'Selected for Zoho Summer Internship.',
+      coCurricularReflection: 'President of Women in Tech Club.',
+      extraCurricularReflection: 'Active NSS volunteer.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 45000,
+      checkpoint1Grade: 'O (Outstanding)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 89000,
+      checkpoint2Grade: 'O (Outstanding)',
+      finalGradeCoin: 96800,
+      finalGradeLetter: 'O (Outstanding)',
+    },
+  },
+  {
+    studentProfile: {
+      id: 'STU-2026-003',
+      registerNumber: '732422104022',
+      studentName: 'Dinesh Kumar M.',
+      skillBankAccountNo: 'SSB-2026-CS-022',
+      degreeBranch: 'B.E. Computer Science & Engineering',
+      department: 'Computer Science & Engineering',
+      batch: '2023-2027',
+      academicYear: '2026-2027',
+      semester: 'Odd Semester (Sem V)',
+      section: 'A',
+      admissionNumber: 'SCE2023CS032',
+      gender: 'Male',
+      age: 20,
+      bloodGroup: 'A+',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-1022',
+      dateOfBirth: '2005-02-14',
+      communicationAddress: '88, West Street, Kangeyam, Tirupur Dt.',
+      pinCode: '638701',
+      studentMobile: '9876543221',
+      studentEmail: 'dinesh.kumar@sasurie.ac.in',
+      personalEmail: 'dinesh.kumar2005@gmail.com',
+      fatherName: 'Manoharan K.',
+      fatherOccupation: 'Agriculture / Business',
+      fatherMobile: '9842109902',
+      fatherEmail: 'manoharan.k@gmail.com',
+      motherName: 'Saradha Manoharan',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9842109903',
+      motherEmail: 'saradha.m@gmail.com',
+      sslcSchool: 'Government Boys Higher Secondary School, Kangeyam',
+      hscSchool: 'Government Boys Higher Secondary School, Kangeyam',
+      yearOfPassing: '2023',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Dr. P. Sathish',
+      mentorStaffId: 'STF003',
+      dreamCompany: 'TCS Digital',
+      careerGoal: 'Cloud Operations Engineer',
+      studentSigned: true,
+      studentSignedDate: '2026-07-01',
+      mentorSigned: true,
+      mentorSignedDate: '2026-07-02',
+      hodSigned: true,
+      hodSignedDate: '2026-07-03',
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 23, attendancePct: 95.8, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Sep: { totalDays: 25, daysAttended: 24, attendancePct: 96, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Oct: { totalDays: 20, daysAttended: 19, attendancePct: 95, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Nov: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+    },
+    libraryBooks: [
+      { id: 'LIB-D01', month: 'Jul', bookName: 'Linux Administration', author: 'E. Nemeth', issueDate: '2026-07-08', returnDate: '2026-07-22', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+    ],
+    libraryVisits: [
+      { id: 'LV-D01', month: 'Jul', date: '2026-07-10', inTime: '02:00 PM', outTime: '03:00 PM', verified: true },
+    ],
+    feePayment: {
+      tuitionFeePaid: true,
+      hostelFeePaid: false,
+      transportFeePaid: true,
+      scholarshipReceived: true,
+      scholarshipAmount: 10000,
+      scholarshipDate: '2026-07-15',
+      examFeePaid: true,
+      dateOfPayment: '2026-07-18',
+      paymentBand: 'before_due',
+      coinsEarned: 6000,
+      signedByStaff: true,
+    },
+    miniProjectChecklist: {
+      topicSelectionApproved: true,
+      proposalPrepared: true,
+      literatureReview: true,
+      developmentPlagiarismCheck: true,
+      verificationDone: true,
+      presentationVivaIPR: true,
+      coinsEarned: 2500,
+    },
+    miniProjectDetails: [
+      { id: 'MP-D01', subjectCode: 'CS3591', courseName: 'Mini Project', facultyName: 'M. Kaviyarasu', projectTitle: 'Kubernetes Cluster Monitoring Dash', learningOutcome: 'Deployed Docker & Grafana' },
+    ],
+    ictToolsChecklist: {
+      joiningClassroom: true,
+      submittingAssignmentOnTime: true,
+      completingQuizTest: true,
+      activeParticipation: true,
+      disciplineEngagement: true,
+      coinsEarned: 2500,
+    },
+    examPerformance: {
+      ciat1Appeared: true,
+      ciat1Pct: 84,
+      ciat2Appeared: true,
+      ciat2Pct: 86,
+      endSemAllPass: true,
+      arrearCount: 0,
+      coinsEarned: 10000,
+    },
+    subjectMarkDetails: [
+      { id: 'SM-D01', subjectCode: 'CS3501', subjectName: 'Compiler Design', ciat1Marks: 85, ciat2Marks: 88, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 88 },
+    ],
+    learnerCategory: {
+      ciat1Category: 'Fast',
+      ciat2Category: 'Fast',
+      remedialAttendancePct: 100,
+      remedialBonusEarned: false,
+      coinsEarned: 3000,
+    },
+    endSemResults: {
+      allPass: true,
+      arrearsCount: 0,
+      gpa: 8.4,
+      cgpa: 8.3,
+      coinsEarned: 5000,
+    },
+    nptelMonths: {
+      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+    },
+    leetCodeMonths: {
+      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Sep: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+    },
+    onlineCertBasic: [
+      { id: 'OCB-D1', month: 'Jul', platform: 'Coursera', courseName: 'Google Cloud Basics', durationHrs: 15, proofAttached: true, coinsEarned: 100 },
+    ],
+    advancedCourses: [
+      { id: 'ADV-D1', month: 'Jul', platform: 'AWS', courseName: 'AWS Solutions Architect Associate', durationHrs: 35, verifiedProof: true, remarks: 'Certified AWS SAA', coinsEarned: 200 },
+    ],
+    paperPresentations: [],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: true, scoreBand: 'Score >= 60', coinsEarned: 2500 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 88, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1500 },
+    linkedIn: { profileCreated: true, originalPostCount: 6, repostCount: 8, coinsEarned: 1500 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '100-149', coinsEarned: 1000 },
+    socialMedia: { profileCreated: true, originalPostCount: 4, repostCount: 4, coinsEarned: 800 },
+    hackathons: [],
+    internship: { industryName: 'TCS iON Training', fromDate: '2026-06-01', toDate: '2026-06-21', totalDays: 21, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: false, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: false, coinsEarned: 3000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: true, coinsEarned: 4000 },
+    professionalMemberships: [],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [
+      { id: 'CLUB-D1', clubName: 'DevOps Club', role: 'Coordinator/Lead', activityDetails: 'Container Workshop', date: '2026-08-18', coinsEarned: 1000 },
+    ],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'Good attendance & lab performance.',
+      skillReflection: 'AWS Cloud Associate certification completed.',
+      careerReflection: 'Resume ATS score above 88%.',
+      coCurricularReflection: 'Vice Lead of DevOps club.',
+      extraCurricularReflection: 'Active in college community service.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 41000,
+      checkpoint1Grade: 'A+ (Exemplary)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 81000,
+      checkpoint2Grade: 'A+ (Exemplary)',
+      finalGradeCoin: 88400,
+      finalGradeLetter: 'O (Outstanding)',
+    },
+  },
+  {
+    studentProfile: {
+      id: 'STU-2026-004',
+      registerNumber: '732424104005',
+      studentName: 'Ashwin Kumar V.',
+      skillBankAccountNo: 'SSB-2026-AI-005',
+      degreeBranch: 'B.Tech. Artificial Intelligence & Data Science',
+      department: 'Artificial Intelligence & Data Science (AI & DS)',
+      batch: '2024-2028',
+      academicYear: '2026-2027',
+      semester: 'Odd Semester (Sem III)',
+      section: 'A',
+      admissionNumber: 'SCE2024AI015',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'O+',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-2005',
+      dateOfBirth: '2006-05-18',
+      communicationAddress: '12, College Road, Tirupur',
+      pinCode: '638002',
+      studentMobile: '9876543230',
+      studentEmail: 'ashwin.kumar@sasurie.ac.in',
+      personalEmail: 'ashwin.v2006@gmail.com',
+      fatherName: 'Velusamy K.',
+      fatherOccupation: 'Business',
+      fatherMobile: '9842109910',
+      fatherEmail: 'velusamy.k@gmail.com',
+      motherName: 'Rajeshwari Velusamy',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9842109911',
+      motherEmail: 'rajeshwari.v@gmail.com',
+      sslcSchool: 'SRK Matric Higher Secondary School, Tirupur',
+      hscSchool: 'SRK Matric Higher Secondary School, Tirupur',
+      yearOfPassing: '2024',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Prof. S. Anurooba',
+      mentorStaffId: 'STF003',
+      dreamCompany: 'Zoho / Freshworks',
+      careerGoal: 'Full Stack Web Developer',
+      studentSigned: true,
+      studentSignedDate: '2026-07-01',
+      mentorSigned: true,
+      mentorSignedDate: '2026-07-02',
+      hodSigned: true,
+      hodSignedDate: '2026-07-03',
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 22, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Sep: { totalDays: 25, daysAttended: 24, attendancePct: 96, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Oct: { totalDays: 20, daysAttended: 19, attendancePct: 95, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Nov: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+    },
+    libraryBooks: [
+      { id: 'LIB-A01', month: 'Jul', bookName: 'Data Structures using C++', author: 'M. Weiss', issueDate: '2026-07-05', returnDate: '2026-07-19', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+    ],
+    libraryVisits: [
+      { id: 'LV-A01', month: 'Jul', date: '2026-07-08', inTime: '10:00 AM', outTime: '11:00 AM', verified: true },
+    ],
+    feePayment: {
+      tuitionFeePaid: true,
+      hostelFeePaid: false,
+      transportFeePaid: true,
+      scholarshipReceived: true,
+      scholarshipAmount: 10000,
+      scholarshipDate: '2026-07-15',
+      examFeePaid: true,
+      dateOfPayment: '2026-07-18',
+      paymentBand: 'before_due',
+      coinsEarned: 6000,
+      signedByStaff: true,
+    },
+    miniProjectChecklist: {
+      topicSelectionApproved: true,
+      proposalPrepared: true,
+      literatureReview: true,
+      developmentPlagiarismCheck: true,
+      verificationDone: true,
+      presentationVivaIPR: true,
+      coinsEarned: 2500,
+    },
+    miniProjectDetails: [
+      { id: 'MP-A01', subjectCode: 'CS3391', courseName: 'Object Oriented Programming', facultyName: 'Mrs. S. Priya', projectTitle: 'Library Management System in C++', learningOutcome: 'OOP Concepts Applied' },
+    ],
+    ictToolsChecklist: {
+      joiningClassroom: true,
+      submittingAssignmentOnTime: true,
+      completingQuizTest: true,
+      activeParticipation: true,
+      disciplineEngagement: true,
+      coinsEarned: 2500,
+    },
+    examPerformance: {
+      ciat1Appeared: true,
+      ciat1Pct: 88,
+      ciat2Appeared: true,
+      ciat2Pct: 90,
+      endSemAllPass: true,
+      arrearCount: 0,
+      coinsEarned: 11000,
+    },
+    subjectMarkDetails: [
+      { id: 'SM-A01', subjectCode: 'CS3301', subjectName: 'Data Structures', ciat1Marks: 88, ciat2Marks: 92, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 90 },
+    ],
+    learnerCategory: {
+      ciat1Category: 'Fast',
+      ciat2Category: 'Fast',
+      remedialAttendancePct: 100,
+      remedialBonusEarned: false,
+      coinsEarned: 3000,
+    },
+    endSemResults: {
+      allPass: true,
+      arrearsCount: 0,
+      gpa: 8.8,
+      cgpa: 8.7,
+      coinsEarned: 5000,
+    },
+    nptelMonths: {
+      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+    },
+    leetCodeMonths: {
+      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Sep: { taskCompleted: true, attendanceBand: '70-79%', coinsEarned: 1500 },
+      Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+    },
+    onlineCertBasic: [
+      { id: 'OCB-ASH1', month: 'Jul', platform: 'Udemy', courseName: 'HTML, CSS & JS Masterclass', durationHrs: 20, proofAttached: true, coinsEarned: 100 },
+    ],
+    advancedCourses: [
+      { id: 'ADV-ASH1', month: 'Jul', platform: 'Meta', courseName: 'Meta Front-End Developer Certificate', durationHrs: 40, verifiedProof: true, remarks: 'React Developer', coinsEarned: 200 },
+    ],
+    paperPresentations: [],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: true, scoreBand: 'Score >= 60', coinsEarned: 2500 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 86, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1200 },
+    linkedIn: { profileCreated: true, originalPostCount: 5, repostCount: 5, coinsEarned: 1200 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '100-149', coinsEarned: 1000 },
+    socialMedia: { profileCreated: true, originalPostCount: 4, repostCount: 4, coinsEarned: 800 },
+    hackathons: [],
+    internship: { industryName: 'SkillCraft Technology', fromDate: '2026-06-01', toDate: '2026-06-15', totalDays: 15, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: false, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: true, coinsEarned: 4000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: false, coinsEarned: 3000 },
+    professionalMemberships: [],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [
+      { id: 'CLUB-ASH1', clubName: 'Web Developers Club', role: 'Active Participant', activityDetails: 'React Workshop', date: '2026-08-10', coinsEarned: 800 },
+    ],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'Solid II Year academic progress.',
+      skillReflection: 'React & Meta Front-End Certification.',
+      careerReflection: 'Prepared initial portfolio.',
+      coCurricularReflection: 'Active in Web Dev club.',
+      extraCurricularReflection: 'NSS member.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 40000,
+      checkpoint1Grade: 'A+ (Exemplary)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 80000,
+      checkpoint2Grade: 'A+ (Exemplary)',
+      finalGradeCoin: 85500,
+      finalGradeLetter: 'A+ (Exemplary)',
+    },
+  },
+  {
+    studentProfile: {
+      id: 'STU-2026-005',
+      registerNumber: '732425104018',
+      studentName: 'Preethi R.',
+      skillBankAccountNo: 'SSB-2026-CS-018',
+      degreeBranch: 'B.E. Computer Science & Engineering',
+      department: 'Computer Science & Engineering',
+      batch: '2025-2029',
+      academicYear: '2026-2027',
+      semester: 'Odd Semester (Sem I)',
+      section: 'B',
+      admissionNumber: 'SCE2025CS042',
+      gender: 'Female',
+      age: 18,
+      bloodGroup: 'A+',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-3018',
+      dateOfBirth: '2007-03-25',
+      communicationAddress: '55, Main Street, Erode',
+      pinCode: '638001',
+      studentMobile: '9876543240',
+      studentEmail: 'preethi.r@sasurie.ac.in',
+      personalEmail: 'preethi.r2007@gmail.com',
+      fatherName: 'Ramasamy N.',
+      fatherOccupation: 'Agriculture',
+      fatherMobile: '9842109920',
+      fatherEmail: 'ramasamy.n@gmail.com',
+      motherName: 'Kavitha Ramasamy',
+      motherOccupation: 'Teacher',
+      motherMobile: '9842109921',
+      motherEmail: 'kavitha.r@gmail.com',
+      sslcSchool: 'Government Girls High School, Erode',
+      hscSchool: 'Government Girls Higher Secondary School, Erode',
+      yearOfPassing: '2025',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Dr. P. Sathish',
+      mentorStaffId: 'STF003',
+      dreamCompany: 'Infosys / Cognizant',
+      careerGoal: 'Software Engineer',
+      studentSigned: true,
+      studentSignedDate: '2026-07-01',
+      mentorSigned: true,
+      mentorSignedDate: '2026-07-02',
+      hodSigned: true,
+      hodSignedDate: '2026-07-03',
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 22, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Sep: { totalDays: 25, daysAttended: 25, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Oct: { totalDays: 20, daysAttended: 20, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Nov: { totalDays: 22, daysAttended: 22, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+    },
+    libraryBooks: [
+      { id: 'LIB-P01', month: 'Jul', bookName: 'Programming in ANSI C', author: 'E. Balagurusamy', issueDate: '2026-07-10', returnDate: '2026-07-24', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+    ],
+    libraryVisits: [
+      { id: 'LV-P01', month: 'Jul', date: '2026-07-12', inTime: '11:00 AM', outTime: '12:00 PM', verified: true },
+    ],
+    feePayment: {
+      tuitionFeePaid: true,
+      hostelFeePaid: true,
+      transportFeePaid: false,
+      scholarshipReceived: true,
+      scholarshipAmount: 15000,
+      scholarshipDate: '2026-07-15',
+      examFeePaid: true,
+      dateOfPayment: '2026-07-18',
+      paymentBand: 'before_due',
+      coinsEarned: 6000,
+      signedByStaff: true,
+    },
+    miniProjectChecklist: {
+      topicSelectionApproved: true,
+      proposalPrepared: true,
+      literatureReview: true,
+      developmentPlagiarismCheck: true,
+      verificationDone: true,
+      presentationVivaIPR: true,
+      coinsEarned: 2500,
+    },
+    miniProjectDetails: [
+      { id: 'MP-P01', subjectCode: 'GE3151', courseName: 'Problem Solving and Python', facultyName: 'Dr. A. Ramesh', projectTitle: 'Student Grade Calculator in Python', learningOutcome: 'Basics of Algorithmic Logic' },
+    ],
+    ictToolsChecklist: {
+      joiningClassroom: true,
+      submittingAssignmentOnTime: true,
+      completingQuizTest: true,
+      activeParticipation: true,
+      disciplineEngagement: true,
+      coinsEarned: 2500,
+    },
+    examPerformance: {
+      ciat1Appeared: true,
+      ciat1Pct: 92,
+      ciat2Appeared: true,
+      ciat2Pct: 95,
+      endSemAllPass: true,
+      arrearCount: 0,
+      coinsEarned: 11500,
+    },
+    subjectMarkDetails: [
+      { id: 'SM-P01', subjectCode: 'GE3151', subjectName: 'Python Programming', ciat1Marks: 94, ciat2Marks: 96, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 98 },
+    ],
+    learnerCategory: {
+      ciat1Category: 'Fast',
+      ciat2Category: 'Fast',
+      remedialAttendancePct: 100,
+      remedialBonusEarned: false,
+      coinsEarned: 3000,
+    },
+    endSemResults: {
+      allPass: true,
+      arrearsCount: 0,
+      gpa: 9.2,
+      cgpa: 9.2,
+      coinsEarned: 5000,
+    },
+    nptelMonths: {
+      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+    },
+    leetCodeMonths: {
+      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Sep: { taskCompleted: true, attendanceBand: '70-79%', coinsEarned: 1800 },
+      Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+    },
+    onlineCertBasic: [
+      { id: 'OCB-PRE1', month: 'Jul', platform: 'Guvi', courseName: 'Python for Beginners', durationHrs: 15, proofAttached: true, coinsEarned: 100 },
+    ],
+    advancedCourses: [],
+    paperPresentations: [],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 82, enteredByCDC: true, coinsEarned: 1800 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1200 },
+    linkedIn: { profileCreated: true, originalPostCount: 4, repostCount: 4, coinsEarned: 1000 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '75-99', coinsEarned: 800 },
+    socialMedia: { profileCreated: true, originalPostCount: 3, repostCount: 3, coinsEarned: 600 },
+    hackathons: [],
+    internship: { industryName: 'First Year Python BootCamp', fromDate: '2026-06-10', toDate: '2026-06-20', totalDays: 10, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: false, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: true, coinsEarned: 4000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: true, coinsEarned: 4000 },
+    professionalMemberships: [],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [
+      { id: 'CLUB-PRE1', clubName: 'First Year Literary Club', role: 'Member', activityDetails: 'Elocution Contest', date: '2026-08-14', coinsEarned: 600 },
+    ],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'Excellent start in Semester 1.',
+      skillReflection: 'Learned Python & C basics.',
+      careerReflection: 'Joined Skill Bank onboarding.',
+      coCurricularReflection: 'Literary Club active member.',
+      extraCurricularReflection: 'Class representative.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 42000,
+      checkpoint1Grade: 'A+ (Exemplary)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 82000,
+      checkpoint2Grade: 'A+ (Exemplary)',
+      finalGradeCoin: 89000,
+      finalGradeLetter: 'O (Outstanding)',
+    },
+  },
+  {
+    studentProfile: {
+      id: 'STU-2026-006',
+      registerNumber: '732422104010',
+      studentName: 'Gokulakrishnan S.',
+      skillBankAccountNo: 'SSB-2026-CS-010',
+      degreeBranch: 'B.E. Computer Science & Engineering',
+      department: 'Computer Science & Engineering',
+      batch: '2022-2026',
+      academicYear: '2026-2027',
+      semester: 'Odd Semester (Sem VII)',
+      section: 'A',
+      admissionNumber: 'SCE2022CS008',
+      gender: 'Male',
+      age: 21,
+      bloodGroup: 'B+',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-4010',
+      dateOfBirth: '2004-11-05',
+      communicationAddress: '77, Anna Salai, Tirupur',
+      pinCode: '638001',
+      studentMobile: '9876543250',
+      studentEmail: 'gokulakrishnan.s@sasurie.ac.in',
+      personalEmail: 'gokul.s2004@gmail.com',
+      fatherName: 'Subramanian G.',
+      fatherOccupation: 'Textile Factory Manager',
+      fatherMobile: '9842109930',
+      fatherEmail: 'subramanian.g@gmail.com',
+      motherName: 'Vijayalakshmi Subramanian',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9842109931',
+      motherEmail: 'viji.s@gmail.com',
+      sslcSchool: 'KSC Boys Higher Secondary School, Tirupur',
+      hscSchool: 'KSC Boys Higher Secondary School, Tirupur',
+      yearOfPassing: '2022',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Dr. P. Sathish',
+      mentorStaffId: 'STF003',
+      dreamCompany: 'TCS Digital / Accenture',
+      careerGoal: 'Senior DevOps & Cloud Engineer',
+      studentSigned: true,
+      studentSignedDate: '2026-07-01',
+      mentorSigned: true,
+      mentorSignedDate: '2026-07-02',
+      hodSigned: true,
+      hodSignedDate: '2026-07-03',
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 22, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Sep: { totalDays: 25, daysAttended: 24, attendancePct: 96, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Oct: { totalDays: 20, daysAttended: 20, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Nov: { totalDays: 22, daysAttended: 21, attendancePct: 95.5, additionalRemedialDays: 0, coinsEarned: 8000 },
+      Dec: { totalDays: 15, daysAttended: 15, attendancePct: 100, additionalRemedialDays: 0, coinsEarned: 8000 },
+    },
+    libraryBooks: [
+      { id: 'LIB-G01', month: 'Jul', bookName: 'Cloud Native Infrastructure', author: 'J. Beda', issueDate: '2026-07-02', returnDate: '2026-07-16', returnedOnTime: true, verifiedByLibrarian: true, mentorSigned: true },
+    ],
+    libraryVisits: [
+      { id: 'LV-G01', month: 'Jul', date: '2026-07-04', inTime: '02:00 PM', outTime: '03:30 PM', verified: true },
+    ],
+    feePayment: {
+      tuitionFeePaid: true,
+      hostelFeePaid: false,
+      transportFeePaid: true,
+      scholarshipReceived: true,
+      scholarshipAmount: 15000,
+      scholarshipDate: '2026-07-15',
+      examFeePaid: true,
+      dateOfPayment: '2026-07-18',
+      paymentBand: 'before_due',
+      coinsEarned: 6000,
+      signedByStaff: true,
+    },
+    miniProjectChecklist: {
+      topicSelectionApproved: true,
+      proposalPrepared: true,
+      literatureReview: true,
+      developmentPlagiarismCheck: true,
+      verificationDone: true,
+      presentationVivaIPR: true,
+      coinsEarned: 2500,
+    },
+    miniProjectDetails: [
+      { id: 'MP-G01', subjectCode: 'CS3711', courseName: 'Final Project Phase I', facultyName: 'Mr. N. Murugan', projectTitle: 'AI-Driven Automated Cloud Infrastructure Deployment', learningOutcome: 'Terraform & AWS CI/CD Pipelines' },
+    ],
+    ictToolsChecklist: {
+      joiningClassroom: true,
+      submittingAssignmentOnTime: true,
+      completingQuizTest: true,
+      activeParticipation: true,
+      disciplineEngagement: true,
+      coinsEarned: 2500,
+    },
+    examPerformance: {
+      ciat1Appeared: true,
+      ciat1Pct: 90,
+      ciat2Appeared: true,
+      ciat2Pct: 93,
+      endSemAllPass: true,
+      arrearCount: 0,
+      coinsEarned: 11000,
+    },
+    subjectMarkDetails: [
+      { id: 'SM-G01', subjectCode: 'CS3701', subjectName: 'Cloud Computing', ciat1Marks: 91, ciat2Marks: 95, assignment1Marks: 10, assignment2Marks: 10, modelLabMarks: 95 },
+    ],
+    learnerCategory: {
+      ciat1Category: 'Fast',
+      ciat2Category: 'Fast',
+      remedialAttendancePct: 100,
+      remedialBonusEarned: false,
+      coinsEarned: 3000,
+    },
+    endSemResults: {
+      allPass: true,
+      arrearsCount: 0,
+      gpa: 9.0,
+      cgpa: 8.9,
+      coinsEarned: 5000,
+    },
+    nptelMonths: {
+      Jul: { registrationDone: true, weeklyTestsDone: true, examApplied: true, resultStatus: 'Elite', coinsEarned: 2500 },
+      Aug: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Sep: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Oct: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Nov: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+      Dec: { registrationDone: false, weeklyTestsDone: false, examApplied: false, resultStatus: 'None', coinsEarned: 0 },
+    },
+    leetCodeMonths: {
+      Jul: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Aug: { taskCompleted: true, attendanceBand: '90%+', coinsEarned: 2000 },
+      Sep: { taskCompleted: true, attendanceBand: '70-79%', coinsEarned: 1800 },
+      Oct: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Nov: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+      Dec: { taskCompleted: false, attendanceBand: '<60%', coinsEarned: 0 },
+    },
+    onlineCertBasic: [
+      { id: 'OCB-GOK1', month: 'Jul', platform: 'Coursera', courseName: 'Kubernetes Architecture', durationHrs: 20, proofAttached: true, coinsEarned: 100 },
+    ],
+    advancedCourses: [
+      { id: 'ADV-GOK1', month: 'Jul', platform: 'AWS', courseName: 'AWS Certified DevOps Engineer Professional', durationHrs: 50, verifiedProof: true, remarks: 'Certified DevOps Pro', coinsEarned: 200 },
+    ],
+    paperPresentations: [
+      { id: 'PP-GOK1', month: 'Sep', level: 'National', symposiumName: 'INVENTO 2026 - PSG', title: 'Automated Microservice Monitoring', venue: 'PSG Tech', date: '2026-09-15', prizeWon: '1st Prize', hasCertificate: true, coinsEarned: 1750, remarks: 'Rs 5000 Cash Prize' },
+    ],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 95, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1500 },
+    linkedIn: { profileCreated: true, originalPostCount: 15, repostCount: 20, coinsEarned: 1800 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '150+', coinsEarned: 1000 },
+    socialMedia: { profileCreated: true, originalPostCount: 10, repostCount: 10, coinsEarned: 1000 },
+    hackathons: [
+      { id: 'HACK-GOK1', month: 'Aug', eventName: 'TCS Inframind 2026', participated: true, prizeWon: true, verifiedByEDC: true, coinsEarned: 2000 },
+    ],
+    internship: { industryName: 'TCS Digital Internship', fromDate: '2026-05-01', toDate: '2026-06-30', totalDays: 60, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: true, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: true, coinsEarned: 4000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: true, coinsEarned: 4000 },
+    professionalMemberships: [
+      { id: 'PM-GOK1', bodyName: 'IEEE Cloud Community', membershipType: 'Annual', dateOfIssue: '2026-07-01', validity: '2027-06-30', coinsEarned: 1500 },
+    ],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [
+      { id: 'CLUB-GOK1', clubName: 'Cloud & DevOps Club', role: 'Coordinator/Lead', activityDetails: 'Kubernetes Workshop', date: '2026-08-12', coinsEarned: 1000 },
+    ],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'IV Year Placement Ready with CGPA 8.9.',
+      skillReflection: 'AWS Certified DevOps Engineer Pro.',
+      careerReflection: 'Full-time offer from TCS Digital.',
+      coCurricularReflection: 'Head of DevOps Club.',
+      extraCurricularReflection: 'Student Placement Coordinator.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 45000,
+      checkpoint1Grade: 'O (Outstanding)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 90000,
+      checkpoint2Grade: 'O (Outstanding)',
+      finalGradeCoin: 97500,
+      finalGradeLetter: 'O (Outstanding)',
+    },
+  },
+  {
+    studentProfile: {
+      id: 'STU-2026-007',
+      skillBankAccountNo: 'SB-ECE-2026-001',
+      studentName: 'S. VISHNU VARTHAN',
+      registerNumber: '732422106001',
+      degreeBranch: 'B.E. ECE',
+      department: 'Electronics & Communication Engineering',
+      batch: '2024-2028',
+      semester: 'Sem V (3rd Year)',
+      section: 'Sec A',
+      admissionNumber: 'ADM-2024-ECE01',
+      gender: 'Male',
+      age: 20,
+      bloodGroup: 'O+ve',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '1234-5678-9012',
+      dateOfBirth: '2005-04-12',
+      communicationAddress: '45, ECE Street, Tirupur - 638056',
+      pinCode: '638056',
+      studentMobile: '9876543220',
+      studentEmail: 'vishnu.ece@sasurie.ac.in',
+      personalEmail: 'vishnu.ece.p@gmail.com',
+      fatherName: 'S. Sundaram',
+      fatherOccupation: 'Business',
+      fatherMobile: '9876543221',
+      fatherEmail: 'sundaram@gmail.com',
+      motherName: 'S. Lakshmi',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9876543224',
+      motherEmail: 'lakshmi@gmail.com',
+      sslcSchool: 'Government HSS Tirupur',
+      hscSchool: 'Government HSS Tirupur',
+      yearOfPassing: '2024',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Prof. V. Karthik',
+      mentorStaffId: 'STF005',
+      academicYear: '2026-2027',
+      dreamCompany: 'Texas Instruments',
+      careerGoal: 'Embedded Systems Engineer',
+      studentSigned: true,
+    },
+    onlineCertifications: [
+      { id: 'OC-ECE1', month: 'Jul', platform: 'NPTEL', courseName: 'VLSI Design Flow', durationHrs: 30, verifiedProof: true, remarks: 'Elite Grade', coinsEarned: 2500 },
+    ],
+    oneCreditCourses: [],
+    advancedCourses: [],
+    paperPresentations: [
+      { id: 'PP-ECE1', month: 'Aug', level: 'National', symposiumName: 'ELECTRO-VISION 2026', title: 'IoT Based Smart Grid', venue: 'PSG Tech', date: '2026-08-20', prizeWon: '1st Prize', hasCertificate: true, coinsEarned: 2000, remarks: 'Rs 3000 Cash Award' },
+    ],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 88, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Top', enteredByCDC: true, coinsEarned: 1500 },
+    linkedIn: { profileCreated: true, originalPostCount: 10, repostCount: 12, coinsEarned: 1500 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '150+', coinsEarned: 1000 },
+    socialMedia: { profileCreated: true, originalPostCount: 8, repostCount: 5, coinsEarned: 800 },
+    hackathons: [
+      { id: 'HACK-ECE1', month: 'Aug', eventName: 'Embedded Hackathon 2026', participated: true, prizeWon: true, verifiedByEDC: true, coinsEarned: 2000 },
+    ],
+    internship: { industryName: 'Texas Instruments Internship', fromDate: '2026-06-01', toDate: '2026-06-30', totalDays: 30, type: 'Summer', internshipDone: true, certificateReceived: true, reportCompleted: true, fullTimeConverted: false, startupActivity: false, coinsEarned: 1000 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: true, coinsEarned: 4000 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: false, coinsEarned: 3000 },
+    professionalMemberships: [],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: 'Consistent high marks in ECE Signal Processing.',
+      skillReflection: 'Expertise in Embedded C and Arduino/Raspberry Pi.',
+      careerReflection: 'Targeting Core ECE companies like Texas Instruments.',
+      coCurricularReflection: 'Active member of IEEE Student Branch.',
+      extraCurricularReflection: 'Represented college in Tech Fest.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 38000,
+      checkpoint1Grade: 'O (Outstanding)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 75000,
+      checkpoint2Grade: 'O (Outstanding)',
+      finalGradeCoin: 82000,
+      finalGradeLetter: 'O (Outstanding)',
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-008',
+      skillBankAccountNo: 'SB-ECE-2026-002',
+      studentName: 'R. MONICA',
+      registerNumber: '732422106002',
+      degreeBranch: 'B.E. ECE',
+      department: 'Electronics & Communication Engineering',
+      batch: '2025-2029',
+      semester: 'Sem III (2nd Year)',
+      section: 'Sec A',
+      admissionNumber: 'ADM-2025-ECE02',
+      gender: 'Female',
+      age: 19,
+      bloodGroup: 'B+ve',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '1234-5678-9013',
+      dateOfBirth: '2006-02-18',
+      communicationAddress: '12, Anna Nagar, Erode - 638001',
+      pinCode: '638001',
+      studentMobile: '9876543222',
+      studentEmail: 'monica.ece@sasurie.ac.in',
+      personalEmail: 'monica.p@gmail.com',
+      fatherName: 'K. Ramasamy',
+      fatherOccupation: 'Agriculture',
+      fatherMobile: '9876543223',
+      fatherEmail: 'ramasamy@gmail.com',
+      motherName: 'R. Vimala',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9876543225',
+      motherEmail: 'vimala@gmail.com',
+      sslcSchool: 'KSC Girls HSS Erode',
+      hscSchool: 'KSC Girls HSS Erode',
+      yearOfPassing: '2025',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Dr. N. Archana',
+      mentorStaffId: 'STF006',
+      academicYear: '2026-2027',
+      dreamCompany: 'Bosch / Qualcomm',
+      careerGoal: 'VLSI Engineer',
+      studentSigned: true,
+    },
+    onlineCertifications: [],
+    oneCreditCourses: [],
+    advancedCourses: [],
+    paperPresentations: [],
+    aptitudeMonths: {
+      Jul: { attended: true, scoreBand: 'Score >= 60', coinsEarned: 2000 },
+      Aug: { attended: true, scoreBand: 'Score >= 80', coinsEarned: 3000 },
+      Sep: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Oct: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Nov: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+      Dec: { attended: false, scoreBand: 'None', coinsEarned: 0 },
+    },
+    resume: { workshopAttended: true, atsScorePct: 80, enteredByCDC: true, coinsEarned: 2000 },
+    mockInterview: { attended: true, performanceBand: 'Moderate', enteredByCDC: true, coinsEarned: 1000 },
+    linkedIn: { profileCreated: true, originalPostCount: 5, repostCount: 5, coinsEarned: 1000 },
+    gitHub: { portfolioCompleted: true, assessmentBand: '50-74', coinsEarned: 800 },
+    socialMedia: { profileCreated: true, originalPostCount: 5, repostCount: 2, coinsEarned: 500 },
+    hackathons: [],
+    internship: { industryName: '', fromDate: '', toDate: '', totalDays: 0, type: 'Summer', internshipDone: false, certificateReceived: false, reportCompleted: false, fullTimeConverted: false, startupActivity: false, coinsEarned: 0 },
+    workshop: { certificationCompleted: true, reportOnLearning: true, industrialVisitParticipation: true, coinsEarned: 4000 },
+    collegeEvent: { paidValueAddedCourse: true, eventParticipation: true, eventWinner: false, coinsEarned: 2500 },
+    volunteering: { nssNccActivity: true, communityAwareness: true, leadershipRole: false, coinsEarned: 3000 },
+    professionalMemberships: [],
+    sportsLogs: [],
+    artsLogs: [],
+    clubLogs: [],
+    violations: [],
+    counsellingLogs: [],
+    parentMeetingLogs: [],
+    transformationJourney: {
+      academicReflection: '2nd Year ECE student focusing on basic circuit theory.',
+      skillReflection: 'Learning Proteus and MATLAB simulation tools.',
+      careerReflection: 'Interested in Telecommunications & VLSI.',
+      coCurricularReflection: 'Member of Electronics Club.',
+      extraCurricularReflection: 'NSS Volunteer.',
+      checkpoint1Date: '2026-08-30',
+      checkpoint1Coins: 25000,
+      checkpoint1Grade: 'A+ (Excellent)',
+      checkpoint2Date: '2026-11-30',
+      checkpoint2Coins: 50000,
+      checkpoint2Grade: 'A+ (Excellent)',
+      finalGradeCoin: 55000,
+      finalGradeLetter: 'A+ (Excellent)',
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-CYB1',
+      skillBankAccountNo: 'SB-CYBER-2026-001',
+      studentName: 'PRAVEEN KUMAR K.',
+      registerNumber: '732422108001',
+      degreeBranch: 'B.E. Cyber Security',
+      department: 'Cyber Security (CYBER)',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-CYB01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'O+ve',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-8001',
+      dateOfBirth: '2006-05-14',
+      communicationAddress: '15, Cyber Hub Street, Coimbatore',
+      pinCode: '641001',
+      studentMobile: '9876543230',
+      studentEmail: 'praveen.cyber@sasurie.ac.in',
+      personalEmail: 'praveen.cyber@gmail.com',
+      fatherName: 'K. Kumar',
+      fatherOccupation: 'Engineer',
+      fatherMobile: '9876543231',
+      motherName: 'K. Sangeetha',
+      motherOccupation: 'Teacher',
+      motherMobile: '9876543232',
+      sslcSchool: 'Government HSS Coimbatore',
+      hscSchool: 'Government HSS Coimbatore',
+      yearOfPassing: '2025',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Prof. R. Shielda',
+      mentorStaffId: 'STF011',
+      dreamCompany: 'Palo Alto Networks / Cisco',
+      careerGoal: 'Ethical Hacker & Security Analyst',
+      studentSigned: true,
+      mentorSigned: true,
+      hodSigned: true,
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 24, attendancePct: 100, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 22, attendancePct: 100, coinsEarned: 8000 },
+    },
+    transformationJourney: {
+      academicReflection: 'Ethical Hacking and Network Defense fundamentals.',
+      skillReflection: 'Wireshark, Metasploit, Nmap hands-on labs.',
+      careerReflection: 'Security Operations Center (SOC) Analyst.',
+      checkpoint1Coins: 30000,
+      checkpoint1Grade: 'O (Outstanding)',
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-CYB2',
+      skillBankAccountNo: 'SB-CYBER-2026-002',
+      studentName: 'VISHNU PRIYA R.',
+      registerNumber: '732422108002',
+      degreeBranch: 'B.E. Cyber Security',
+      department: 'Cyber Security (CYBER)',
+      batch: '2024-2028',
+      academicYear: '3rd Year',
+      semester: 'Sem V & VI',
+      section: 'A',
+      admissionNumber: 'ADM-2024-CYB02',
+      gender: 'Female',
+      age: 20,
+      bloodGroup: 'A+ve',
+      motherTongue: 'Tamil',
+      nationality: 'Indian',
+      aadhaarNo: '9876-5432-8002',
+      dateOfBirth: '2005-09-20',
+      communicationAddress: '88, Defense Enclave, Tirupur',
+      pinCode: '641602',
+      studentMobile: '9876543233',
+      studentEmail: 'vishnupriya.cyber@sasurie.ac.in',
+      personalEmail: 'vishnupriya.r@gmail.com',
+      fatherName: 'R. Rajan',
+      fatherOccupation: 'Business',
+      fatherMobile: '9876543234',
+      motherName: 'R. Kavitha',
+      motherOccupation: 'Homemaker',
+      motherMobile: '9876543235',
+      sslcSchool: 'KSC Girls HSS Tirupur',
+      hscSchool: 'KSC Girls HSS Tirupur',
+      yearOfPassing: '2024',
+      admissionCategory: 'Government Quota',
+      mentorFaculty: 'Prof. A. Vigilant',
+      mentorStaffId: 'STF012',
+      dreamCompany: 'CrowdStrike / IBM Security',
+      careerGoal: 'Cyber Forensics Investigator',
+      studentSigned: true,
+      mentorSigned: true,
+      hodSigned: true,
+    },
+    attendanceMonths: {
+      Jul: { totalDays: 24, daysAttended: 23, attendancePct: 95.8, coinsEarned: 8000 },
+      Aug: { totalDays: 22, daysAttended: 21, attendancePct: 95.4, coinsEarned: 8000 },
+    },
+    transformationJourney: {
+      academicReflection: 'Cryptography and Incident Response.',
+      skillReflection: 'Digital forensics tools and malware analysis.',
+      careerReflection: 'Cyber Risk Manager.',
+      checkpoint1Coins: 28000,
+      checkpoint1Grade: 'A+ (Excellent)',
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-EEE1',
+      skillBankAccountNo: 'SB-EEE-2026-001',
+      studentName: 'DEEPAK M.',
+      registerNumber: '732422105001',
+      degreeBranch: 'B.E. EEE',
+      department: 'Electrical & Electronics Engineering',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-EEE01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'B+ve',
+      studentMobile: '9876543240',
+      studentEmail: 'deepak.eee@sasurie.ac.in',
+      mentorFaculty: 'Prof. K. Deepa',
+      mentorStaffId: 'STF008',
+      dreamCompany: 'Siemens / L&T Electrical',
+      careerGoal: 'Power Systems Engineer',
+      studentSigned: true,
+      mentorSigned: true,
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-MCH1',
+      skillBankAccountNo: 'SB-MECH-2026-001',
+      studentName: 'GOKUL R.',
+      registerNumber: '732422102001',
+      degreeBranch: 'B.E. Mechanical',
+      department: 'Mechanical Engineering',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-MCH01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'O+ve',
+      studentMobile: '9876543250',
+      studentEmail: 'gokul.mech@sasurie.ac.in',
+      mentorFaculty: 'Prof. S. Ramesh',
+      mentorStaffId: 'STF010',
+      dreamCompany: 'Tata Motors / Caterpillar',
+      careerGoal: 'CAD/CAM Design Engineer',
+      studentSigned: true,
+      mentorSigned: true,
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-IT1',
+      skillBankAccountNo: 'SB-IT-2026-001',
+      studentName: 'NAVEEN T.',
+      registerNumber: '732422107001',
+      degreeBranch: 'B.Tech IT',
+      department: 'Information Technology',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-IT01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'A+ve',
+      studentMobile: '9876543260',
+      studentEmail: 'naveen.it@sasurie.ac.in',
+      mentorFaculty: 'Prof. N. Tech',
+      mentorStaffId: 'STF013',
+      dreamCompany: 'Zoho / Cognizant',
+      careerGoal: 'Cloud Solutions Architect',
+      studentSigned: true,
+      mentorSigned: true,
+    },
+  } as any,
+  {
+    studentProfile: {
+      id: 'STU-2026-CIV1',
+      skillBankAccountNo: 'SB-CIVIL-2026-001',
+      studentName: 'MANOJ C.',
+      registerNumber: '732422101001',
+      degreeBranch: 'B.E. Civil',
+      department: 'Civil Engineering',
+      batch: '2025-2029',
+      academicYear: '2nd Year',
+      semester: 'Sem III & IV',
+      section: 'A',
+      admissionNumber: 'ADM-2025-CIV01',
+      gender: 'Male',
+      age: 19,
+      bloodGroup: 'B+ve',
+      studentMobile: '9876543270',
+      studentEmail: 'manoj.civil@sasurie.ac.in',
+      mentorFaculty: 'Prof. C. Build',
+      mentorStaffId: 'STF014',
+      dreamCompany: 'L&T Construction',
+      careerGoal: 'Structural Design Specialist',
+      studentSigned: true,
+      mentorSigned: true,
+    },
+  } as any,
+];
+
+export const INITIAL_STUDENTS_SKILL_BANK: StudentSkillBankData[] = RAW_INITIAL_STUDENTS_SKILL_BANK;

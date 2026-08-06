@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { CCMMeeting, CCMAgendaItem } from '../types/ccm';
+import { isSameDept, isSuperAdmin, normalizeDept, getDeptHodDetail } from '../utils/departmentUtils';
+import { exportElementToPDF } from '../utils/exportUtils';
 import {
   CCM_ACADEMIC_YEARS,
   CCM_SEMESTERS,
@@ -32,18 +34,45 @@ const barColor = (status: string) =>
 const parseNameList = (raw: string) =>
   raw.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
 
+// Map a logged-in HOD's department to a CCM department option value.
+const ccmDeptFromHod = (dept?: string): string => {
+  const n = normalizeDept(dept);
+  if (n.includes('cyber')) return 'Cyber Security';
+  if (n.includes('computer science') || n.includes('cse')) return 'CSE';
+  if (n.includes('ece') || n.includes('electronics')) return 'ECE';
+  if (n.includes('eee') || n.includes('electrical')) return 'EEE';
+  if (n.includes('mech') || n.includes('mechanical')) return 'Mechanical';
+  if (n.includes('civil')) return 'Civil';
+  return 'AI&DS';
+};
+
+// Row used inside the college-format report table.
+const ReportRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <tr>
+    <td className="border border-slate-300 p-1.5 font-bold w-32">{label}</td>
+    <td className="border border-slate-300 p-1.5">{value}</td>
+  </tr>
+);
+
 export const CCMView: React.FC = () => {
-  const { ccmMeetings, addCCMMeeting, updateCCMMeeting, deleteCCMMeeting } = useApp();
+  const { ccmMeetings, addCCMMeeting, updateCCMMeeting, deleteCCMMeeting, currentUser, dailyReport } = useApp();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const selected = ccmMeetings.find((m) => m.id === selectedId) || null;
+  // Department scoping: only show CCMs for the logged-in HOD's department.
+  // Principal / super-admins can see all departments.
+  const isGlobal = isSuperAdmin(currentUser) || (!!currentUser && ['principal', 'secretary', 'secretary_pa', 'principal_pa'].includes(currentUser.role));
+  const hodDept = currentUser?.department || dailyReport?.department || '';
+  const scopedMeetings = isGlobal ? ccmMeetings : ccmMeetings.filter((m) => isSameDept(m.department, hodDept));
+  const defaultDept = ccmDeptFromHod(hodDept);
 
-  const total = ccmMeetings.length;
-  const pending = ccmMeetings.filter((m) => m.status === 'Pending' || m.status === 'Draft').length;
-  const completed = ccmMeetings.filter((m) => m.status === 'Completed' || m.status === 'Approved').length;
-  const upcoming = ccmMeetings.filter((m) => m.status === 'Scheduled').length;
-  const openActions = ccmMeetings.reduce((acc, m) => acc + m.agenda.filter((a) => a.status !== 'Completed').length, 0);
+  const selected = scopedMeetings.find((m) => m.id === selectedId) || null;
+
+  const total = scopedMeetings.length;
+  const pending = scopedMeetings.filter((m) => m.status === 'Pending' || m.status === 'Draft').length;
+  const completed = scopedMeetings.filter((m) => m.status === 'Completed' || m.status === 'Approved').length;
+  const upcoming = scopedMeetings.filter((m) => m.status === 'Scheduled').length;
+  const openActions = scopedMeetings.reduce((acc, m) => acc + m.agenda.filter((a) => a.status !== 'Completed').length, 0);
 
   const stats = [
     { label: 'Total Meetings', value: total, color: 'text-slate-900 dark:text-white', icon: ClipboardList },
@@ -60,7 +89,7 @@ export const CCMView: React.FC = () => {
           <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <MonitorCheck className="w-6 h-6 text-blue-600" /> IQAC — CCM
           </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">Class Committee Meetings. Assign meetings, track agenda, attendance, minutes &amp; action items.</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">Class Committee Meetings. Assign meetings, track agenda, attendance, minutes &amp; action items.{isGlobal ? ' • All departments' : ` • ${hodDept || 'Your department'} — you can add Chief Mentor & Students manually.`}</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-md">
           <Plus className="w-4 h-4" /> Assign New CCM
@@ -85,10 +114,10 @@ export const CCMView: React.FC = () => {
       {selected ? (
         <MeetingDetail meeting={selected} onBack={() => setSelectedId(null)} onUpdate={(u) => updateCCMMeeting(selected.id, u)} onDelete={() => { if (confirm(`Delete meeting ${selected.meetingNumber}?`)) { deleteCCMMeeting(selected.id); setSelectedId(null); } }} />
       ) : (
-        <MeetingList meetings={ccmMeetings} onSelect={(id) => setSelectedId(id)} />
+        <MeetingList meetings={scopedMeetings} onSelect={(id) => setSelectedId(id)} />
       )}
 
-      {showCreate && <CreateCCMForm onClose={() => setShowCreate(false)} onCreate={(data) => { addCCMMeeting(data); setShowCreate(false); }} />}
+      {showCreate && <CreateCCMForm defaultDepartment={defaultDept} lockDepartment={!isGlobal} onClose={() => setShowCreate(false)} onCreate={(data) => { addCCMMeeting(data); setShowCreate(false); }} />}
     </div>
   );
 };
@@ -138,6 +167,11 @@ const MeetingDetail: React.FC<{
   onDelete: () => void;
 }> = ({ meeting, onBack, onUpdate, onDelete }) => {
   const [tab, setTab] = useState<'agenda' | 'attendance' | 'atr'>('agenda');
+  const [reportOpen, setReportOpen] = useState(false);
+  const { dailyReport, staffList, currentUser } = useApp();
+  const hod = getDeptHodDetail(staffList, meeting.department, currentUser, dailyReport?.hodName);
+  const facPresent = (meeting.facultyMembers || []).filter((m) => m.present !== false).length;
+  const stuPresent = (meeting.studentReps || []).filter((m) => m.present !== false).length;
 
   const tabs = [
     { id: 'agenda' as const, label: 'Agenda & Minutes', icon: ClipboardList },
@@ -167,6 +201,9 @@ const MeetingDetail: React.FC<{
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{meeting.date} • {meeting.time} • {meeting.venue} • Chief Mentor: {meeting.chiefMentor}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button onClick={() => setReportOpen(true)} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1">
+            <FileText className="w-3.5 h-3.5" /> Download Report (PDF)
+          </button>
           <button onClick={advance} className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold">Advance Status</button>
           <button onClick={onDelete} className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1">
             <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -196,6 +233,86 @@ const MeetingDetail: React.FC<{
         {tab === 'attendance' && <AttendancePanel meeting={meeting} onUpdate={onUpdate} />}
         {tab === 'atr' && <ATRPanel agenda={meeting.agenda} onUpdate={(a) => onUpdate({ agenda: a })} />}
       </div>
+
+      {reportOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="bg-slate-100 rounded-2xl max-w-3xl w-full max-h-[calc(100vh-2rem)] overflow-y-auto p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="font-bold text-slate-800">CCM Report — {meeting.meetingNumber}</h3>
+              <div className="flex gap-2">
+                <button onClick={() => exportElementToPDF(`ccm-report-${meeting.id}`, `CCM_Report_${meeting.meetingNumber}`)} className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5" /> Download PDF
+                </button>
+                <button onClick={() => setReportOpen(false)} className="px-3 py-1.5 rounded-lg bg-slate-300 text-slate-700 text-xs font-semibold">Close</button>
+              </div>
+            </div>
+
+            <div id={`ccm-report-${meeting.id}`} className="bg-white text-slate-900 p-8 rounded-lg border border-slate-300">
+              <div className="border-b-4 border-double border-slate-400 pb-3 mb-4 text-center">
+                <div className="flex items-center justify-center gap-3">
+                  {dailyReport?.collegeLogoUrl ? (
+                    <img src={dailyReport.collegeLogoUrl} alt="college logo" className="w-12 h-12 object-contain" />
+                  ) : (
+                    <div className="w-12 h-12 bg-slate-800 text-white flex items-center justify-center font-bold text-lg rounded">{dailyReport?.collegeLogoText?.[0] || 'S'}</div>
+                  )}
+                  <div className="text-left">
+                    <h2 className="text-lg font-black uppercase tracking-wide leading-tight">{dailyReport?.collegeName || 'Sasurie College of Engineering'}</h2>
+                    <p className="text-[11px] text-slate-600">Department of {hod.department}</p>
+                    <p className="text-[11px] font-semibold text-slate-700">Head of Department: {hod.name}</p>
+                  </div>
+                </div>
+              </div>
+              <h3 className="text-center font-bold text-sm uppercase mb-1">Class Committee Meeting — Minutes &amp; Action Taken Report</h3>
+              <p className="text-center text-[11px] text-slate-600 mb-4">Meeting No: {meeting.meetingNumber} • Academic Year: {meeting.academicYear} • Semester: {meeting.semester}</p>
+
+              <table className="w-full text-[11px] mb-4 border border-slate-300">
+                <tbody>
+                  <ReportRow label="Class" value={`${meeting.className} — Section ${meeting.section} (${meeting.programme})`} />
+                  <ReportRow label="Date & Time" value={`${meeting.date} • ${meeting.time}`} />
+                  <ReportRow label="Venue" value={meeting.venue || '—'} />
+                  <ReportRow label="Chief Mentor" value={meeting.chiefMentor || '—'} />
+                  <ReportRow label="Status" value={meeting.status} />
+                </tbody>
+              </table>
+
+              <h4 className="font-bold text-[12px] mb-1">Agenda, Minutes &amp; Action Taken</h4>
+              <table className="w-full text-[10px] border border-slate-300 mb-4">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border border-slate-300 p-1">#</th>
+                    <th className="border border-slate-300 p-1">Agenda / Discussion</th>
+                    <th className="border border-slate-300 p-1">Decision</th>
+                    <th className="border border-slate-300 p-1">Action / Responsible / Target</th>
+                    <th className="border border-slate-300 p-1">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {meeting.agenda.map((a) => (
+                    <tr key={a.id}>
+                      <td className="border border-slate-300 p-1">{a.order}</td>
+                      <td className="border border-slate-300 p-1">{a.title}{a.discussion ? ` — ${a.discussion}` : ''}</td>
+                      <td className="border border-slate-300 p-1">{a.decision || a.actionPlan || '—'}</td>
+                      <td className="border border-slate-300 p-1">{`${a.actionPlan || '—'}`}{a.responsible ? ` / ${a.responsible}` : ''}{a.targetDate ? ` / ${a.targetDate}` : ''}</td>
+                      <td className="border border-slate-300 p-1">{a.status} ({a.completionPct || 0}%)</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+                            <div className="text-[11px] mb-4">
+                <p className="font-bold mb-1">Attendance:</p>
+                <p>Faculty present: {facPresent}/{meeting.facultyMembers?.length || 0} — {(meeting.facultyMembers || []).filter((f) => f.present !== false).map((f) => f.name).join(', ') || 'N/A'}</p>
+                <p>Student Reps present: {stuPresent}/{meeting.studentReps?.length || 0} — {(meeting.studentReps || []).filter((s) => s.present !== false).map((s) => s.name).join(', ') || 'N/A'}</p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mt-8 text-center text-[11px]">
+                <div className="border-t border-slate-400 pt-1">Chief Mentor<br /><span className="text-slate-500">({meeting.chiefMentor || '—'})</span></div>
+                <div className="border-t border-slate-400 pt-1">Head of Department<br /><span className="text-slate-500">({hod.name})</span></div>
+                <div className="border-t border-slate-400 pt-1">Principal<br /><span className="text-slate-500">({dailyReport?.principalName || 'Principal'})</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -303,6 +420,245 @@ const AgendaEditor: React.FC<{ agenda: CCMAgendaItem[]; onUpdate: (a: CCMAgendaI
     </div>
   );
 };
-//__END__
+const Field: React.FC<{
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  textarea?: boolean;
+  type?: string;
+}> = ({ label, value, onChange, textarea, type = 'text' }) => (
+  <div>
+    <label className="block text-[10px] font-bold text-slate-500 mb-0.5">{label}</label>
+    {textarea ? (
+      <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={2} className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg" />
+    ) : (
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg" />
+    )}
+  </div>
+);
+
+/* ---------------- Attendance Panel ---------------- */
+const AttendancePanel: React.FC<{ meeting: CCMMeeting; onUpdate: (u: Partial<CCMMeeting>) => void }> = ({ meeting, onUpdate }) => {
+  const toggle = (listKey: 'facultyMembers' | 'studentReps', id: string, present: boolean) => {
+    const next = (meeting[listKey] || []).map((m) => (m.id === id ? { ...m, present } : m));
+    onUpdate({ [listKey]: next } as Partial<CCMMeeting>);
+  };
+
+  const presentF = (meeting.facultyMembers || []).filter((m) => m.present !== false).length;
+  const presentS = (meeting.studentReps || []).filter((m) => m.present !== false).length;
+
+  const Section: React.FC<{
+    title: string;
+    listKey: 'facultyMembers' | 'studentReps';
+    members: { id: string; name: string; present?: boolean }[];
+  }> = ({ title, listKey, members }) => (
+    <div className="mb-5">
+      <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">{title}</h4>
+      <div className="space-y-2">
+        {members.map((m) => (
+          <div key={m.id} className="flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-700">
+            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">{m.name}</span>
+            <div className="flex gap-2">
+              <button onClick={() => toggle(listKey, m.id, true)} className={`px-3 py-1 rounded-lg text-[11px] font-bold ${m.present === false ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : 'bg-emerald-500 text-white'}`}>Present</button>
+              <button onClick={() => toggle(listKey, m.id, false)} className={`px-3 py-1 rounded-lg text-[11px] font-bold ${m.present === true ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : 'bg-rose-500 text-white'}`}>Absent</button>
+            </div>
+          </div>
+        ))}
+        {members.length === 0 && <p className="text-xs text-slate-400">No members added.</p>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="mb-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex flex-wrap gap-4 text-xs">
+        <span className="font-semibold text-slate-700 dark:text-slate-300">Faculty Attendance: <span className="text-emerald-600 font-black">{presentF}/{meeting.facultyMembers?.length || 0}</span></span>
+        <span className="font-semibold text-slate-700 dark:text-slate-300">Student Rep Attendance: <span className="text-emerald-600 font-black">{presentS}/{meeting.studentReps?.length || 0}</span></span>
+      </div>
+      <Section title="Faculty Members" listKey="facultyMembers" members={meeting.facultyMembers || []} />
+      <Section title="Student Representatives" listKey="studentReps" members={meeting.studentReps || []} />
+    </div>
+  );
+};
+/* ---------------- Action Taken Report ---------------- */
+const ATRPanel: React.FC<{ agenda: CCMAgendaItem[]; onUpdate: (a: CCMAgendaItem[]) => void }> = ({ agenda, onUpdate }) => {
+  const rows = agenda.filter((a) => a.actionPlan || a.status !== 'Pending');
+  const cycle = (old: string) => (old === 'Pending' ? 'In Progress' : old === 'In Progress' ? 'Completed' : 'Pending');
+
+  const bgColor = (s: string) =>
+    s === 'Completed'
+      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+      : s === 'In Progress'
+      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+      : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300';
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-[10px] uppercase text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <th className="py-2 pr-2">Agenda</th>
+            <th className="py-2 pr-2">Action</th>
+            <th className="py-2 pr-2">Responsible</th>
+            <th className="py-2 pr-2">Deadline</th>
+            <th className="py-2 pr-2">Status</th>
+            <th className="py-2 pr-2">%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr><td colSpan={6} className="py-6 text-center text-slate-400">No action items yet. Fill &quot;Action Plan&quot; in Agenda &amp; Minutes.</td></tr>
+          )}
+          {rows.map((a) => (
+            <tr key={a.id} className="border-b border-slate-100 dark:border-slate-800">
+              <td className="py-2 pr-2 font-semibold text-slate-700 dark:text-slate-300">{a.title}</td>
+              <td className="py-2 pr-2 text-slate-600 dark:text-slate-400">{a.actionPlan || '—'}</td>
+              <td className="py-2 pr-2 text-slate-600 dark:text-slate-400">{a.responsible || '—'}</td>
+              <td className="py-2 pr-2 text-slate-600 dark:text-slate-400">{a.targetDate || '—'}</td>
+              <td className="py-2 pr-2">
+                <button onClick={() => onUpdate(agenda.map((x) => (x.id === a.id ? { ...x, status: cycle(x.status) as CCMAgendaItem['status'] } : x)))} className={`px-2 py-1 rounded-lg text-[10px] font-bold ${bgColor(a.status)}`}>
+                  {a.status}
+                </button>
+              </td>
+              <td className="py-2 text-slate-600 dark:text-slate-400">{a.completionPct}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+/* ---------------- Create CCM Form ---------------- */
+const emptyForm = {
+  meetingNumber: '',
+  className: '',
+  department: 'CSE',
+  programme: 'B.E.',
+  semester: 'Odd',
+  academicYear: '2026-2027',
+  section: 'A',
+  venue: '',
+  date: '',
+  time: '',
+  chiefMentor: '',
+  faculty: '',
+  students: '',
+};
+
+const inputCls = 'w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white';
+const labelCls = 'block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1';
+
+const CreateCCMForm: React.FC<{ onClose: () => void; onCreate: (data: any) => void; defaultDepartment?: string; lockDepartment?: boolean }> = ({ onClose, onCreate, defaultDepartment, lockDepartment }) => {
+  const [form, setForm] = useState({ ...emptyForm, department: defaultDepartment || emptyForm.department });
+  const set = (k: keyof typeof emptyForm, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = () => {
+    if (!form.className || !form.date || !form.chiefMentor) {
+      alert('Please fill Class, Chief Mentor and Meeting Date.');
+      return;
+    }
+    const facultyMembers = parseNameList(form.faculty).map((name, i) => ({ id: `FAC-${Date.now()}-${i}`, name, role: 'faculty' as const }));
+    const studentReps = parseNameList(form.students).map((name, i) => ({ id: `STU-${Date.now()}-${i}`, name, role: 'student_rep' as const }));
+    onCreate({
+      meetingNumber: form.meetingNumber || `CCM-${Date.now()}`,
+      className: form.className,
+      department: form.department,
+      programme: form.programme,
+      semester: form.semester,
+      academicYear: form.academicYear,
+      section: form.section,
+      venue: form.venue,
+      date: form.date,
+      time: form.time,
+      chiefMentor: form.chiefMentor,
+      facultyMembers,
+      studentReps,
+      status: 'Draft',
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-5">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 mb-4">
+          <h3 className="font-bold text-slate-900 dark:text-white">Assign New CCM</h3>
+          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className={labelCls}>Meeting Number</label>
+            <input className={inputCls} value={form.meetingNumber} onChange={(e) => set('meetingNumber', e.target.value)} placeholder="CCM-2026-01" />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Class *</label>
+            <input className={inputCls} value={form.className} onChange={(e) => set('className', e.target.value)} placeholder="II Year CSE Section A" />
+          </div>
+          <div>
+            <label className={labelCls}>Department</label>
+            <select className={inputCls} value={form.department} onChange={(e) => set('department', e.target.value)} disabled={lockDepartment}>
+              {CCM_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Programme</label>
+            <select className={inputCls} value={form.programme} onChange={(e) => set('programme', e.target.value)}>
+              {CCM_PROGRAMMES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Semester</label>
+            <select className={inputCls} value={form.semester} onChange={(e) => set('semester', e.target.value)}>
+              {CCM_SEMESTERS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Academic Year</label>
+            <select className={inputCls} value={form.academicYear} onChange={(e) => set('academicYear', e.target.value)}>
+              {CCM_ACADEMIC_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Section</label>
+            <select className={inputCls} value={form.section} onChange={(e) => set('section', e.target.value)}>
+              {CCM_SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Chief Mentor *</label>
+            <input className={inputCls} value={form.chiefMentor} onChange={(e) => set('chiefMentor', e.target.value)} placeholder="Dr. V. Henderson" />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Faculty Members (comma separated)</label>
+            <textarea className={inputCls} rows={2} value={form.faculty} onChange={(e) => set('faculty', e.target.value)} placeholder="M. Kaviyarasu, Dhananjeiyan B" />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Student Representatives (comma separated)</label>
+            <textarea className={inputCls} rows={2} value={form.students} onChange={(e) => set('students', e.target.value)} placeholder="Arun Kumar, Priya Sharma" />
+          </div>
+          <div>
+            <label className={labelCls}>Meeting Date *</label>
+            <input type="date" className={inputCls} value={form.date} onChange={(e) => set('date', e.target.value)} />
+          </div>
+          <div>
+            <label className={labelCls}>Meeting Time</label>
+            <input type="time" className={inputCls} value={form.time} onChange={(e) => set('time', e.target.value)} />
+          </div>
+          <div className="col-span-2">
+            <label className={labelCls}>Venue</label>
+            <input className={inputCls} value={form.venue} onChange={(e) => set('venue', e.target.value)} placeholder="CSE Seminar Hall" />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold">Cancel</button>
+          <button onClick={submit} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5">
+            <Save className="w-3.5 h-3.5" /> Save Meeting
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 

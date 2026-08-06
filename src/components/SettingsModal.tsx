@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { DEPARTMENTS, SASURIE_COLLEGES } from '../types';
+import { SASURIE_COLLEGES } from '../types';
 import { getCollegeLogoText } from '../utils/departmentUtils';
-import { X, Building, UserCheck, ShieldCheck, Image as ImageIcon, Save, Check, Upload, Trash2, Camera, Mail, Database, Download, RotateCcw } from 'lucide-react';
+import { X, Building, ShieldCheck, Image as ImageIcon, Save, Check, Upload, Trash2, Camera, Database, Download, RotateCcw } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,16 +10,9 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-  const { dailyReport, updateDailyReport, exportFullDatabase, importFullDatabase, syncAllDataToFirestore, resetToDefaultData, currentUser } = useApp();
-
-  const rawDept = currentUser?.department || dailyReport.department || '';
-  const cleanDept = rawDept.replace(/^Department of\s+/i, '');
-  const matchedDept = DEPARTMENTS.find((d) => d.toLowerCase() === cleanDept.toLowerCase()) || DEPARTMENTS[0];
+  const { dailyReport, updateDailyReport, exportFullDatabase, importFullDatabase, syncAllDataToFirestore, resetToDefaultData } = useApp();
 
   const [collegeName, setCollegeName] = useState(dailyReport.collegeName || 'Sasurie College of Engineering');
-  const [department, setDepartment] = useState(matchedDept);
-  const [hodName, setHodName] = useState(dailyReport.hodName || '');
-  const [hodEmail, setHodEmail] = useState(dailyReport.hodEmail || 'hodcs@sasurie.com');
   const [principalName, setPrincipalName] = useState(dailyReport.principalName || '');
   const [collegeLogoText, setCollegeLogoText] = useState(dailyReport.collegeLogoText || 'SCE');
   const [collegeLogoUrl, setCollegeLogoUrl] = useState(dailyReport.collegeLogoUrl || '');
@@ -50,9 +43,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     e.preventDefault();
     updateDailyReport({
       collegeName,
-      department,
-      hodName,
-      hodEmail,
       principalName,
       collegeLogoText,
       collegeLogoUrl,
@@ -77,7 +67,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 Institutional & Department Settings
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Update College Name, Logo, HOD Name, Principal Name & Department
+                Update College Name, Principal Name & Logo
               </p>
             </div>
           </div>
@@ -90,27 +80,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         </div>
 
         <form onSubmit={handleSave} className="space-y-4 text-xs">
-          {/* Department Selection */}
-          <div>
-            <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-              Select Department *
-            </label>
-            <select
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-            >
-              {DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
-                </option>
-              ))}
-            </select>
-            <p className="text-[10px] text-slate-400 mt-1">
-              Popular choice: Artificial Intelligence & Data Science (AI & DS) or Cyber Security (CYBER)
-            </p>
-          </div>
-
           {/* College Name */}
           <div>
             <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
@@ -131,40 +100,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            {/* HOD Name */}
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                HOD Name *
-              </label>
-              <input
-                type="text"
-                required
-                value={hodName}
-                onChange={(e) => setHodName(e.target.value)}
-                placeholder="Dr. V. Henderson, Ph.D."
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-              />
-            </div>
-
-            {/* HOD Email */}
-            <div>
-              <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
-                <Mail className="w-3.5 h-3.5 text-emerald-600" />
-                HOD Official Email ID *
-              </label>
-              <input
-                type="email"
-                required
-                value={hodEmail}
-                onChange={(e) => setHodEmail(e.target.value)}
-                placeholder="hod.cse@apex.edu.in"
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-              />
-            </div>
           </div>
 
           {/* Principal Name */}

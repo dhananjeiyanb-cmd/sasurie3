@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
 import {
@@ -21,6 +21,9 @@ import {
   Award,
   Coins,
   UserPlus,
+  ChevronDown,
+  Landmark,
+  ClipboardList,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -33,6 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
   const overdueCount = taskList.filter((t) => t.status === 'Overdue').length;
   const pendingCount = taskList.filter((t) => t.status === 'Pending' || t.status === 'In Progress' || t.status === 'Submitted').length;
+
+  const [iqacOpen, setIqacOpen] = useState(false);
 
   const executiveRoles = ['principal', 'secretary', 'principal_pa', 'secretary_pa', 'admin'];
 
@@ -267,6 +272,55 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               })}
             </>
           )}
+        {/* IQAC Module */}
+          <div className="mt-4 mb-2">
+            <button
+              onClick={() => setIqacOpen(!iqacOpen)}
+              className={`w-full flex items-center justify-between px-6 py-3 text-xs font-semibold transition-colors group ${
+                iqacOpen || activeTab === 'iqac_ccm' || activeTab === 'iqac_lesson_plan'
+                  ? 'bg-slate-800 text-blue-400'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <Landmark className={`w-4 h-4 shrink-0 ${iqacOpen || activeTab === 'iqac_ccm' || activeTab === 'iqac_lesson_plan' ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                <span className="truncate">IQAC</span>
+              </div>
+              <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${iqacOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {iqacOpen && (
+              <div className="ml-4 border-l border-slate-800">
+                <button
+                  onClick={() => {
+                    setActiveTab('iqac_ccm');
+                    onClose();
+                  }}
+                  className={`w-full flex items-center gap-3 pl-4 pr-3 py-2.5 text-xs font-medium transition-colors ${
+                    activeTab === 'iqac_ccm' ? 'text-blue-400 border-l-2 border-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <ClipboardList className="w-4 h-4 shrink-0" />
+                  <span className="truncate">CCM</span>
+                  <span className="ml-auto text-[9px] uppercase text-slate-600">Docs soon</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('iqac_lesson_plan');
+                    onClose();
+                  }}
+                  className={`w-full flex items-center gap-3 pl-4 pr-3 py-2.5 text-xs font-medium transition-colors ${
+                    activeTab === 'iqac_lesson_plan' ? 'text-blue-400 border-l-2 border-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Lesson Plan</span>
+                  <span className="ml-auto text-[9px] uppercase text-slate-600">Docs soon</span>
+                </button>
+              </div>
+            )}
+          </div>
         </nav>
 
         {/* Footer in Sidebar */}

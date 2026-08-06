@@ -53,7 +53,6 @@ export async function syncDocToFirestore(collectionName: string, docId: string |
 }
 
 export async function deleteDocFromFirestore(collectionName: string, docId: string | number) {
-  if (isQuotaExceeded) return;
   if (docId === undefined || docId === null) {
     console.warn(`[deleteDocFromFirestore] Skipping delete: invalid docId for collection "${collectionName}"`);
     return;

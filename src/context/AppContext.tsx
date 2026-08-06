@@ -22,12 +22,14 @@ import {
   EventFeedbackResponse,
 } from '../types';
 import { StudentSkillBankData, GoogleSheetsConfig } from '../types/skillBank';
+import { CCMMeeting, CCMAgendaItem, CCMMeetingStatus } from '../types/ccm';
+import { INITIAL_CCM_MEETINGS, DEFAULT_CCM_AGENDA, buildDefaultAgenda } from '../data/ccmData';
 import {
   INITIAL_STAFF,
   INITIAL_CLASSES,
   INITIAL_TASKS,
-  INITIAL_OBSERVATIONS,
-  INITIAL_DAILY_MONITORING,
+ INITIAL_OBSERVATIONS,
+   INITIAL_DAILY_MONITORING,
   INITIAL_HOD_REPORT,
   INITIAL_NOTIFICATIONS,
   INITIAL_LESSON_PLANS,
@@ -50,6 +52,12 @@ const getStudentDocId = (st: StudentSkillBankData): string => {
   if ((st.studentProfile as any)?.studentName) return `STU_${String((st.studentProfile as any).studentName).trim().replace(/[^a-zA-Z0-9]/g, '_')}`;
   return '';
 };
+
+// Staff ids deleted during this session (case-insensitive). The real-time
+// Firestore snapshot is filtered against this so a just-deleted staff member
+// is not resurrected while the app is open.
+const recentlyDeletedStaffIds = new Set<string>();
+const isNotRecentlyDeleted = (s: Staff): boolean => !recentlyDeletedStaffIds.has(String(s?.id ?? '').trim().toUpperCase());
 
 const isKeepStaff = (s: Staff): boolean => {
   if (!s || !s.id) return false;
@@ -154,6 +162,16 @@ interface AppContextType {
   importFullDatabase: (jsonContent: string) => boolean;
   syncAllDataToFirestore: () => void;
   resetToDefaultData: () => void;
+
+  ccmMeetings: CCMMeeting[];
+  addCCMMeeting: (
+    data: Omit<CCMMeeting, 'id' | 'createdAt' | 'status' | 'createdBy' | 'createdByRole' | 'agenda'> & {
+      agenda?: CCMAgendaItem[];
+      status?: CCMMeetingStatus;
+    }
+  ) => void;
+  updateCCMMeeting: (id: string, updates: Partial<CCMMeeting>) => void;
+  deleteCCMMeeting: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -335,6 +353,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     dateRange: 'all',
   });
 
+  const [ccmMeetings, setCcmMeetings] = useState<CCMMeeting[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}ccm_meetings`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return INITIAL_CCM_MEETINGS;
+  });
+
   // Sync state to local storage
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}user`, JSON.stringify(currentUser));
@@ -367,6 +396,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}report`, JSON.stringify(dailyReport));
   }, [dailyReport]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}ccm_meetings`, JSON.stringify(ccmMeetings));
+  }, [ccmMeetings]);
 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(attendanceRecords));
@@ -430,7 +463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const savedLocal = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
         if (savedLocal) {
           const parsed = JSON.parse(savedLocal);
-          if (Array.isArray(parsed)) localStaffArr = parsed.filter(isKeepStaff);
+          if (Array.isArray(parsed)) localStaffArr = parsed.filter(isKeepStaff).filter(isNotRecentlyDeleted);
         }
       } catch {}
 
@@ -441,7 +474,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setStaffList([]);
           localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
         } else {
-          const staffToInit = localStaffArr.length > 0 ? localStaffArr : INITIAL_STAFF;
+          const staffToInit = (localStaffArr.length > 0 ? localStaffArr : INITIAL_STAFF).filter(isNotRecentlyDeleted);
           staffToInit.forEach((s) => syncDocToFirestore('staff', s.id, s));
           setStaffList(staffToInit);
           localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(staffToInit));
@@ -449,7 +482,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } else {
         const items = snapshot.docs.map((d) => d.data() as Staff);
-        const kept = items.filter(isKeepStaff);
+        const kept = items.filter(isKeepStaff).filter(isNotRecentlyDeleted);
 
         const map = new Map<string, Staff>();
         // First populate from Firestore
@@ -743,6 +776,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubSkill();
       unsubReport();
     };
+  }, []);
+
+  // CCM Meetings Listener (IQAC | Class Committee Meetings)
+  useEffect(() => {
+    const unsubCcm = onSnapshot(collection(db, 'ccmMeetings'), (snapshot) => {
+      if (snapshot.empty) {
+        let localArr: CCMMeeting[] = [];
+        try {
+          const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}ccm_meetings`);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) localArr = parsed;
+          }
+        } catch {}
+        if (localArr.length > 0) {
+          localArr.forEach((m) => syncDocToFirestore('ccmMeetings', m.id, m));
+          setCcmMeetings(localArr);
+        } else {
+          setCcmMeetings([]);
+        }
+      } else {
+        const map = new Map<string, CCMMeeting>();
+        snapshot.docs.forEach((d) => {
+          const m = d.data() as CCMMeeting;
+          if (m && m.id) map.set(m.id, m);
+        });
+        const finalList = Array.from(map.values());
+        setCcmMeetings(finalList);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}ccm_meetings`, JSON.stringify(finalList));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'ccmMeetings'));
+    return () => unsubCcm();
   }, []);
 
   // Automatic Overdue calculation on task list
@@ -1583,6 +1648,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetStaff = staffList.find((s) => s.id === id || s.id.toLowerCase() === id.toLowerCase());
     const targetEmail = targetStaff?.email?.toLowerCase();
 
+    // Mark as deleted for this session so the Firestore snapshot cannot resurrect it
+    const staffIdUpper = String(id).trim().toUpperCase();
+    recentlyDeletedStaffIds.add(staffIdUpper);
+    if (targetStaff?.id) recentlyDeletedStaffIds.add(String(targetStaff.id).trim().toUpperCase());
+
+    // 1. Remove staff member from local state (also persisted to localStorage)
     setStaffList((prev) => {
       const updated = prev.filter((s) => {
         if (s.id === id || s.id.toLowerCase() === id.toLowerCase()) return false;
@@ -1594,25 +1665,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const cleanId = String(id).trim().replace(/\//g, '_');
-    try {
-      await deleteDocFromFirestore('staff', cleanId);
-      if (cleanId.toUpperCase() !== cleanId) {
-        await deleteDocFromFirestore('staff', cleanId.toUpperCase());
-      }
-      if (cleanId.toLowerCase() !== cleanId) {
-        await deleteDocFromFirestore('staff', cleanId.toLowerCase());
-      }
+    const staffIdLower = cleanId.toLowerCase();
 
-      // Query Firestore collection to remove any document with matching staff id or email
+    // 2. Remove all of the staff member's related records from local state
+    setTaskList((prev) => prev.filter((t) => !t.assignedToStaffId || String(t.assignedToStaffId).toLowerCase() !== staffIdLower));
+    setObservationList((prev) => prev.filter((o) => !o.staffId || String(o.staffId).toLowerCase() !== staffIdLower));
+    setMonitoringList((prev) => prev.filter((m) => !m.staffId || String(m.staffId).toLowerCase() !== staffIdLower));
+    setAttendanceRecords((prev) => prev.filter((a) => !a.staffId || String(a.staffId).toLowerCase() !== staffIdLower));
+
+    // Helper: delete every document in a Firestore collection whose data matches
+    const deleteMatchingFromFirestore = async (colName: string, match: (data: any) => boolean) => {
+      try {
+        const snap = await getDocs(collection(db, colName));
+        for (const d of snap.docs) {
+          const data = d.data();
+          if (match(data)) {
+            await deleteDoc(doc(db, colName, d.id));
+          }
+        }
+      } catch (e) {
+        console.error(`Error clearing '${colName}' for staff ${id}:`, e);
+      }
+    };
+
+    const matchesStaffId = (data: any) => {
+      const sid = data && (data.staffId !== undefined ? data.staffId : data.facultyId);
+      return sid !== undefined && sid !== null && String(sid).toLowerCase() === staffIdLower;
+    };
+    const matchesTask = (data: any) => {
+      const sid = data && data.assignedToStaffId;
+      return sid !== undefined && sid !== null && String(sid).toLowerCase() === staffIdLower;
+    };
+
+    try {
+      // Delete the staff document, trying all case variants of the id
+      await deleteDocFromFirestore('staff', cleanId);
+      if (staffIdUpper !== staffIdLower) await deleteDocFromFirestore('staff', staffIdUpper);
+      if (staffIdLower !== cleanId) await deleteDocFromFirestore('staff', staffIdLower);
+
+      // Cascade delete: tasks, observations, monitoring, attendance
+      await deleteMatchingFromFirestore('tasks', matchesTask);
+      await deleteMatchingFromFirestore('observations', matchesStaffId);
+      await deleteMatchingFromFirestore('monitoring', matchesStaffId);
+      await deleteMatchingFromFirestore('attendance', matchesStaffId);
+
+      // Remove any remaining staff document matching this id or email
       const snap = await getDocs(collection(db, 'staff'));
       for (const d of snap.docs) {
         const data = d.data();
         const docStaffId = data?.id ? String(data.id).toLowerCase() : '';
         const docEmail = data?.email ? String(data.email).toLowerCase() : '';
         if (
-          d.id.toLowerCase() === cleanId.toLowerCase() ||
-          docStaffId === cleanId.toLowerCase() ||
-          (targetEmail && docEmail && docEmail === targetEmail)
+          d.id.toLowerCase() === staffIdLower ||
+          docStaffId === staffIdLower ||
+          (targetEmail && docEmail === targetEmail)
         ) {
           await deleteDoc(doc(db, 'staff', d.id));
         }
@@ -2469,6 +2575,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setEventsList(parsed.eventsList);
         parsed.eventsList.forEach((ev: EventRecord) => syncDocToFirestore('events', ev.id, ev));
       }
+      if (parsed.ccmMeetings && Array.isArray(parsed.ccmMeetings)) {
+        setCcmMeetings(parsed.ccmMeetings);
+        parsed.ccmMeetings.forEach((m: CCMMeeting) => syncDocToFirestore('ccmMeetings', m.id, m));
+      }
       return true;
     } catch (err) {
       console.error('Failed to parse database backup JSON:', err);
@@ -2491,6 +2601,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncDocToFirestore('settings', 'dailyReport', dailyReport);
     notifications.forEach((n) => syncDocToFirestore('notifications', n.id, n));
     eventsList.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
+    ccmMeetings.forEach((m) => syncDocToFirestore('ccmMeetings', m.id, m));
   };
 
   // Reset to seed data
@@ -2506,6 +2617,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDailyReport(INITIAL_HOD_REPORT);
     setNotifications(INITIAL_NOTIFICATIONS);
     setEventsList(INITIAL_EVENTS);
+    setCcmMeetings(INITIAL_CCM_MEETINGS);
 
     // Sync reset to Firestore
     INITIAL_STAFF.forEach((s) => syncDocToFirestore('staff', s.id, s));
@@ -2522,6 +2634,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     syncDocToFirestore('settings', 'dailyReport', INITIAL_HOD_REPORT);
     INITIAL_NOTIFICATIONS.forEach((n) => syncDocToFirestore('notifications', n.id, n));
     INITIAL_EVENTS.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
+    INITIAL_CCM_MEETINGS.forEach((m) => syncDocToFirestore('ccmMeetings', m.id, m));
 
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`);
@@ -2534,6 +2647,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}report`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}events`);
+    localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}ccm_meetings`);
+  };
+
+  // ==== IQAC CCM CRUD ====
+  const addCCMMeeting = (
+    data: Omit<CCMMeeting, 'id' | 'createdAt' | 'status' | 'createdBy' | 'createdByRole' | 'agenda'> & {
+      agenda?: CCMAgendaItem[];
+      status?: CCMMeetingStatus;
+    }
+  ) => {
+    const newId = `CCM-${Date.now()}`;
+    const meeting: CCMMeeting = {
+      id: newId,
+      ...data,
+      status: data.status || 'Draft',
+      agenda: data.agenda && data.agenda.length > 0 ? data.agenda : buildDefaultAgenda(newId),
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.name || 'Admin',
+      createdByRole: currentUser?.role || 'admin',
+    };
+    setCcmMeetings((prev) => [meeting, ...prev]);
+    syncDocToFirestore('ccmMeetings', meeting.id, meeting);
+  };
+
+  const updateCCMMeeting = (id: string, updates: Partial<CCMMeeting>) => {
+    setCcmMeetings((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates, updatedAt: new Date().toISOString() } : m)));
+    const existing = ccmMeetings.find((m) => m.id === id);
+    if (existing) {
+      const merged = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+      syncDocToFirestore('ccmMeetings', id, merged);
+    }
+  };
+
+  const deleteCCMMeeting = (id: string) => {
+    setCcmMeetings((prev) => prev.filter((m) => m.id !== id));
+    deleteDocFromFirestore('ccmMeetings', id);
   };
 
   return (
@@ -2612,6 +2761,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         importFullDatabase,
         syncAllDataToFirestore,
         resetToDefaultData,
+    ccmMeetings,
+    addCCMMeeting,
+    updateCCMMeeting,
+    deleteCCMMeeting,
       }}
     >
       {children}

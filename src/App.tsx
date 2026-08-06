@@ -17,6 +17,7 @@ import { SkillBankView } from './views/SkillBankView';
 import { MentorMappingView } from './views/MentorMappingView';
 import { LibrarianPortalView } from './views/LibrarianPortalView';
 import { EventsView } from './views/EventsView';
+import { ClipboardCheck, BookOpen } from 'lucide-react';
 
 const MainContent: React.FC = () => {
   const { currentUser, activeTab, setActiveTab } = useApp();
@@ -141,6 +142,26 @@ const MainContent: React.FC = () => {
           {activeTab === 'daily_report' && <DailyReportView />}
 
           {activeTab === 'reports' && <ReportsView />}
+
+          {(activeTab === 'iqac_ccm' || activeTab === 'iqac_lesson_plan') && (
+            <div className="p-6">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-10 text-center max-w-xl mx-auto">
+                <div className="mx-auto w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-4">
+                  {activeTab === 'iqac_ccm' ? (
+                    <ClipboardCheck className="w-8 h-8" />
+                  ) : (
+                    <BookOpen className="w-8 h-8" />
+                  )}
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-1">
+                  {activeTab === 'iqac_ccm' ? 'CCM' : 'Lesson Plan'}
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  IQAC module — documentation & features will be updated soon.
+                </p>
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>

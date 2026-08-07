@@ -194,6 +194,24 @@ export interface StudentAttendanceRecord {
   attendancePercentage: number;
   markedBy?: string;
   remarks?: string;
+
+  // Morning Mentor Hour Attendance
+  morningPresent?: number;
+  morningAbsent?: number;
+  morningOd?: number;
+  morningOthers?: number;
+  morningPercentage?: number;
+
+  // Evening Mentor Hour Attendance
+  eveningPresent?: number;
+  eveningAbsent?: number;
+  eveningOd?: number;
+  eveningOthers?: number;
+  eveningPercentage?: number;
+
+  // Session Variation (Morning vs Evening Difference)
+  variation?: number;
+  variationNote?: string;
 }
 
 export const DEPARTMENTS = [

@@ -70,6 +70,18 @@ export const StudentAttendanceView: React.FC = () => {
   const [newOthers, setNewOthers] = useState<number>(0);
   const [newRemarks, setNewRemarks] = useState<string>('');
 
+  // Morning Mentor Hour
+  const [newMorPresent, setNewMorPresent] = useState<number>(0);
+  const [newMorAbsent, setNewMorAbsent] = useState<number>(0);
+  const [newMorOd, setNewMorOd] = useState<number>(0);
+  const [newMorOthers, setNewMorOthers] = useState<number>(0);
+
+  // Evening Mentor Hour
+  const [newEvePresent, setNewEvePresent] = useState<number>(0);
+  const [newEveAbsent, setNewEveAbsent] = useState<number>(0);
+  const [newEveOd, setNewEveOd] = useState<number>(0);
+  const [newEveOthers, setNewEveOthers] = useState<number>(0);
+
   // Edit Form State
   const [editPresent, setEditPresent] = useState<number>(0);
   const [editAbsent, setEditAbsent] = useState<number>(0);
@@ -95,6 +107,14 @@ export const StudentAttendanceView: React.FC = () => {
     const total = newPresent + newAbsent + newOd + newOthers;
     const pct = total > 0 ? Number(((newPresent / total) * 100).toFixed(1)) : 0;
 
+    const morningTotal = newMorPresent + newMorAbsent + newMorOd + newMorOthers;
+    const morningPct = morningTotal > 0 ? Number(((newMorPresent / morningTotal) * 100).toFixed(1)) : 0;
+
+    const eveningTotal = newEvePresent + newEveAbsent + newEveOd + newEveOthers;
+    const eveningPct = eveningTotal > 0 ? Number(((newEvePresent / eveningTotal) * 100).toFixed(1)) : 0;
+
+    const variation = newMorPresent - newEvePresent;
+
     const classNameStr = targetClass
       ? `${targetClass.year} ${targetClass.department.includes('AI & DS') ? 'AI & DS' : targetClass.department} - Sec ${targetClass.section}`
       : 'Class Attendance';
@@ -114,6 +134,23 @@ export const StudentAttendanceView: React.FC = () => {
       attendancePercentage: pct,
       markedBy: currentUser?.name || 'Faculty Staff',
       remarks: newRemarks,
+
+      // Morning Mentor Hour
+      morningPresent: newMorPresent,
+      morningAbsent: newMorAbsent,
+      morningOd: newMorOd,
+      morningOthers: newMorOthers,
+      morningPercentage: morningPct,
+
+      // Evening Mentor Hour
+      eveningPresent: newEvePresent,
+      eveningAbsent: newEveAbsent,
+      eveningOd: newEveOd,
+      eveningOthers: newEveOthers,
+      eveningPercentage: eveningPct,
+
+      variation,
+      variationNote: variation > 0 ? 'Morning higher' : variation < 0 ? 'Evening higher' : 'Equal',
     });
 
     setShowAddModal(false);
@@ -1166,6 +1203,56 @@ export const StudentAttendanceView: React.FC = () => {
                     onChange={(e) => setNewOthers(Number(e.target.value))}
                     className="w-full px-3 py-1.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700/60 rounded-lg text-sm font-black text-amber-600 dark:text-amber-400"
                   />
+                </div>
+              </div>
+
+              {/* Morning Mentor Hour Attendance */}
+              <div className="grid grid-cols-2 gap-3 p-3.5 bg-indigo-50/60 dark:bg-indigo-900/20 rounded-xl border border-indigo-200 dark:border-indigo-700/70">
+                <div className="col-span-2">
+                  <span className="text-[11px] font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">
+                    Morning Mentor Hour Attendance
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-emerald-600 mb-1">Present</label>
+                  <input type="number" min={0} value={newMorPresent} onChange={(e) => setNewMorPresent(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-center text-emerald-600" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-rose-600 mb-1">Absent</label>
+                  <input type="number" min={0} value={newMorAbsent} onChange={(e) => setNewMorAbsent(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-center text-rose-600" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-purple-600 mb-1">OD</label>
+                  <input type="number" min={0} value={newMorOd} onChange={(e) => setNewMorOd(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-center text-purple-600" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-amber-600 mb-1">Others</label>
+                  <input type="number" min={0} value={newMorOthers} onChange={(e) => setNewMorOthers(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-center text-amber-600" />
+                </div>
+              </div>
+
+              {/* Evening Mentor Hour Attendance */}
+              <div className="grid grid-cols-2 gap-3 p-3.5 bg-orange-50/70 dark:bg-orange-900/20 rounded-xl border border-orange-200 dark:border-orange-700/70">
+                <div className="col-span-2">
+                  <span className="text-[11px] font-black text-orange-700 dark:text-orange-300 uppercase tracking-wider">
+                    Evening Mentor Hour Attendance
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-emerald-600 mb-1">Present</label>
+                  <input type="number" min={0} value={newEvePresent} onChange={(e) => setNewEvePresent(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-bold text-center text-emerald-600" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-rose-600 mb-1">Absent</label>
+                  <input type="number" min={0} value={newEveAbsent} onChange={(e) => setNewEveAbsent(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-bold text-center text-rose-600" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-purple-600 mb-1">OD</label>
+                  <input type="number" min={0} value={newEveOd} onChange={(e) => setNewEveOd(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-bold text-center text-purple-600" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-amber-600 mb-1">Others</label>
+                  <input type="number" min={0} value={newEveOthers} onChange={(e) => setNewEveOthers(Number(e.target.value) || 0)} className="w-full px-2 py-1.5 bg-white border border-orange-200 rounded-lg text-xs font-bold text-center text-amber-600" />
                 </div>
               </div>
 

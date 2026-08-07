@@ -220,6 +220,15 @@ export interface FacultyAttendanceCount {
   remarks?: string;
 }
 
+export interface HODFacultyAttendanceRecord {
+  id: string;
+  department: string;
+  collegeName: string;
+  hodName: string;
+  date: string; // YYYY-MM-DD
+  facultyAttendanceCount: FacultyAttendanceCount;
+}
+
 export interface DailyHODReport {
   id: string;
   date: string; // YYYY-MM-DD

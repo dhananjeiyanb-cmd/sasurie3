@@ -11,6 +11,7 @@ import {
   ClassObservation,
   FacultyDailyMonitoring,
   DailyHODReport,
+  HODFacultyAttendanceRecord,
   AppNotification,
   FilterState,
   TaskStatus,
@@ -120,8 +121,11 @@ interface AppContextType {
   dailyReport: DailyHODReport;
   updateDailyReport: (updates: Partial<DailyHODReport>) => void;
 
+  hodAttendanceRecords: HODFacultyAttendanceRecord[];
+  addHodAttendanceRecord: (recordData: Omit<HODFacultyAttendanceRecord, 'id'>) => void;
+
   attendanceRecords: StudentAttendanceRecord[];
-  addAttendanceRecord: (record: Omit<StudentAttendanceRecord, 'id'>) => void;
+  addAttendanceRecord: (recordData: Omit<StudentAttendanceRecord, 'id'>) => void;
   updateAttendanceRecord: (id: string, record: Partial<StudentAttendanceRecord>) => void;
   deleteAttendanceRecord: (id: string) => void;
   clearAllAttendance: () => Promise<void>;
@@ -189,6 +193,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [dailyReport, setDailyReport] = useState<DailyHODReport>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}report`);
     return saved ? JSON.parse(saved) : INITIAL_HOD_REPORT;
+  });
+
+  const [hodAttendanceRecords, setHodAttendanceRecords] = useState<HODFacultyAttendanceRecord[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}hod_attendance_records`);
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -818,6 +827,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/dailyReport'));
 
+    // HOD Faculty Attendance Records Listener (for Principal aggregation)
+    const unsubHodAtt = onSnapshot(collection(db, 'hodFacultyAttendance'), (snapshot) => {
+      let localArr: HODFacultyAttendanceRecord[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}hod_attendance_records`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localArr = parsed;
+        }
+      } catch {}
+
+      if (snapshot.empty) {
+        setHodAttendanceRecords(localArr);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}hod_attendance_records`, JSON.stringify(localArr));
+      } else {
+        const records: HODFacultyAttendanceRecord[] = [];
+        snapshot.forEach((d) => {
+          records.push({ id: d.id, ...d.data() } as HODFacultyAttendanceRecord);
+        });
+        setHodAttendanceRecords(records);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}hod_attendance_records`, JSON.stringify(records));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'hodFacultyAttendance'));
+
     return () => {
       unsubStaff();
       unsubClasses();
@@ -831,6 +864,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             unsubSkill();
       unsubKpi();
       unsubReport();
+      unsubHodAtt();
     };
   }, []);
 
@@ -1553,6 +1587,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`, JSON.stringify(classList));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify(taskList));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}report`, JSON.stringify(dailyReport));
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}hod_attendance_records`, JSON.stringify(hodAttendanceRecords));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(attendanceRecords));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`, JSON.stringify(notifications));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}google_sheets_config`, JSON.stringify(googleSheetsConfig));
@@ -2075,6 +2110,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       });
     }
+  };
+
+  // HOD Faculty Attendance Records (for Principal aggregation)
+  const addHodAttendanceRecord = (recordData: Omit<HODFacultyAttendanceRecord, 'id'>) => {
+    const newId = `HODATT-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const newRecord: HODFacultyAttendanceRecord = { id: newId, ...recordData };
+    setHodAttendanceRecords((prev) => [newRecord, ...prev]);
+    syncDocToFirestore('hodFacultyAttendance', newId, recordData);
   };
 
   // Student Attendance Records
@@ -2602,6 +2645,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       monitoringList,
       lessonPlanList,
       dailyReport,
+      hodAttendanceRecords,
       attendanceRecords,
       skillBankStudents,
       eventsList,
@@ -2649,6 +2693,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (parsed.dailyReport && typeof parsed.dailyReport === 'object') {
         setDailyReport(parsed.dailyReport);
         syncDocToFirestore('settings', 'dailyReport', parsed.dailyReport);
+      }
+      if (parsed.hodAttendanceRecords && Array.isArray(parsed.hodAttendanceRecords)) {
+        setHodAttendanceRecords(parsed.hodAttendanceRecords);
+        parsed.hodAttendanceRecords.forEach((r: HODFacultyAttendanceRecord) => syncDocToFirestore('hodFacultyAttendance', r.id, r));
       }
       if (parsed.attendanceRecords && Array.isArray(parsed.attendanceRecords)) {
         setAttendanceRecords(parsed.attendanceRecords);
@@ -2713,6 +2761,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications(INITIAL_NOTIFICATIONS);
     setEventsList(INITIAL_EVENTS);
     setCcmMeetings(INITIAL_CCM_MEETINGS);
+    setHodAttendanceRecords([]);
 
     // Sync reset to Firestore
     INITIAL_STAFF.forEach((s) => syncDocToFirestore('staff', s.id, s));
@@ -2740,6 +2789,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}report`);
+    localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}hod_attendance_records`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}events`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}ccm_meetings`);
@@ -2821,6 +2871,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteLessonPlanItem,
         dailyReport,
         updateDailyReport,
+        hodAttendanceRecords,
+        addHodAttendanceRecord,
         attendanceRecords,
         addAttendanceRecord,
         updateAttendanceRecord,

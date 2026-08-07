@@ -82,7 +82,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       id: 'mentor_mapping',
       label: 'Mentor-Mentee Mapping',
       icon: UserPlus,
-      roles: executiveRoles,
+      roles: ['secretary', 'principal_pa', 'secretary_pa', 'admin', 'staff', 'incucula'],
       badge: 'HOD / Execs',
       badgeColor: 'bg-indigo-600 text-white font-bold',
     },
@@ -250,36 +250,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             );
           })}
 
-          {visibleNavItems.length > 6 && (
-            <>
-              <div className="px-6 py-2 mt-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Reporting
-              </div>
-              {visibleNavItems.slice(6).map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id);
-                      onClose();
-                    }}
-                    className={`w-full flex items-center justify-between px-6 py-3 text-xs font-medium transition-colors group ${
-                      isActive
-                        ? 'bg-slate-800 text-blue-400 border-l-4 border-blue-400 font-semibold'
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
-                      <span className="truncate">{item.label}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </>
-          )}
         {/* IQAC Module */}
           <div className="mt-4 mb-2">
             <button
@@ -329,6 +299,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </div>
             )}
           </div>
+
+          {visibleNavItems.length > 6 && (
+            <>
+              <div className="px-6 py-2 mt-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Reporting
+              </div>
+              {visibleNavItems.slice(6).map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      onClose();
+                    }}
+                    className={`w-full flex items-center justify-between px-6 py-3 text-xs font-medium transition-colors group ${
+                      isActive
+                        ? 'bg-slate-800 text-blue-400 border-l-4 border-blue-400 font-semibold'
+                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </>
+          )}
         </nav>
 
         {/* Footer in Sidebar */}

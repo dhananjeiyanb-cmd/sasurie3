@@ -24,7 +24,7 @@ export const FacultyAttendanceModal: React.FC<FacultyAttendanceModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { dailyReport, updateDailyReport, staffList, currentUser, filterState } = useApp();
+  const { dailyReport, updateDailyReport, staffList, currentUser, filterState, addHodAttendanceRecord } = useApp();
 
   const selectedDept = filterState.department;
   const hodDepartment = (selectedDept && selectedDept !== 'all' && selectedDept !== 'All Departments')
@@ -102,17 +102,26 @@ export const FacultyAttendanceModal: React.FC<FacultyAttendanceModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateDailyReport({
-      facultyAttendanceCount: {
-        present: Number(present) || 0,
-        absent: Number(absent) || 0,
-        od: Number(od) || 0,
-        permission: Number(permission) || 0,
-        total: Number(total) || 0,
-        absentNames: absentNames.trim() || 'None',
-        remarks: remarks.trim() || '',
-      },
+    const attendanceCount = {
+      present: Number(present) || 0,
+      absent: Number(absent) || 0,
+      od: Number(od) || 0,
+      permission: Number(permission) || 0,
+      total: Number(total) || 0,
+      absentNames: absentNames.trim() || 'None',
+      remarks: remarks.trim() || '',
+    };
+
+    updateDailyReport({ facultyAttendanceCount: attendanceCount });
+
+    addHodAttendanceRecord({
+      department: hodDepartment,
+      collegeName: dailyReport?.collegeName || currentUser?.institution || 'Sasurie College of Engineering',
+      hodName: currentUser?.name || 'Unknown HOD',
+      date: new Date().toISOString().split('T')[0],
+      facultyAttendanceCount: attendanceCount,
     });
+
     setSaveSuccess(true);
     setTimeout(() => {
       setSaveSuccess(false);

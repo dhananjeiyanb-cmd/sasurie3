@@ -83,6 +83,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     skillBankStudents,
     attendanceRecords,
     clearAllAttendance,
+    hodAttendanceRecords,
   } = useApp();
 
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
@@ -319,14 +320,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const upcomingObservationsCount = displayObservationList.filter((o) => o.date >= todayStr).length;
   const activeFacultyCount = displayStaffList.filter((s) => s.status === 'Active').length;
 
-  const facCount = dailyReport?.facultyAttendanceCount || { present: 0, absent: 0, od: 0, permission: 0, total: 0 };
-  const hasFacEntry = (facCount.total && facCount.total > 0) || facCount.present > 0 || facCount.absent > 0 || facCount.od > 0 || facCount.permission > 0;
-  const computedFacTotal = facCount.total && facCount.total > 0 ? facCount.total : (totalStaff > 0 ? totalStaff : 10);
-  const effectiveFacPresent = (facCount.present || 0) + (facCount.od || 0);
+  // Faculty Attendance: HODs submit per-department counts.
+  // Principal sees the college-wide absence rate: total absent / total staff across HOD records.
+  let facultyAttendancePct: number;
+  let facCount: { present: number; absent: number; od: number; permission: number; total: number };
+  let computedFacTotal: number;
+  if (isPrincipal) {
+    const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
+    const collegeHodRecords = hodAttendanceRecords.filter(
+      (r) => r.collegeName === principalCollege || (currentUser?.institution && r.collegeName === currentUser.institution)
+    );
 
-  const facultyAttendancePct = hasFacEntry && computedFacTotal > 0
-    ? Math.min(100, Number(((effectiveFacPresent / computedFacTotal) * 100).toFixed(1)))
-    : (totalStaff > 0 ? Math.round((activeFacultyCount / totalStaff) * 100) : 100);
+    const totalAbsent = collegeHodRecords.reduce((sum, r) => sum + (r.facultyAttendanceCount.absent || 0), 0);
+    const totalPresent = collegeHodRecords.reduce((sum, r) => sum + (r.facultyAttendanceCount.present || 0), 0);
+    const totalOd = collegeHodRecords.reduce((sum, r) => sum + (r.facultyAttendanceCount.od || 0), 0);
+    const totalPermission = collegeHodRecords.reduce((sum, r) => sum + (r.facultyAttendanceCount.permission || 0), 0);
+    const totalStaff = collegeHodRecords.reduce((sum, r) => sum + (r.facultyAttendanceCount.total || 0), 0);
+
+    facCount = { present: totalPresent, absent: totalAbsent, od: totalOd, permission: totalPermission, total: totalStaff };
+    computedFacTotal = totalStaff || (totalStaff > 0 ? totalStaff : 10);
+    facultyAttendancePct = totalStaff > 0 ? Number(((totalAbsent / totalStaff) * 100).toFixed(1)) : 0;
+  } else {
+    facCount = dailyReport?.facultyAttendanceCount || { present: 0, absent: 0, od: 0, permission: 0, total: 0 };
+    const hasFacEntry = (facCount.total && facCount.total > 0) || facCount.present > 0 || facCount.absent > 0 || facCount.od > 0 || facCount.permission > 0;
+    computedFacTotal = facCount.total && facCount.total > 0 ? facCount.total : (totalStaff > 0 ? totalStaff : 10);
+    const effectiveFacPresent = (facCount.present || 0) + (facCount.od || 0);
+
+    facultyAttendancePct = hasFacEntry && computedFacTotal > 0
+      ? Math.min(100, Number(((effectiveFacPresent / computedFacTotal) * 100).toFixed(1)))
+      : (totalStaff > 0 ? Math.round((activeFacultyCount / totalStaff) * 100) : 100);
+  }
 
   return (
     <div className="space-y-6">
@@ -585,7 +608,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div onClick={() => setActiveTab('staff')} className="cursor-pointer">
               <div className="text-3xl font-black text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-baseline gap-1.5">
                 <span>{facultyAttendancePct}%</span>
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Present</span>
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                  {isPrincipal ? 'Absent' : 'Present'}
+                </span>
               </div>
 
               {/* Counts Breakdown Badge Grid */}

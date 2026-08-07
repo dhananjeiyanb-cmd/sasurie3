@@ -104,6 +104,14 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
       }
 
       // Auto compute morning & evening percentage & variation if total > 0
+      // Recalculate morning percentage
+      const morningTotal = (item.morningPresent || 0) + (item.morningAbsent || 0) + (item.morningOd || 0) + (item.morningOthers || 0);
+      item.morningPercentage = morningTotal > 0 ? Number(((item.morningPresent || 0) / morningTotal) * 100).toFixed(1) : 0;
+
+      // Recalculate evening percentage
+      const eveningTotal = (item.eveningPresent || 0) + (item.eveningAbsent || 0) + (item.eveningOd || 0) + (item.eveningOthers || 0);
+      item.eveningPercentage = eveningTotal > 0 ? Number(((item.eveningPresent || 0) / eveningTotal) * 100).toFixed(1) : 0;
+
       const total = item.totalStudents || 1;
       const mPres = item.morningPresent ?? item.presentStudents ?? 0;
       const ePres = item.eveningPresent ?? item.presentStudents ?? 0;

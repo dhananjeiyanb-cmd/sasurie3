@@ -20,6 +20,7 @@ import {
   ChevronDown,
   AlertTriangle,
   Timer,
+  CheckCircle2,
 } from 'lucide-react';
 
 export const CdcExamManagementView: React.FC = () => {
@@ -251,19 +252,35 @@ export const CdcExamManagementView: React.FC = () => {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 dark:bg-slate-950">
                   <tr>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Category</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Subject</th>
-                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Topic</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Question</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Options</th>
+                    <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Correct Answer</th>
                     <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Difficulty</th>
                     <th className="text-left px-4 py-3 text-xs font-bold text-slate-500">Marks</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                   {cdcQuestions.map((q) => (
-                    <tr key={q.id} className="hover:bg-slate-50 dark:hover:bg-slate-950/50">
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{q.category}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{q.subject}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{q.topic}</td>
+                    <tr key={q.id} className="hover:bg-slate-50 dark:hover:bg-slate-950/50 align-top">
+                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300 max-w-md">
+                        <div className="font-semibold text-slate-800 dark:text-slate-200">{q.questionText}</div>
+                        <div className="text-[11px] text-slate-400 mt-1">{q.category} • {q.subject} • {q.topic}</div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                        <ol className="list-inside space-y-0.5 text-xs">
+                          {q.options.map((opt, i) => (
+                            <li key={i} className={i === q.correctOptionIndex ? 'font-bold text-emerald-700 dark:text-emerald-400' : ''}>
+                              {String.fromCharCode(65 + i)}. {opt}
+                            </li>
+                          ))}
+                        </ol>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {q.options[q.correctOptionIndex] || '-'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3"><span className={`px-2 py-1 rounded-lg text-xs font-bold ${q.difficulty === 'Easy' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700' : q.difficulty === 'Medium' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700' : 'bg-rose-100 dark:bg-rose-950 text-rose-700'}`}>{q.difficulty}</span></td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{q.marks}</td>
                     </tr>

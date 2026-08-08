@@ -24,6 +24,7 @@ export const StudentExamView: React.FC = () => {
   const [autoSubmitReason, setAutoSubmitReason] = useState<string>('');
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [noFaceAlert, setNoFaceAlert] = useState(false);
+  const [viewResultAttempt, setViewResultAttempt] = useState<CdcExamAttempt | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -284,6 +285,7 @@ export const StudentExamView: React.FC = () => {
     examEndedRef.current = false;
     setAutoSubmitReason('');
     setSubmitted(false);
+    setViewResultAttempt(null);
     setAnswers({});
     setMarkedForReview(new Set());
     setCurrentQuestionIndex(0);
@@ -430,13 +432,21 @@ export const StudentExamView: React.FC = () => {
                           </div>
                         )}
                       </div>
-                      <button
-                        onClick={() => handleExamSelect(exam)}
-                        disabled={alreadyDone}
-                        className="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold"
-                      >
-                        {alreadyDone ? 'Completed' : 'Start Exam'}
-                      </button>
+                      {alreadyDone ? (
+                        <button
+                          onClick={() => { setSelectedExam(exam); setViewResultAttempt(priorAttempt); }}
+                          className="ml-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold flex items-center gap-1.5"
+                        >
+                          <BarChart2 className="w-4 h-4" /> View Result
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleExamSelect(exam)}
+                          className="ml-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold"
+                        >
+                          Start Exam
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

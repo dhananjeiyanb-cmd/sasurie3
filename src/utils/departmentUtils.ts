@@ -327,6 +327,84 @@ export function getDepartmentAttendanceSummaries(
   return matchedSummaries;
 }
 
+/**
+ * Returns the ClassRoom[] that a mentor (staff) user is assigned to.
+ * Assignment is determined by:
+ *   1. Students mapped to the mentor (via mentorStaffId or mentorFaculty name)
+ *      → extract their department + section → match to ClassRoom entries.
+ *   2. Fallback: ClassRoom.classAdvisor matching the mentor's name or staffId.
+ * For non-staff users, all classes are returned.
+ */
+export function getMentorAssignedClasses(
+  currentUser: User | null,
+  classList: ClassRoom[],
+  skillBankStudents: StudentSkillBankData[]
+): ClassRoom[] {
+  if (!currentUser || currentUser.role !== 'staff') return classList;
+
+  const staffId = (currentUser.staffId || currentUser.username || '').trim();
+  const staffName = (currentUser.name || '').toLowerCase();
+
+  // 1. Find students assigned to this mentor via mentor mapping
+  const assignedStudents = (skillBankStudents || []).filter((s) => {
+    const prof = s.studentProfile;
+    if (!prof) return false;
+    const stMentorId = (prof.mentorStaffId || '').trim();
+    const stMentor = (prof.mentorFaculty || '').toLowerCase();
+    return (
+      Boolean(staffId && stMentorId === staffId) ||
+      Boolean(staffName && stMentor && stMentor.includes(staffName))
+    );
+  });
+
+  const matchedClassIds = new Set<string>();
+
+    if (assignedStudents.length > 0) {
+    assignedStudents.forEach((s) => {
+      const prof = s.studentProfile;
+      if (!prof) return;
+      const stDept = prof.department || '';
+      const stSection = normalizeSection(prof.section || '');
+
+      classList.forEach((c) => {
+        if (!isSameDept(c.department, stDept)) return;
+        const clsSection = normalizeSection(c.section || '');
+        if (clsSection !== stSection) return;
+        matchedClassIds.add(c.id);
+      });
+    });
+  }
+
+  // 2. Also match via classAdvisor field (by name or staffId)
+  classList.forEach((c) => {
+    const advisor = (c.classAdvisor || '').toLowerCase();
+    if (Boolean(staffName && advisor && advisor.includes(staffName)) ||
+        Boolean(staffId && advisor && advisor.includes(staffId.toLowerCase()))) {
+      matchedClassIds.add(c.id);
+    }
+  });
+
+  if (matchedClassIds.size > 0) {
+    return classList.filter((c) => matchedClassIds.has(c.id));
+  }
+
+  // Last resort: if mentor has a department, return classes in that department
+  if (currentUser.department) {
+    return classList.filter((c) => isSameDept(c.department, currentUser.department));
+  }
+
+  return classList;
+}
+
+/** Normalises a section string so 'A' and 'Sec A' compare equal. */
+function normalizeSection(sec: string): string {
+  return sec
+    .toLowerCase()
+    .replace(/^sec\s+/i, '')
+    .replace(/^section\s+/i, '')
+    .trim();
+}
+
 export function checkIsHodOrAdmin(currentUser?: User | null): boolean {
   if (!currentUser) return false;
   const role = currentUser.role as string;

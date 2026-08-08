@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { CdcProvider } from './context/CdcContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './views/LoginView';
@@ -19,6 +20,9 @@ import { LibrarianPortalView } from './views/LibrarianPortalView';
 import { EventsView } from './views/EventsView';
 import { CCMView } from './views/CCMView';
 import { FacultyKpiView } from './views/FacultyKpiView';
+import { CdcExamManagementView } from './views/CdcExamManagementView';
+import { CdcDashboardView } from './views/CdcDashboardView';
+import { StudentExamView } from './views/StudentExamView';
 import { BookOpen } from 'lucide-react';
 
 const MainContent: React.FC = () => {
@@ -56,6 +60,12 @@ const MainContent: React.FC = () => {
         return;
       }
 
+      // CDC tab only accessible if CDC Coordinator
+      if (activeTab === 'cdc' && currentUser.coordinatorRole !== 'CDC Coordinator') {
+        setActiveTab('dashboard');
+        return;
+      }
+
       if (hodOnlyTabs.includes(activeTab)) {
         setActiveTab('dashboard');
         return;
@@ -66,6 +76,16 @@ const MainContent: React.FC = () => {
       setActiveTab('dashboard');
     }
   }, [currentUser, activeTab, setActiveTab]);
+
+  // Student Exam Portal is accessible without a staff/HOD login — students
+  // authenticate separately (by Registration Number) inside StudentExamView.
+  if (activeTab === 'student_exam' && !currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
+        <StudentExamView />
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return <LoginView />;
@@ -160,6 +180,14 @@ const MainContent: React.FC = () => {
               </div>
             </div>
           )}
+
+          {activeTab === 'cdc' && <CdcDashboardView />}
+          {activeTab === 'cdc_exams' && <CdcExamManagementView />}
+          {activeTab === 'student_exam' && (
+            <div className="min-h-screen bg-slate-100 dark:bg-slate-950">
+              <StudentExamView />
+            </div>
+          )}
         </main>
       </div>
     </div>
@@ -169,7 +197,9 @@ const MainContent: React.FC = () => {
 export default function App() {
   return (
     <AppProvider>
-      <MainContent />
+      <CdcProvider>
+        <MainContent />
+      </CdcProvider>
     </AppProvider>
   );
 }

@@ -179,9 +179,15 @@ export interface StudentAttendanceSummary {
   eveningOthers?: number;
   eveningPercentage?: number;
 
-  // Session Variation (Morning vs Evening Difference)
+    // Session Variation (Morning vs Evening Difference)
   variation?: number; // Difference in present count (morningPresent - eveningPresent)
   variationNote?: string;
+
+  // Mentor who entered this summary
+  enteredByName?: string;
+  enteredById?: string;
+  enteredAt?: string; // ISO timestamp
+  date?: string; // YYYY-MM-DD — the day this summary belongs to
 }
 
 export interface StudentAttendanceRecord {
@@ -197,8 +203,10 @@ export interface StudentAttendanceRecord {
   absentStudents?: number;
   odStudents?: number;
   othersStudents?: number;
-  attendancePercentage: number;
+    attendancePercentage: number;
   markedBy?: string;
+  markedById?: string;
+  markedAt?: string; // ISO timestamp
   remarks?: string;
 
   // Morning Mentor Hour Attendance
@@ -488,4 +496,28 @@ export interface CCMRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Student {
+  id: string;
+  registerNumber: string;
+  name: string;
+  department: string;
+  year: string;
+  section: string;
+  batch: string;
+  email?: string;
+  mobile?: string;
+  password?: string;
+}
+
+export type QuestionCategory =
+  | 'CSE Cluster'
+  | 'Core Engineering'
+  | 'Circuits Branches'
+  | 'AI & DS'
+  | 'CSE / Cyber Security'
+  | 'IT'
+  | 'Other departments';
+
+export type DifficultyLevel = 'Easy' | 'Medium' | 'Hard';
 

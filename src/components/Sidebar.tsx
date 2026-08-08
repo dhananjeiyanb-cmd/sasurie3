@@ -24,6 +24,8 @@ import {
   ChevronDown,
   Landmark,
   ClipboardList,
+  Rocket,
+  BarChart3,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -107,6 +109,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       roles: [...executiveRoles, 'staff', 'librarian', 'incucula'],
       badge: currentUser?.coordinatorRole === 'CDC Coordinator' ? 'CDC Coordinator' : currentUser?.coordinatorRole === 'Placement Coordinator' ? 'Placement Coord' : 'AY 2026-27',
       badgeColor: currentUser?.coordinatorRole === 'CDC Coordinator' || currentUser?.coordinatorRole === 'Placement Coordinator' ? 'bg-indigo-600 text-white font-bold' : 'bg-amber-500 text-slate-950 font-bold',
+    },
+    {
+      id: 'cdc',
+      label: 'CDC Dashboard',
+      icon: BarChart3,
+      roles: [...executiveRoles, 'staff'],
+      badge: currentUser?.coordinatorRole === 'CDC Coordinator' ? 'CDC' : undefined,
+      badgeColor: 'bg-indigo-600 text-white font-bold',
+    },
+    {
+      id: 'cdc_exams',
+      label: 'CDC Exam Management',
+      icon: BookOpen,
+      roles: [...executiveRoles, 'staff'],
+      badge: currentUser?.coordinatorRole === 'CDC Coordinator' ? 'Exams' : undefined,
+      badgeColor: 'bg-blue-600 text-white font-bold',
     },
         {
       id: 'faculty_kpi',
@@ -298,6 +316,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 </button>
               </div>
             )}
+          </div>
+
+          {/* CDC Module */}
+          <div className="mt-2 mb-2">
+            <button
+              onClick={() => {
+                setActiveTab('cdc');
+                onClose();
+              }}
+              className={`w-full flex items-center justify-between px-6 py-3 text-xs font-semibold transition-colors group ${
+                activeTab === 'cdc'
+                  ? 'bg-slate-800 text-blue-400'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <Rocket className={`w-4 h-4 shrink-0 ${activeTab === 'cdc' ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                <span className="truncate">CDC</span>
+              </div>
+              {currentUser?.coordinatorRole === 'CDC Coordinator' && (
+                <span className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold rounded-md">Coordinator</span>
+              )}
+            </button>
           </div>
 
           {visibleNavItems.length > 6 && (

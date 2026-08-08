@@ -22,7 +22,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords, clearAllAttendance, deleteAttendanceRecord } = useApp();
+  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords, clearAllAttendance, deleteAttendanceRecord, addAttendanceRecord } = useApp();
 
   const userDept = currentUser?.department;
   const isFacultyOrHod = currentUser?.role === 'staff' || currentUser?.role === 'admin';
@@ -195,9 +195,18 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
 
   const handleSaveAll = () => {
     const activeDept = userDept || 'Artificial Intelligence & Data Science (AI & DS)';
+    const todayStr = new Date().toISOString().split('T')[0];
+    const mentorName = currentUser?.name || '';
+    const mentorStaffId = currentUser?.staffId || currentUser?.username || '';
+    const now = new Date().toISOString();
+
     const updatedSummariesWithDept = summaries.map((s) => ({
       ...s,
       department: s.department || activeDept,
+      enteredByName: mentorName,
+      enteredById: mentorStaffId,
+      enteredAt: now,
+      date: todayStr,
     }));
 
     // Identify which classIds were removed from activeDept summaries and purge from DB
@@ -224,6 +233,41 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     });
 
     const mergedSummaries = [...existingOtherDeptSummaries, ...updatedSummariesWithDept];
+
+    // Persist each summary as a StudentAttendanceRecord so it shows up
+    // in "Student Attendance Management & Reports" and survives dailyReport sync
+    updatedSummariesWithDept.forEach((s) => {
+      addAttendanceRecord({
+        date: todayStr,
+        department: s.department || activeDept,
+        classId: s.classId,
+        className: s.className,
+        year: s.year,
+        section: s.section,
+        totalStudents: s.totalStudents,
+        presentStudents: s.presentStudents,
+        absentStudents: s.absentStudents,
+        odStudents: s.odStudents,
+        othersStudents: s.othersStudents,
+        attendancePercentage: s.attendancePercentage,
+        morningPresent: s.morningPresent,
+        morningAbsent: s.morningAbsent,
+        morningOd: s.morningOd,
+        morningOthers: s.morningOthers,
+        morningPercentage: s.morningPercentage,
+        eveningPresent: s.eveningPresent,
+        eveningAbsent: s.eveningAbsent,
+        eveningOd: s.eveningOd,
+        eveningOthers: s.eveningOthers,
+        eveningPercentage: s.eveningPercentage,
+        variation: s.variation,
+        variationNote: s.variationNote,
+        markedBy: mentorName,
+        markedById: mentorStaffId,
+        markedAt: now,
+        remarks: '',
+      });
+    });
 
     updateDailyReport({
       studentAttendanceSummaries: mergedSummaries,
@@ -257,114 +301,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     }
   };
 
-  const handleQuickPopulateDeptClasses = () => {
-    const activeDept = userDept || 'Artificial Intelligence & Data Science (AI & DS)';
-    const deptClasses = classList.filter((c) => isSameDept(c.department, activeDept));
-    if (deptClasses.length > 0) {
-      const populatedSummaries: StudentAttendanceSummary[] = deptClasses.map((c) => {
-        const secTag = c.section.startsWith('Sec') ? c.section : `Sec ${c.section}`;
-        const cName = `${c.year} ${getDeptTag(c.department)} - ${secTag}`;
-        return {
-          classId: c.id,
-          className: cName,
-          year: c.year,
-          department: activeDept,
-          totalStudents: 60,
-          presentStudents: 0,
-          absentStudents: 0,
-          odStudents: 0,
-          othersStudents: 0,
-          attendancePercentage: 0,
-          morningPresent: 0,
-          morningAbsent: 0,
-          morningOd: 0,
-          morningOthers: 0,
-          morningPercentage: 0,
-          eveningPresent: 0,
-          eveningAbsent: 0,
-          eveningOd: 0,
-          eveningOthers: 0,
-          eveningPercentage: 0,
-          variation: 0,
-        };
-      });
-      setSummaries(populatedSummaries);
-    } else {
-      const deptTag = getDeptTag(activeDept);
-      const stdSections: StudentAttendanceSummary[] = [
-        {
-          classId: `CLS-NEW-II-${Date.now()}`,
-          className: `II Year ${deptTag} - Sec A`,
-          year: 'II Year',
-          department: activeDept,
-          totalStudents: 60,
-          presentStudents: 0,
-          absentStudents: 0,
-          odStudents: 0,
-          othersStudents: 0,
-          attendancePercentage: 0,
-          morningPresent: 0,
-          morningAbsent: 0,
-          morningOd: 0,
-          morningOthers: 0,
-          morningPercentage: 0,
-          eveningPresent: 0,
-          eveningAbsent: 0,
-          eveningOd: 0,
-          eveningOthers: 0,
-          eveningPercentage: 0,
-          variation: 0,
-        },
-        {
-          classId: `CLS-NEW-III-${Date.now() + 1}`,
-          className: `III Year ${deptTag} - Sec A`,
-          year: 'III Year',
-          department: activeDept,
-          totalStudents: 60,
-          presentStudents: 0,
-          absentStudents: 0,
-          odStudents: 0,
-          othersStudents: 0,
-          attendancePercentage: 0,
-          morningPresent: 0,
-          morningAbsent: 0,
-          morningOd: 0,
-          morningOthers: 0,
-          morningPercentage: 0,
-          eveningPresent: 0,
-          eveningAbsent: 0,
-          eveningOd: 0,
-          eveningOthers: 0,
-          eveningPercentage: 0,
-          variation: 0,
-        },
-        {
-          classId: `CLS-NEW-IV-${Date.now() + 2}`,
-          className: `IV Year ${deptTag} - Sec A`,
-          year: 'IV Year',
-          department: activeDept,
-          totalStudents: 60,
-          presentStudents: 0,
-          absentStudents: 0,
-          odStudents: 0,
-          othersStudents: 0,
-          attendancePercentage: 0,
-          morningPresent: 0,
-          morningAbsent: 0,
-          morningOd: 0,
-          morningOthers: 0,
-          morningPercentage: 0,
-          eveningPresent: 0,
-          eveningAbsent: 0,
-          eveningOd: 0,
-          eveningOthers: 0,
-          eveningPercentage: 0,
-          variation: 0,
-        },
-      ];
-      setSummaries(stdSections);
-    }
-  };
+
 
   // Overall calculations
   const grandTotal = summaries.reduce((acc, curr) => acc + curr.totalStudents, 0);
@@ -790,18 +727,6 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Clear All Entries
-              </button>
-            )}
-
-            {isHodOrAdmin && (
-              <button
-                type="button"
-                onClick={handleQuickPopulateDeptClasses}
-                className="px-3 py-2 text-xs font-bold text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 rounded-xl transition-colors flex items-center gap-1"
-                title="Create 3 fresh section templates for II, III, IV Year"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Populate II, III, IV Sections
               </button>
             )}
           </div>

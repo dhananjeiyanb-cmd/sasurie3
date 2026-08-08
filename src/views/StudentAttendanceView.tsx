@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { StudentAttendanceRecord, DEPARTMENTS } from '../types';
-import { isSameDept, checkIsHodOrAdmin } from '../utils/departmentUtils';
+import { isSameDept, checkIsHodOrAdmin, getMentorAssignedClasses } from '../utils/departmentUtils';
 import {
   Users,
   CheckCircle2,
@@ -32,6 +32,7 @@ export const StudentAttendanceView: React.FC = () => {
     classList,
     currentUser,
     dailyReport,
+    skillBankStudents,
   } = useApp();
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -91,14 +92,36 @@ export const StudentAttendanceView: React.FC = () => {
 
   const isHodOrAdmin = checkIsHodOrAdmin(currentUser);
   const isManagement = currentUser?.role === 'admin' || currentUser?.role === 'principal';
+  const isMentor = currentUser?.role === 'staff' && !isHodOrAdmin;
+
+  // Classes assigned to the logged-in mentor (for scoping add form)
+  const mentorClasses = useMemo(() => {
+    return getMentorAssignedClasses(currentUser, classList, skillBankStudents || []);
+  }, [currentUser, classList, skillBankStudents]);
 
   // Available classes for selected department in add modal
   const modalClasses = useMemo(() => {
+    if (isMentor && mentorClasses.length > 0) {
+      return mentorClasses.filter((c) => {
+        if (!newDept || newDept === 'all') return true;
+        return isSameDept(c.department, newDept);
+      });
+    }
     return classList.filter((c) => {
       if (!newDept || newDept === 'all') return true;
       return isSameDept(c.department, newDept);
     });
-  }, [classList, newDept]);
+  }, [classList, newDept, isMentor, mentorClasses]);
+
+  // Auto-lock class/department for mentors when modal opens
+  React.useEffect(() => {
+    if (!showAddModal || !isMentor || mentorClasses.length === 0) return;
+    const assignedClass = mentorClasses[0];
+    if (assignedClass) {
+      setNewClassId(assignedClass.id);
+      setNewDept(assignedClass.department);
+    }
+  }, [showAddModal, isMentor, mentorClasses]);
 
   // Handle Submit New Attendance Record
   const handleAddAttendance = (e: React.FormEvent) => {
@@ -133,6 +156,8 @@ export const StudentAttendanceView: React.FC = () => {
       othersStudents: newOthers,
       attendancePercentage: pct,
       markedBy: currentUser?.name || 'Faculty Staff',
+      markedById: currentUser?.staffId || currentUser?.username,
+      markedAt: new Date().toISOString(),
       remarks: newRemarks,
 
       // Morning Mentor Hour
@@ -192,6 +217,13 @@ export const StudentAttendanceView: React.FC = () => {
   const userDept = currentUser?.department;
   const isFacultyOrHod = currentUser?.role === 'staff' || currentUser?.role === 'admin';
 
+  // Mentor scoping: class IDs assigned to the logged-in mentor
+  const mentorClassIds = useMemo(() => {
+    if (currentUser?.role !== 'staff') return new Set<string>();
+    const assigned = getMentorAssignedClasses(currentUser, classList, skillBankStudents || []);
+    return new Set(assigned.map((c) => c.id));
+  }, [currentUser, classList, skillBankStudents]);
+
   // Daily Mode: Filter records for selected entry date and department
   const dailyRecords = useMemo(() => {
     return attendanceRecords.filter((r) => {
@@ -200,13 +232,17 @@ export const StudentAttendanceView: React.FC = () => {
       if (isFacultyOrHod && userDept) {
         if (!isSameDept(r.department, userDept)) return false;
       }
+      // Mentor scoping: only show records for mentor's assigned classes
+      if (isMentor && mentorClassIds.size > 0) {
+        if (!mentorClassIds.has(r.classId)) return false;
+      }
       // Department filter dropdown selection
       if (selectedDepartmentFilter !== 'all') {
         if (!isSameDept(r.department, selectedDepartmentFilter)) return false;
       }
       return true;
     });
-  }, [attendanceRecords, entryDate, isFacultyOrHod, userDept, selectedDepartmentFilter]);
+  }, [attendanceRecords, entryDate, isFacultyOrHod, userDept, selectedDepartmentFilter, isMentor, mentorClassIds]);
 
   // Date-Range Report Filtered Records
   const rangeRecords = useMemo(() => {
@@ -218,6 +254,11 @@ export const StudentAttendanceView: React.FC = () => {
       // Role scoping: HOD/Faculty see only their department
       if (isFacultyOrHod && userDept) {
         if (!isSameDept(r.department, userDept)) return false;
+      }
+
+      // Mentor scoping: only show records for mentor's assigned classes
+      if (isMentor && mentorClassIds.size > 0) {
+        if (!mentorClassIds.has(r.classId)) return false;
       }
 
       // Department filter check
@@ -243,7 +284,7 @@ export const StudentAttendanceView: React.FC = () => {
 
       return true;
     });
-  }, [attendanceRecords, fromDate, toDate, isFacultyOrHod, userDept, selectedDepartmentFilter, selectedClassFilter, searchQuery]);
+  }, [attendanceRecords, fromDate, toDate, isFacultyOrHod, userDept, selectedDepartmentFilter, selectedClassFilter, searchQuery, isMentor, mentorClassIds]);
 
   // Aggregated Department-wise Summary for Date Range
   const departmentWiseReport = useMemo(() => {
@@ -252,7 +293,6 @@ export const StudentAttendanceView: React.FC = () => {
       {
         department: string;
         totalLogs: number;
-        totalEnrolledDays: number;
         presentDays: number;
         absentDays: number;
         odDays: number;
@@ -266,7 +306,6 @@ export const StudentAttendanceView: React.FC = () => {
         map[dept] = {
           department: dept,
           totalLogs: 0,
-          totalEnrolledDays: 0,
           presentDays: 0,
           absentDays: 0,
           odDays: 0,
@@ -274,7 +313,6 @@ export const StudentAttendanceView: React.FC = () => {
         };
       }
       map[dept].totalLogs += 1;
-      map[dept].totalEnrolledDays += Number(r.totalStudents || 0);
       map[dept].presentDays += Number(r.presentStudents || 0);
       map[dept].absentDays += Number(r.absentStudents || 0);
       map[dept].odDays += Number(r.odStudents || 0);
@@ -283,8 +321,10 @@ export const StudentAttendanceView: React.FC = () => {
 
     return Object.values(map).map((item) => {
       const pct =
-        item.totalEnrolledDays > 0
-          ? Number(((item.presentDays / item.totalEnrolledDays) * 100).toFixed(1))
+        item.presentDays + item.absentDays + item.odDays + item.othersDays > 0
+          ? Number(
+              ((item.presentDays / (item.presentDays + item.absentDays + item.odDays + item.othersDays)) * 100).toFixed(1)
+            )
           : 0;
       return { ...item, attendancePercentage: pct };
     });
@@ -299,7 +339,6 @@ export const StudentAttendanceView: React.FC = () => {
         className: string;
         department: string;
         totalLogs: number;
-        totalEnrolledDays: number;
         presentDays: number;
         absentDays: number;
         odDays: number;
@@ -315,7 +354,6 @@ export const StudentAttendanceView: React.FC = () => {
           className: r.className,
           department: r.department,
           totalLogs: 0,
-          totalEnrolledDays: 0,
           presentDays: 0,
           absentDays: 0,
           odDays: 0,
@@ -323,7 +361,6 @@ export const StudentAttendanceView: React.FC = () => {
         };
       }
       map[key].totalLogs += 1;
-      map[key].totalEnrolledDays += Number(r.totalStudents || 0);
       map[key].presentDays += Number(r.presentStudents || 0);
       map[key].absentDays += Number(r.absentStudents || 0);
       map[key].odDays += Number(r.odStudents || 0);
@@ -332,20 +369,23 @@ export const StudentAttendanceView: React.FC = () => {
 
     return Object.values(map).map((item) => {
       const pct =
-        item.totalEnrolledDays > 0
-          ? Number(((item.presentDays / item.totalEnrolledDays) * 100).toFixed(1))
+        item.presentDays + item.absentDays + item.odDays + item.othersDays > 0
+          ? Number(
+              ((item.presentDays / (item.presentDays + item.absentDays + item.odDays + item.othersDays)) * 100).toFixed(1)
+            )
           : 0;
       return { ...item, attendancePercentage: pct };
     });
   }, [rangeRecords]);
 
   // Overall Range Metrics
-  const totalRangeEnrolled = rangeRecords.reduce((acc, curr) => acc + Number(curr.totalStudents || 0), 0);
   const totalRangePresent = rangeRecords.reduce((acc, curr) => acc + Number(curr.presentStudents || 0), 0);
   const totalRangeAbsent = rangeRecords.reduce((acc, curr) => acc + Number(curr.absentStudents || 0), 0);
   const totalRangeOd = rangeRecords.reduce((acc, curr) => acc + Number(curr.odStudents || 0), 0);
+  const totalRangeOthers = rangeRecords.reduce((acc, curr) => acc + Number(curr.othersStudents || 0), 0);
+  const totalRangeTotal = totalRangePresent + totalRangeAbsent + totalRangeOd + totalRangeOthers;
   const overallRangePct =
-    totalRangeEnrolled > 0 ? Number(((totalRangePresent / totalRangeEnrolled) * 100).toFixed(1)) : 0;
+    totalRangeTotal > 0 ? Number(((totalRangePresent / totalRangeTotal) * 100).toFixed(1)) : 0;
 
   // CSV Export Handler
   const handleExportCSV = () => {
@@ -359,7 +399,6 @@ export const StudentAttendanceView: React.FC = () => {
       'Department',
       'Class Name',
       'Year',
-      'Total Enrolled',
       'Present',
       'Absent',
       'On Duty (OD)',
@@ -374,7 +413,6 @@ export const StudentAttendanceView: React.FC = () => {
       `"${r.department}"`,
       `"${r.className}"`,
       r.year || '',
-      r.totalStudents,
       r.presentStudents,
       r.absentStudents || 0,
       r.odStudents || 0,
@@ -510,16 +548,7 @@ export const StudentAttendanceView: React.FC = () => {
           </div>
 
           {/* Daily Quick Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                Total Enrolled
-              </div>
-              <div className="text-2xl font-black text-slate-900 dark:text-white">
-                {dailyRecords.reduce((acc, r) => acc + Number(r.totalStudents || 0), 0)}
-              </div>
-            </div>
-
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
               <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
                 Present Students
@@ -543,13 +572,14 @@ export const StudentAttendanceView: React.FC = () => {
                 Attendance Rate
               </div>
               <div className="text-2xl font-black text-blue-600 dark:text-blue-400">
-                {dailyRecords.reduce((acc, r) => acc + Number(r.totalStudents || 0), 0) > 0
-                  ? (
-                      (dailyRecords.reduce((acc, r) => acc + Number(r.presentStudents || 0), 0) /
-                        dailyRecords.reduce((acc, r) => acc + Number(r.totalStudents || 0), 0)) *
-                      100
-                    ).toFixed(1)
-                  : '0'}
+                {(() => {
+                  const totalPresent = dailyRecords.reduce((acc, r) => acc + Number(r.presentStudents || 0), 0);
+                  const totalAbsent = dailyRecords.reduce((acc, r) => acc + Number(r.absentStudents || 0), 0);
+                  const totalOd = dailyRecords.reduce((acc, r) => acc + Number(r.odStudents || 0), 0);
+                  const totalOthers = dailyRecords.reduce((acc, r) => acc + Number(r.othersStudents || 0), 0);
+                  const total = totalPresent + totalAbsent + totalOd + totalOthers;
+                  return total > 0 ? ((totalPresent / total) * 100).toFixed(1) : '0';
+                })}
                 %
               </div>
             </div>
@@ -569,7 +599,6 @@ export const StudentAttendanceView: React.FC = () => {
                 <thead>
                   <tr className="bg-slate-100/80 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
                     <th className="p-3.5">Department & Class</th>
-                    <th className="p-3.5 text-center">Enrolled</th>
                     <th className="p-3.5 text-center text-emerald-600 dark:text-emerald-400">Present</th>
                     <th className="p-3.5 text-center text-rose-600 dark:text-rose-400">Absent</th>
                     <th className="p-3.5 text-center text-purple-600 dark:text-purple-400">OD</th>
@@ -582,7 +611,7 @@ export const StudentAttendanceView: React.FC = () => {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
                   {dailyRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-8 text-center text-slate-500 italic">
+                      <td colSpan={8} className="p-8 text-center text-slate-500 italic">
                         No student attendance logged for <span className="font-bold">{entryDate}</span>. Click
                         &quot;Add Attendance by Date&quot; above to log entries.
                       </td>
@@ -594,7 +623,6 @@ export const StudentAttendanceView: React.FC = () => {
                           <div className="font-bold text-slate-900 dark:text-white">{r.className}</div>
                           <div className="text-[11px] text-slate-500 dark:text-slate-400">{r.department}</div>
                         </td>
-                        <td className="p-3.5 text-center font-bold text-slate-900 dark:text-white">{r.totalStudents}</td>
                         <td className="p-3.5 text-center font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20">
                           {r.presentStudents}
                         </td>
@@ -780,16 +808,6 @@ export const StudentAttendanceView: React.FC = () => {
 
             <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
               <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                Total Student-Days
-              </div>
-              <div className="text-2xl font-black text-slate-900 dark:text-white">
-                {totalRangeEnrolled}
-              </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Enrolled Cumulative</div>
-            </div>
-
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
                 Cumulative Present
               </div>
               <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
@@ -806,7 +824,7 @@ export const StudentAttendanceView: React.FC = () => {
                 {totalRangeAbsent}
               </div>
               <div className="text-[11px] text-rose-500 mt-0.5">
-                {totalRangeEnrolled > 0 ? ((totalRangeAbsent / totalRangeEnrolled) * 100).toFixed(1) : 0}% Absent Rate
+                {totalRangeTotal > 0 ? ((totalRangeAbsent / totalRangeTotal) * 100).toFixed(1) : 0}% Absent Rate
               </div>
             </div>
 
@@ -841,7 +859,6 @@ export const StudentAttendanceView: React.FC = () => {
                   <tr className="bg-slate-100/80 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
                     <th className="p-3.5">Department Name</th>
                     <th className="p-3.5 text-center">Class Logs</th>
-                    <th className="p-3.5 text-center">Cumulative Enrolled</th>
                     <th className="p-3.5 text-center text-emerald-600 dark:text-emerald-400">Present</th>
                     <th className="p-3.5 text-center text-rose-600 dark:text-rose-400">Absent</th>
                     <th className="p-3.5 text-center text-purple-600 dark:text-purple-400">OD</th>
@@ -852,7 +869,7 @@ export const StudentAttendanceView: React.FC = () => {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
                   {departmentWiseReport.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-6 text-center text-slate-500 italic">
+                      <td colSpan={7} className="p-6 text-center text-slate-500 italic">
                         No department attendance records found for this date range.
                       </td>
                     </tr>
@@ -864,9 +881,6 @@ export const StudentAttendanceView: React.FC = () => {
                         </td>
                         <td className="p-3.5 text-center font-semibold text-slate-600 dark:text-slate-300">
                           {dept.totalLogs} logs
-                        </td>
-                        <td className="p-3.5 text-center font-bold text-slate-900 dark:text-white">
-                          {dept.totalEnrolledDays}
                         </td>
                         <td className="p-3.5 text-center font-extrabold text-emerald-600 dark:text-emerald-400">
                           {dept.presentDays}
@@ -933,7 +947,6 @@ export const StudentAttendanceView: React.FC = () => {
                     <th className="p-3.5">Class Name</th>
                     <th className="p-3.5">Department</th>
                     <th className="p-3.5 text-center">Total Sessions</th>
-                    <th className="p-3.5 text-center">Cumulative Enrolled</th>
                     <th className="p-3.5 text-center text-emerald-600 dark:text-emerald-400">Present</th>
                     <th className="p-3.5 text-center text-rose-600 dark:text-rose-400">Absent</th>
                     <th className="p-3.5 text-center text-purple-600 dark:text-purple-400">OD</th>
@@ -943,7 +956,7 @@ export const StudentAttendanceView: React.FC = () => {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
                   {classWiseReport.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-6 text-center text-slate-500 italic">
+                      <td colSpan={7} className="p-6 text-center text-slate-500 italic">
                         No class records match the current filters.
                       </td>
                     </tr>
@@ -958,9 +971,6 @@ export const StudentAttendanceView: React.FC = () => {
                         </td>
                         <td className="p-3.5 text-center font-bold text-slate-800 dark:text-slate-200">
                           {cls.totalLogs} logs
-                        </td>
-                        <td className="p-3.5 text-center font-bold text-slate-900 dark:text-white">
-                          {cls.totalEnrolledDays}
                         </td>
                         <td className="p-3.5 text-center font-extrabold text-emerald-600 dark:text-emerald-400">
                           {cls.presentDays}
@@ -1012,7 +1022,6 @@ export const StudentAttendanceView: React.FC = () => {
                   <tr className="bg-slate-100/80 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
                     <th className="p-3.5">Date</th>
                     <th className="p-3.5">Class & Department</th>
-                    <th className="p-3.5 text-center">Enrolled</th>
                     <th className="p-3.5 text-center text-emerald-600 dark:text-emerald-400">Present</th>
                     <th className="p-3.5 text-center text-rose-600 dark:text-rose-400">Absent</th>
                     <th className="p-3.5 text-center text-purple-600 dark:text-purple-400">OD</th>
@@ -1024,7 +1033,7 @@ export const StudentAttendanceView: React.FC = () => {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700/60">
                   {rangeRecords.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-8 text-center text-slate-500 italic">
+                      <td colSpan={8} className="p-8 text-center text-slate-500 italic">
                         No detailed logs found matching the date range and filters.
                       </td>
                     </tr>
@@ -1038,7 +1047,6 @@ export const StudentAttendanceView: React.FC = () => {
                           <div className="font-bold text-slate-900 dark:text-white">{r.className}</div>
                           <div className="text-[11px] text-slate-500 dark:text-slate-400">{r.department}</div>
                         </td>
-                        <td className="p-3.5 text-center font-bold text-slate-900 dark:text-white">{r.totalStudents}</td>
                         <td className="p-3.5 text-center font-bold text-emerald-600 dark:text-emerald-400">{r.presentStudents}</td>
                         <td className="p-3.5 text-center font-bold text-rose-600 dark:text-rose-400">{r.absentStudents || 0}</td>
                         <td className="p-3.5 text-center font-bold text-purple-600 dark:text-purple-400">{r.odStudents || 0}</td>
@@ -1115,12 +1123,13 @@ export const StudentAttendanceView: React.FC = () => {
               {/* Department */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Department *
+                  Department {isMentor ? '' : '*'}
                 </label>
                 <select
                   value={newDept}
                   onChange={(e) => setNewDept(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  disabled={isMentor}
                 >
                   {DEPARTMENTS.map((d) => (
                     <option key={d} value={d}>
@@ -1128,6 +1137,11 @@ export const StudentAttendanceView: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                {isMentor && mentorClasses.length > 0 && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 font-semibold">
+                    🔒 Locked to your assigned class department
+                  </p>
+                )}
               </div>
 
               {/* Class Selection */}
@@ -1140,6 +1154,7 @@ export const StudentAttendanceView: React.FC = () => {
                   onChange={(e) => setNewClassId(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   required
+                  disabled={isMentor && mentorClasses.length === 1}
                 >
                   {modalClasses.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -1147,6 +1162,11 @@ export const StudentAttendanceView: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                {isMentor && mentorClasses.length > 0 && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1 font-semibold">
+                    🔒 Showing only your assigned mentor class(es)
+                  </p>
+                )}
               </div>
 
               {/* Attendance Breakdown Grid */}
@@ -1258,7 +1278,7 @@ export const StudentAttendanceView: React.FC = () => {
 
               {/* Calculated Rate Summary */}
               <div className="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl text-xs font-bold text-blue-900 dark:text-blue-200 flex items-center justify-between border border-blue-200 dark:border-blue-800">
-                <span>Calculated Total Enrolled: {newPresent + newAbsent + newOd + newOthers}</span>
+                <span>Calculated Total: {newPresent + newAbsent + newOd + newOthers}</span>
                 <span className="text-emerald-600 dark:text-emerald-400">
                   Attendance Rate:{' '}
                   {newPresent + newAbsent + newOd + newOthers > 0

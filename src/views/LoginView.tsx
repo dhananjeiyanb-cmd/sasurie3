@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 export const LoginView: React.FC = () => {
-  const { login, loginWithGoogle, loginAsDemo, dailyReport, updateDailyReport } = useApp();
+  const { login, loginWithGoogle, loginAsDemo, dailyReport, updateDailyReport, setActiveTab } = useApp();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -36,6 +36,9 @@ export const LoginView: React.FC = () => {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [customGoogleEmail, setCustomGoogleEmail] = useState('');
   const [logoError, setLogoError] = useState(false);
+  const [studentRegNo, setStudentRegNo] = useState('');
+  const [studentLoginError, setStudentLoginError] = useState('');
+  const [showStudentLogin, setShowStudentLogin] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -192,6 +195,60 @@ export const LoginView: React.FC = () => {
             </button>
 
           </form>
+
+          {/* Student Login Toggle */}
+          <div className="mt-6 pt-4 border-t border-slate-800">
+            <button
+              onClick={() => setShowStudentLogin(!showStudentLogin)}
+              className="w-full py-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors flex items-center justify-center gap-2"
+            >
+              <GraduationCap className="w-4 h-4" />
+              {showStudentLogin ? 'Hide Student Login' : 'Student? Login with Registration Number'}
+            </button>
+
+            {showStudentLogin && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setStudentLoginError('');
+                  const regNo = studentRegNo.trim();
+                  if (!regNo) {
+                    setStudentLoginError('Please enter your Registration Number.');
+                    return;
+                  }
+                  // Navigate to student exam portal
+                  setActiveTab('student_exam');
+                }}
+                className="mt-4 space-y-3"
+              >
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5">Registration Number</label>
+                  <input
+                    type="text"
+                    value={studentRegNo}
+                    onChange={(e) => setStudentRegNo(e.target.value)}
+                    placeholder="e.g. 713422104001"
+                    required
+                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/60"
+                  />
+                </div>
+
+                {studentLoginError && (
+                  <div className="p-3 bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs rounded-2xl font-bold">
+                    {studentLoginError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-950/60 transition-all flex items-center justify-center gap-2"
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  <span>ENTER EXAM PORTAL</span>
+                </button>
+              </form>
+            )}
+          </div>
         </div>
       </div>
 

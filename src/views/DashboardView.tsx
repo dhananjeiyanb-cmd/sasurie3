@@ -133,8 +133,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ? taskList.filter(
         (t) =>
           t.assignedToStaffId === currentUser?.staffId ||
-          (t.assignedToName && currentUser?.name && t.assignedToName.toLowerCase().includes(currentUser.name.toLowerCase())) ||
-          (t.groupName === 'All Faculty' && isSameDept(t.department || '', hodDepartment))
+          (t.assignedToName && currentUser?.name && t.assignedToName.toLowerCase() === currentUser.name.toLowerCase())
       )
     : isHod
     ? taskList.filter(

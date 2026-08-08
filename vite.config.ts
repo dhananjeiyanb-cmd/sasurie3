@@ -12,7 +12,7 @@ export default defineConfig(() => {
     },
     server: {
       host: '0.0.0.0',
-      port: 3000,
+      port: 0, // 0 = let the OS pick a free port (avoids the 3000/3001/3002 "port in use" chain)
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },

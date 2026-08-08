@@ -102,6 +102,7 @@ interface AppContextType {
 
   taskList: Task[];
   addTask: (task: Omit<Task, 'id' | 'assignedDate'>) => void;
+  reassignTaskToStaff: (parentTaskId: string, staffId: string, staffName: string, classId?: string, className?: string) => void;
   updateTask: (id: string, task: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   updateTaskStatus: (id: string, status: TaskStatus, remarks?: string, attachmentUrl?: string, attachmentName?: string) => void;
@@ -1931,10 +1932,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addTask = (taskData: Omit<Task, 'id' | 'assignedDate'>) => {
     const todayStr = new Date().toISOString().split('T')[0];
     const newId = `TSK-${Math.floor(100 + Math.random() * 900)}`;
+
+    // Resolve delegation metadata (explicit value wins; otherwise derive from current user)
+    const resolvedRole: Task['assignedByRole'] =
+      taskData.assignedByRole ??
+      (currentUser?.role === 'principal' ? 'principal' : currentUser?.role === 'admin' ? 'hod' : currentUser?.role === 'staff' ? 'staff' : undefined);
+    const resolvedLevel: Task['delegationLevel'] =
+      taskData.delegationLevel ??
+      (resolvedRole === 'principal' ? 1 : resolvedRole === 'hod' ? 2 : undefined);
+
     const newTask: Task = {
       id: newId,
       assignedDate: todayStr,
       ...taskData,
+      assignedByStaffId: taskData.assignedByStaffId ?? (currentUser?.staffId ? String(currentUser.staffId) : undefined),
+      assignedByName: taskData.assignedByName ?? currentUser?.name,
+      assignedByRole: resolvedRole,
+      delegationLevel: resolvedLevel,
+      parentTaskId: taskData.parentTaskId,
     };
     setTaskList((prev) => [newTask, ...prev]);
     syncDocToFirestore('tasks', newTask.id, newTask);
@@ -1944,6 +1959,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `NOT-${Date.now()}`,
       title: 'New Task Assigned',
       message: `Task "${newTask.title}" was assigned to ${newTask.assignedToName}.`,
+      date: todayStr,
+      type: 'info',
+      read: false,
+      relatedTaskId: newId,
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+    syncDocToFirestore('notifications', newNotif.id, newNotif);
+  };
+
+  // Reassign a task from HOD to a specific staff member
+  const reassignTaskToStaff = (parentTaskId: string, staffId: string, staffName: string, classId?: string, className?: string) => {
+    const parentTask = taskList.find((t) => t.id === parentTaskId);
+    if (!parentTask || !currentUser) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const newId = `TSK-${Math.floor(100 + Math.random() * 900)}`;
+    const newTask: Task = {
+      id: newId,
+      title: parentTask.title,
+      description: parentTask.description,
+      category: parentTask.category,
+      assignedToStaffId: staffId,
+      assignedToName: staffName,
+      classId: classId || parentTask.classId,
+      className: className || parentTask.className,
+      priority: parentTask.priority,
+      assignedDate: todayStr,
+      targetDate: parentTask.targetDate,
+      status: 'Pending',
+      department: parentTask.department,
+      // Delegation tracking
+      assignedByStaffId: String(currentUser.staffId || ''),
+      assignedByName: currentUser.name,
+      assignedByRole: 'hod',
+      delegationLevel: 2,
+      parentTaskId: parentTaskId,
+      groupName: undefined,
+      isGroupTask: false,
+    };
+    setTaskList((prev) => [newTask, ...prev]);
+    syncDocToFirestore('tasks', newTask.id, newTask);
+
+    const newNotif: AppNotification = {
+      id: `NOT-${Date.now()}`,
+      title: 'Task Reassigned to Staff',
+      message: `Task "${newTask.title}" was delegated by ${currentUser.name} to ${staffName}.`,
       date: todayStr,
       type: 'info',
       read: false,
@@ -2529,8 +2590,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteEvent = (id: string) => {
-    setEventsList((prev) => prev.filter((ev) => ev.id !== id));
+    // Remove from Firestore
     deleteDocFromFirestore('events', id);
+    // Also remove from localStorage. The events onSnapshot listener merges Firestore
+    // docs with localStorage, so if the deleted doc stays in localStorage it gets
+    // resurrected into the list (and reappears on reload).
+    try {
+      const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}events`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((ev) => ev.id !== id);
+          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(updated));
+        }
+      }
+    } catch {}
+    // Update local React state
+    setEventsList((prev) => prev.filter((ev) => ev.id !== id));
   };
 
   const addEventParticipant = (eventId: string, participant: Omit<EventParticipant, 'id'>) => {
@@ -2857,6 +2933,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteClass,
         taskList,
         addTask,
+        reassignTaskToStaff,
         updateTask,
         deleteTask,
         updateTaskStatus,

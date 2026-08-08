@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Task, TaskStatus, TaskPriority } from '../types';
+import { Task, TaskStatus, TaskPriority, User as UserType } from '../types';
 import { TaskStatusBadge, PriorityBadge } from '../components/StatusBadge';
 import { GoogleWorkspaceModal } from '../components/GoogleWorkspaceModal';
 import { isSameDept, getUserCollege, isStaffInCollege } from '../utils/departmentUtils';
@@ -27,6 +27,8 @@ import {
   ExternalLink,
   BookOpen,
   Share2,
+  Columns,
+  PanelRightClose,
 } from 'lucide-react';
 
 interface TaskManagementViewProps {
@@ -41,6 +43,7 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
   const {
     taskList,
     addTask,
+    reassignTaskToStaff,
     updateTask,
     deleteTask,
     updateTaskStatus,
@@ -63,6 +66,16 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
   // Google Workspace Modal State
   const [showWorkspaceModal, setShowWorkspaceModal] = useState(false);
   const [workspaceModalTask, setWorkspaceModalTask] = useState<Task | null>(null);
+
+  // Split View State (for staff)
+  const isStaffUser = currentUser?.role === 'staff';
+  const [isSplitView, setIsSplitView] = useState(isStaffUser);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  // Reassign modal state
+  const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
+  const [reassigningTask, setReassigningTask] = useState<Task | null>(null);
+  const [reassignStaffId, setReassignStaffId] = useState('');
 
   // Status update modal state
   const [statusModalTask, setStatusModalTask] = useState<Task | null>(null);
@@ -392,6 +405,19 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {isStaffUser && (
+            <button
+              onClick={() => setIsSplitView(!isSplitView)}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold shadow-sm transition-all flex items-center gap-2 ${
+                isSplitView
+                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                  : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200'
+              }`}
+            >
+              {isSplitView ? <PanelRightClose className="w-4 h-4" /> : <Columns className="w-4 h-4" />}
+              {isSplitView ? 'List View' : 'Split View'}
+            </button>
+          )}
           <button
             onClick={() => {
               setWorkspaceModalTask(null);
@@ -508,24 +534,99 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
         </div>
       </div>
 
-      {/* Task Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filteredTasks.length === 0 ? (
-          <div className="col-span-full p-12 text-center bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 text-xs">
-            No tasks found matching current filter criteria.
+      {/* Task Cards Grid / Split View */}
+      {isStaffUser && isSplitView ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-320px)] min-h-[400px]">
+          {/* Left: Task List */}
+          <div className="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+            <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+              <h3 className="font-bold text-xs text-slate-700 dark:text-slate-300">
+                My Tasks ({filteredTasks.length})
+              </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {filteredTasks.length === 0 ? (
+                <div className="p-6 text-center text-slate-500 text-xs">
+                  No tasks found matching current filter criteria.
+                </div>
+              ) : (
+                filteredTasks.map((task) => {
+                  const isSelected = selectedTaskId === task.id;
+                  return (
+                    <button
+                      key={task.id}
+                      onClick={() => setSelectedTaskId(task.id)}
+                      className={`w-full text-left p-3 rounded-xl transition-all border ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 ring-1 ring-blue-400/40'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                          {task.id}
+                        </span>
+                        <TaskStatusBadge status={task.status} />
+                      </div>
+                      <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate mb-1">
+                        {task.title}
+                      </h4>
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                        <span className="truncate">{task.assignedByName || 'System'}</span>
+                        <span className="shrink-0">Due: {task.targetDate}</span>
+                      </div>
+                      {/* Delegation chain indicator */}
+                      {(task.assignedByRole === 'principal' || task.assignedByRole === 'hod') && (
+                        <div className="mt-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 inline-flex items-center gap-1">
+                          {task.assignedByRole === 'principal' ? '👑 Principal' : '🎓 HOD'} → You
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
-        ) : (
-          filteredTasks.map((task) => (
-            <div
-              key={task.id}
-              className={`bg-white dark:bg-slate-800 rounded-2xl border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
-                task.status === 'Submitted'
-                  ? 'border-purple-300 dark:border-purple-800 ring-2 ring-purple-500/20'
-                  : task.status === 'Overdue'
-                  ? 'border-rose-300 dark:border-rose-900/60'
-                  : 'border-slate-200 dark:border-slate-700/80'
-              }`}
-            >
+
+          {/* Right: Task Detail & Status Update */}
+          <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+            {selectedTaskId && filteredTasks.find((t) => t.id === selectedTaskId) ? (
+              <TaskDetailPanel
+                task={filteredTasks.find((t) => t.id === selectedTaskId)!}
+                onUpdateStatus={(status, remarks, attachmentUrl, attachmentName) =>
+                  updateTaskStatus(selectedTaskId, status, remarks, attachmentUrl, attachmentName)
+                }
+                currentUser={currentUser}
+              />
+            ) : (
+              <div className="flex-1 flex items-center justify-center p-10 text-slate-500 text-xs">
+                <div className="text-center">
+                  <CheckSquare className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
+                  <p className="font-semibold">Select a task from the list to view details</p>
+                  <p className="mt-1">Choose any task on the left to update its status or upload proof.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredTasks.length === 0 ? (
+            <div className="col-span-full p-12 text-center bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-500 text-xs">
+              No tasks found matching current filter criteria.
+            </div>
+          ) : (
+            filteredTasks.map((task) => (
+              <div
+                key={task.id}
+                className={`bg-white dark:bg-slate-800 rounded-2xl border p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between ${
+                  task.status === 'Submitted'
+                    ? 'border-purple-300 dark:border-purple-800 ring-2 ring-purple-500/20'
+                    : task.status === 'Overdue'
+                    ? 'border-rose-300 dark:border-rose-900/60'
+                    : 'border-slate-200 dark:border-slate-700/80'
+                }`}
+              >
               <div>
                 {/* Header Row */}
                 <div className="flex items-start justify-between gap-2 mb-2">
@@ -709,6 +810,14 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
 
                     <div className="flex items-center gap-1.5">
                       <button
+                        onClick={() => { setReassigningTask(task); setReassignStaffId(''); setIsReassignModalOpen(true); }}
+                        className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 flex items-center gap-1.5 transition-colors"
+                        title="Reassign this task to a staff member (HOD delegation)"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>Reassign to Staff</span>
+                      </button>
+                      <button
                         onClick={() => openEditModal(task)}
                         className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
                         title="Edit Task Details"
@@ -762,6 +871,7 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
           ))
         )}
       </div>
+      )}
 
       {/* Assign / Edit Task Modal */}
       {showAssignModal && (
@@ -1206,6 +1316,227 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
         onClose={() => setShowWorkspaceModal(false)}
         selectedTask={workspaceModalTask}
       />
+
+      {/* Reassign to Staff Modal (HOD delegating Principal tasks to staff) */}
+      {isReassignModalOpen && reassigningTask && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl p-6 relative">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 mb-4">
+              <h3 className="font-bold text-base text-slate-900 dark:text-white">
+                Reassign Task to Staff
+              </h3>
+              <button onClick={() => { setIsReassignModalOpen(false); setReassigningTask(null); }} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mb-4">
+              You are reassigning <strong>{reassigningTask.title}</strong> to a staff member. This creates a new delegated task linked to the original.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Select Staff Member *</label>
+                <select
+                  value={reassignStaffId}
+                  onChange={(e) => setReassignStaffId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                >
+                  <option value="">-- Select Staff --</option>
+                  {staffList
+                    .filter((s) => s.role === 'staff' && s.status === 'Active')
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>{s.facultyName} — {s.department}</option>
+                    ))}
+                </select>
+              </div>
+            </div>
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setIsReassignModalOpen(false); setReassigningTask(null); }}
+                className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (!reassignStaffId) return;
+                  const staff = staffList.find((s) => s.id === reassignStaffId);
+                  if (!staff || !reassigningTask) return;
+                  reassignTaskToStaff(reassigningTask.id, staff.id, staff.facultyName);
+                  setIsReassignModalOpen(false);
+                  setReassigningTask(null);
+                  setReassignStaffId('');
+                }}
+                disabled={!reassignStaffId}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-semibold text-xs shadow-md"
+              >
+                Reassign to Staff
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
+
+// ---------------------------------------------------------------------------
+// TaskDetailPanel — right-hand panel of the staff Split View
+// ---------------------------------------------------------------------------
+interface TaskDetailPanelProps {
+  task: Task;
+  onUpdateStatus: (status: TaskStatus, remarks?: string, attachmentUrl?: string, attachmentName?: string) => void;
+  currentUser: UserType | null;
+}
+
+const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onUpdateStatus, currentUser }) => {
+  const [updateStatusVal, setUpdateStatusVal] = useState<TaskStatus>(task.status === 'Pending' ? 'In Progress' : task.status);
+  const [updateRemarks, setUpdateRemarks] = useState('');
+  const [attachmentName, setAttachmentName] = useState('');
+  const [attachmentUrl, setAttachmentUrl] = useState('');
+
+  const handleStatusSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateStatus(updateStatusVal, updateRemarks, attachmentUrl, attachmentName);
+  };
+
+  const handleFileUploadSimulated = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAttachmentName(file.name);
+      setAttachmentUrl(URL.createObjectURL(file));
+    }
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+              {task.id}
+            </span>
+            <TaskStatusBadge status={task.status} />
+            <PriorityBadge priority={task.priority} />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-snug">{task.title}</h2>
+        </div>
+      </div>
+
+      {/* Delegation Chain Banner */}
+      {task.assignedByRole && (
+        <div className={`mb-4 p-3 rounded-xl border text-xs flex items-center gap-2 ${
+          task.assignedByRole === 'principal'
+            ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+            : 'bg-purple-50 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200'
+        }`}>
+          <span className="font-bold">
+            {task.assignedByRole === 'principal' ? '👑' : '🎓'} Task Delegation:
+          </span>
+          <span>
+            {task.assignedByRole === 'principal' ? 'Principal' : 'HOD'} ({task.assignedByName}) → {task.assignedToName}
+            {task.parentTaskId && <span className="text-slate-500 ml-1">[Parent: {task.parentTaskId}]</span>}
+          </span>
+        </div>
+      )}
+
+      {/* Description */}
+      <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+        <h4 className="font-semibold text-xs text-slate-700 dark:text-slate-300 mb-1">Description & Requirements</h4>
+        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{task.description || 'No description provided.'}</p>
+      </div>
+
+      {/* Info Grid */}
+      <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-100 dark:border-slate-800 mb-4">
+        <div className="flex items-center gap-2">
+          <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          <span className="truncate">Assigned To: <strong className="text-slate-800 dark:text-slate-200">{task.assignedToName}</strong></span>
+        </div>
+        <div className="flex items-center gap-2">
+          <GraduationCap className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+          <span className="truncate">{task.className || 'General Dept.'}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          <span>Assigned: {task.assignedDate}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Target: <strong className="text-slate-800 dark:text-slate-200">{task.targetDate}</strong></span>
+        </div>
+      </div>
+
+      {/* Remarks / Attachment block */}
+      {(task.remarks || task.completionRemarks || task.attachmentName || task.approvedBy) && (
+        <div className="space-y-1.5 text-xs p-3 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 mb-4">
+          {task.remarks && <p className="text-slate-700 dark:text-slate-300"><strong className="text-blue-700 dark:text-blue-400">Remarks:</strong> {task.remarks}</p>}
+          {task.completionRemarks && <p className="text-slate-700 dark:text-slate-300"><strong className="text-emerald-700 dark:text-emerald-400">Completion Remarks:</strong> {task.completionRemarks}</p>}
+          {task.approvedBy && task.status === 'Completed' && (
+            <p className="text-emerald-700 dark:text-emerald-400 font-semibold text-[11px]">✓ Approved by {task.approvedBy} {task.approvedDate ? `on ${task.approvedDate}` : ''}</p>
+          )}
+          {task.attachmentName && (
+            <div className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-semibold pt-1">
+              <Paperclip className="w-3.5 h-3.5" />
+              <span>Attachment: {task.attachmentName}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Status Update Form */}
+      <form onSubmit={handleStatusSubmit} className="mt-6 p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+        <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+          <Upload className="w-4 h-4 text-blue-600" />
+          Update Task Status
+        </h3>
+        <div>
+          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Status</label>
+          <select
+            value={updateStatusVal}
+            onChange={(e) => setUpdateStatusVal(e.target.value as TaskStatus)}
+            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-semibold text-xs"
+          >
+            <option value="Pending">Pending</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Submitted">Submitted for Approval</option>
+            {currentUser?.role !== 'staff' && <option value="Completed">Completed</option>}
+            <option value="Cancelled">Cancelled</option>
+          </select>
+          {updateStatusVal === 'Submitted' && (
+            <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">Your submission will be sent to HOD/Principal for approval.</p>
+          )}
+        </div>
+        <div>
+          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Remarks / Proof Summary</label>
+          <textarea
+            rows={3}
+            placeholder="Enter work done summary, links, or progress remarks..."
+            value={updateRemarks}
+            onChange={(e) => setUpdateRemarks(e.target.value)}
+            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+          />
+        </div>
+        <div>
+          <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Upload Proof Document / Image</label>
+          <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-3 text-center hover:border-blue-500 transition-colors">
+            <input type="file" onChange={handleFileUploadSimulated} className="hidden" id={`proof-${task.id}`} />
+            <label htmlFor={`proof-${task.id}`} className="cursor-pointer flex flex-col items-center gap-1 text-slate-500 dark:text-slate-400">
+              <Upload className="w-5 h-5 text-blue-500" />
+              <span className="font-semibold text-xs text-blue-600 dark:text-blue-400">Click to choose proof document (PDF / Image)</span>
+              <span className="text-[10px]">{attachmentName ? `Selected: ${attachmentName}` : 'Upload report, sign sheet, or output file'}</span>
+            </label>
+          </div>
+        </div>
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-end gap-2">
+          <button type="submit" className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-md">
+            {updateStatusVal === 'Submitted' ? 'Submit for Approval' : 'Save Progress'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+

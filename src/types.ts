@@ -110,6 +110,12 @@ export interface Task {
   groupName?: string;
   isGroupTask?: boolean;
   department?: string;
+  // Delegation chain tracking: Principal → HOD → Staff
+  assignedByStaffId?: string;
+  assignedByName?: string;
+  assignedByRole?: 'principal' | 'hod' | 'staff';
+  delegationLevel?: 1 | 2; // 1 = Principal → HOD, 2 = HOD → Staff
+  parentTaskId?: string; // Links delegated task back to parent
 }
 
 export interface ClassObservation {

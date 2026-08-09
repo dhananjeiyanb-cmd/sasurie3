@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useCdc } from '../context/CdcContext';
 import { generateExamSummary, generateStudentWeaknessReport, generateDepartmentGapAnalysis } from '../utils/cdcExamUtils';
 import { CdcExamAttempt, CdcExamResultSummary, CdcWeaknessReport, CdcDepartmentGapReport, CdcQuestion } from '../types/cdc';
@@ -21,7 +21,17 @@ import { exportToExcel } from '../utils/exportUtils';
 export const CdcDashboardView: React.FC = () => {
   const { cdcExams, cdcExamAttempts, cdcQuestions } = useCdc();
 
-  const [selectedExamId, setSelectedExamId] = React.useState<string>(cdcExams[0]?.id || '');
+  const [selectedExamId, setSelectedExamId] = React.useState<string>('');
+
+  useEffect(() => {
+    if (cdcExams.length === 0) {
+      setSelectedExamId('');
+      return;
+    }
+    if (!selectedExamId || !cdcExams.some((exam) => exam.id === selectedExamId)) {
+      setSelectedExamId(cdcExams[0].id);
+    }
+  }, [cdcExams, selectedExamId]);
 
   const summaries = useMemo(() => {
     return cdcExams.map((exam) => generateExamSummary(exam.id, exam.title, cdcExamAttempts));
@@ -96,9 +106,12 @@ export const CdcDashboardView: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 p-4 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">CDC Dashboard</h1>
-          <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">CDC Dashboard</h1>
+            <p className="text-sm text-slate-500 mt-1">Results · Rank List</p>
+          </div>
+          <div className="flex gap-2 flex-wrap">
             <button onClick={handleExportResults} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold flex items-center gap-2">
               <Download className="w-4 h-4" /> Results
             </button>
@@ -109,19 +122,20 @@ export const CdcDashboardView: React.FC = () => {
         </div>
 
         <div className="mb-6">
-          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Select Exam</label>
+          <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Select Exam / Placement</label>
           <select
             value={selectedExamId}
             onChange={(e) => setSelectedExamId(e.target.value)}
             className="w-full sm:w-auto px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-900 dark:text-white"
           >
+            <option value="" disabled>{cdcExams.length > 0 ? 'Select Exam / Placement' : 'No exams available'}</option>
             {cdcExams.map((e) => (
               <option key={e.id} value={e.id}>{e.title}</option>
             ))}
           </select>
         </div>
 
-        {selectedSummary && (
+        {selectedSummary ? (
           <>
             {/* Overall Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -253,6 +267,10 @@ export const CdcDashboardView: React.FC = () => {
               )}
             </div>
           </>
+        ) : (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-10 text-center text-slate-500">
+            {cdcExams.length > 0 ? 'Loading exam summary...' : 'No exams available. Create an exam first to view analytics.'}
+          </div>
         )}
       </div>
     </div>

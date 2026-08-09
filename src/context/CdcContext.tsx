@@ -1,14 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { onSnapshot, collection } from 'firebase/firestore';
 import { CdcQuestion, CdcExam, CdcStudent, CdcExamAttempt, CdcSuspiciousEvent } from '../types/cdc';
-import {
-  CDC_SEED_QUESTIONS,
-  CDC_SEED_EXAMS,
-  CDC_SEED_STUDENTS,
-  CDC_SEED_ATTEMPTS,
-  CDC_SEED_SUSPICIOUS_EVENTS,
-} from '../data/cdcSeedData';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { syncDocToFirestore, deleteDocFromFirestore } from '../lib/firestoreSync';
 
-const LOCAL_STORAGE_KEY_PREFIX = 'hod_task_system_v3_cdc_';
+const COLLECTIONS = {
+  questions: 'cdcQuestions',
+  exams: 'cdcExams',
+  students: 'cdcStudents',
+  attempts: 'cdcExamAttempts',
+  suspicious: 'cdcSuspiciousLogs',
+};
 
 interface CdcContextType {
   cdcQuestions: CdcQuestion[];
@@ -46,79 +48,26 @@ interface CdcContextType {
 const CdcContext = createContext<CdcContextType | undefined>(undefined);
 
 export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [cdcQuestions, setCdcQuestions] = useState<CdcQuestion[]>(() => {
-    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}questions`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return CDC_SEED_QUESTIONS;
-  });
+  const [cdcQuestions, setCdcQuestions] = useState<CdcQuestion[]>([]);
+  const [cdcExams, setCdcExams] = useState<CdcExam[]>([]);
+  const [cdcStudents, setCdcStudents] = useState<CdcStudent[]>([]);
+  const [cdcExamAttempts, setCdcExamAttempts] = useState<CdcExamAttempt[]>([]);
+  const [cdcSuspiciousLogs, setCdcSuspiciousLogs] = useState<CdcSuspiciousEvent[]>([]);
 
-  const [cdcExams, setCdcExams] = useState<CdcExam[]>(() => {
-    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}exams`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return CDC_SEED_EXAMS;
-  });
-
-  const [cdcStudents, setCdcStudents] = useState<CdcStudent[]>(() => {
-    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}students`);
-    let savedList: CdcStudent[] = [];
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) savedList = parsed;
-      } catch {}
-    }
-    if (savedList.length === 0) return CDC_SEED_STUDENTS;
-    // Merge in any newly added seed students (e.g. added by app updates) that
-    // aren't already present in the previously saved/cached list, so a stale
-    // localStorage cache never hides new demo/test accounts.
-    const existingRegNos = new Set(savedList.map((s) => s.registerNumber));
-    const missingSeedStudents = CDC_SEED_STUDENTS.filter((s) => !existingRegNos.has(s.registerNumber));
-    return missingSeedStudents.length > 0 ? [...savedList, ...missingSeedStudents] : savedList;
-  });
-
-  const [cdcExamAttempts, setCdcExamAttempts] = useState<CdcExamAttempt[]>(() => {
-    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}exam_attempts`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return CDC_SEED_ATTEMPTS;
-  });
-
-  const [cdcSuspiciousLogs, setCdcSuspiciousLogs] = useState<CdcSuspiciousEvent[]>(() => {
-    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}suspicious_logs`);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {}
-    }
-    return CDC_SEED_SUSPICIOUS_EVENTS;
-  });
-
+  // Firestore is the single source of truth — load all CDC collections and keep
+  // them in sync in real time. Nothing is auto-populated from seed data.
   useEffect(() => {
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}questions`, JSON.stringify(cdcQuestions));
-  }, [cdcQuestions]);
+    const unsubs: (() => void)[] = [];
 
-  useEffect(() => {
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}exams`, JSON.stringify(cdcExams));
-  }, [cdcExams]);
+    unsubs.push(onSnapshot(collection(db, COLLECTIONS.questions), (snap) => setCdcQuestions(snap.docs.map((d) => d.data() as CdcQuestion)), (err) => handleFirestoreError(err, OperationType.GET, COLLECTIONS.questions)));
+    unsubs.push(onSnapshot(collection(db, COLLECTIONS.exams), (snap) => setCdcExams(snap.docs.map((d) => d.data() as CdcExam)), (err) => handleFirestoreError(err, OperationType.GET, COLLECTIONS.exams)));
+    unsubs.push(onSnapshot(collection(db, COLLECTIONS.students), (snap) => setCdcStudents(snap.docs.map((d) => d.data() as CdcStudent)), (err) => handleFirestoreError(err, OperationType.GET, COLLECTIONS.students)));
+    unsubs.push(onSnapshot(collection(db, COLLECTIONS.attempts), (snap) => setCdcExamAttempts(snap.docs.map((d) => d.data() as CdcExamAttempt)), (err) => handleFirestoreError(err, OperationType.GET, COLLECTIONS.attempts)));
+    unsubs.push(onSnapshot(collection(db, COLLECTIONS.suspicious), (snap) => setCdcSuspiciousLogs(snap.docs.map((d) => d.data() as CdcSuspiciousEvent)), (err) => handleFirestoreError(err, OperationType.GET, COLLECTIONS.suspicious)));
 
-  useEffect(() => {
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}students`, JSON.stringify(cdcStudents));
-  }, [cdcStudents]);
+    return () => unsubs.forEach((u) => u());
+  }, []);
+
   const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 
   const addQuestion = (q: Omit<CdcQuestion, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -130,6 +79,7 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: now,
     };
     setCdcQuestions((prev) => [...prev, newQ]);
+    syncDocToFirestore(COLLECTIONS.questions, newQ.id, newQ);
   };
 
   const addExam = (e: Omit<CdcExam, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -141,16 +91,23 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       updatedAt: now,
     };
     setCdcExams((prev) => [...prev, newE]);
+    syncDocToFirestore(COLLECTIONS.exams, newE.id, newE);
   };
 
   const updateExam = (id: string, updates: Partial<CdcExam>) => {
     setCdcExams((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, ...updates, updatedAt: new Date().toISOString() } : e))
+      prev.map((e) => {
+        if (e.id !== id) return e;
+        const updated = { ...e, ...updates, updatedAt: new Date().toISOString() };
+        syncDocToFirestore(COLLECTIONS.exams, id, updated);
+        return updated;
+      })
     );
   };
 
   const deleteExam = (id: string) => {
     setCdcExams((prev) => prev.filter((e) => e.id !== id));
+    deleteDocFromFirestore(COLLECTIONS.exams, id);
   };
 
   const addStudent = (s: Omit<CdcStudent, 'id'>) => {
@@ -159,24 +116,25 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: 'STU' + generateId().toUpperCase(),
     };
     setCdcStudents((prev) => [...prev, newS]);
+    syncDocToFirestore(COLLECTIONS.students, newS.id, newS);
   };
 
   const updateStudent = (id: string, updates: Partial<CdcStudent>) => {
-    setCdcStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+    setCdcStudents((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const updated = { ...s, ...updates };
+        syncDocToFirestore(COLLECTIONS.students, id, updated);
+        return updated;
+      })
+    );
   };
 
   const deleteStudent = (id: string) => {
     setCdcStudents((prev) => prev.filter((s) => s.id !== id));
+    deleteDocFromFirestore(COLLECTIONS.students, id);
   };
 
-
-  useEffect(() => {
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}exam_attempts`, JSON.stringify(cdcExamAttempts));
-  }, [cdcExamAttempts]);
-
-  useEffect(() => {
-    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}suspicious_logs`, JSON.stringify(cdcSuspiciousLogs));
-  }, [cdcSuspiciousLogs]);
   const evaluateAttempt = (
     answers: Record<number, number>,
     questions: CdcQuestion[]
@@ -235,6 +193,7 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       status: 'in_progress',
     };
     setCdcExamAttempts((prev) => [...prev, attempt]);
+    syncDocToFirestore(COLLECTIONS.attempts, attempt.id, attempt);
     return attempt;
   };
 
@@ -252,7 +211,7 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ? exam.questionIds.map((qid) => cdcQuestions.find((q) => q.id === qid)).filter((q): q is CdcQuestion => !!q)
           : [];
         const score = evaluateAttempt(answers, questions);
-        return {
+        const updated = {
           ...a,
           answers,
           markedForReview,
@@ -261,6 +220,8 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           status,
           ...score,
         };
+        syncDocToFirestore(COLLECTIONS.attempts, attemptId, updated);
+        return updated;
       })
     );
   };
@@ -274,6 +235,7 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       details,
     };
     setCdcSuspiciousLogs((prev) => [...prev, event]);
+    syncDocToFirestore(COLLECTIONS.suspicious, event.id, event);
 
     setCdcExamAttempts((prev) =>
       prev.map((a) => {
@@ -285,7 +247,9 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (type === 'right_click') updates.rightClickCount = (a.rightClickCount || 0) + 1;
         if (type === 'multi_face') updates.multiFaceDetectedCount = (a.multiFaceDetectedCount || 0) + 1;
         if (type === 'no_face') updates.noFaceDetectedCount = (a.noFaceDetectedCount || 0) + 1;
-        return { ...a, ...updates };
+        const updated = { ...a, ...updates };
+        syncDocToFirestore(COLLECTIONS.attempts, attemptId, updated);
+        return updated;
       })
     );
   };

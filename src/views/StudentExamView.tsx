@@ -3,11 +3,11 @@ import { useCdc } from '../context/CdcContext';
 import { useApp } from '../context/AppContext';
 import { WebcamVerification } from '../components/WebcamVerification';
 import { CdcExam, CdcExamAttempt, CdcQuestion } from '../types/cdc';
-import { Clock, ChevronLeft, ChevronRight, Flag, Send, AlertTriangle, CheckCircle2, XCircle, HelpCircle, BookOpen, Timer, ArrowLeft } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Flag, Send, AlertTriangle, CheckCircle2, XCircle, HelpCircle, BookOpen, Timer, ArrowLeft, BarChart2 } from 'lucide-react';
 
 export const StudentExamView: React.FC = () => {
   const { cdcExams, cdcStudents, startExamAttempt, submitExamAttempt, addSuspiciousEvent, getQuestionsByIds, getAttemptByExamAndStudent } = useCdc();
-  const { setActiveTab } = useApp();
+  const { skillBankStudents } = useApp();
   const [selectedExam, setSelectedExam] = useState<CdcExam | null>(null);
   const [student, setStudent] = useState<{ id: string; registerNumber: string; name: string } | null>(null);
   const [loginRegNo, setLoginRegNo] = useState('');
@@ -238,9 +238,35 @@ export const StudentExamView: React.FC = () => {
     e.preventDefault();
     setLoginError('');
     const enteredRegNo = loginRegNo.trim().toLowerCase();
-    const found = cdcStudents.find((s) => s.registerNumber.trim().toLowerCase() === enteredRegNo);
+    
+    // First check in cdcStudents (if already imported)
+    let found = cdcStudents.find((s) => s.registerNumber.trim().toLowerCase() === enteredRegNo);
+    
+    // If not found in cdcStudents, check in skillBankStudents (mentor-mentee data)
     if (!found) {
-      setLoginError('Invalid Registration Number.');
+      const skillBankStudent = skillBankStudents.find(
+        (s) => s.studentProfile.registerNumber.trim().toLowerCase() === enteredRegNo
+      );
+      if (skillBankStudent) {
+        // Create a CDC student record from skillBank data
+        const sp = skillBankStudent.studentProfile;
+        found = {
+          id: sp.registerNumber,
+          registerNumber: sp.registerNumber,
+          name: sp.studentName,
+          department: sp.department,
+          year: sp.academicYear || '',
+          section: sp.section,
+          batch: sp.batch,
+          email: sp.studentEmail,
+          mobile: sp.studentMobile,
+          password: 'student',
+        };
+      }
+    }
+    
+    if (!found) {
+      setLoginError('Invalid Registration Number. Please check if you are registered in the system.');
       return;
     }
     setStudent({ id: found.id, registerNumber: found.registerNumber, name: found.name });
@@ -344,19 +370,23 @@ export const StudentExamView: React.FC = () => {
             </button>
           </form>
           <div className="mt-6 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-xl">
-            <p className="text-xs text-blue-700 dark:text-blue-300 font-bold mb-1">Demo Students:</p>
+            <p className="text-xs text-blue-700 dark:text-blue-300 font-bold mb-1">Demo Students (from Mentor-Mentee):</p>
             <div className="text-xs text-blue-600 dark:text-blue-400 space-y-0.5">
-              {cdcStudents.slice(0, 3).map((s) => (
+              {(cdcStudents.length > 0 ? cdcStudents.slice(0, 3) : skillBankStudents.slice(0, 3).map(s => ({
+                id: s.studentProfile.registerNumber,
+                registerNumber: s.studentProfile.registerNumber,
+                name: s.studentProfile.studentName
+              }))).map((s) => (
                 <div key={s.id}>{s.registerNumber} — {s.name}</div>
               ))}
             </div>
           </div>
           <button
             type="button"
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => setStudent(null)}
             className="w-full mt-4 py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white flex items-center justify-center gap-2"
           >
-            <ArrowLeft className="w-4 h-4" /> Back to Staff/HOD Login
+            <ArrowLeft className="w-4 h-4" /> Back to Login
           </button>
         </div>
       </div>
@@ -365,22 +395,53 @@ export const StudentExamView: React.FC = () => {
 
   if (!selectedExam) {
     const normalize = (v?: string) => (v || '').trim().toLowerCase();
-    const foundStudent = cdcStudents.find(
+    
+    // First check in cdcStudents, then fall back to skillBankStudents
+    let foundStudent = cdcStudents.find(
       (s) => s.registerNumber.trim().toLowerCase() === student!.registerNumber.trim().toLowerCase()
     );
+    
+    // If not found in cdcStudents, get student info from skillBankStudents
+    if (!foundStudent) {
+      const skillBankStudent = skillBankStudents.find(
+        (s) => s.studentProfile.registerNumber.trim().toLowerCase() === student!.registerNumber.trim().toLowerCase()
+      );
+      if (skillBankStudent) {
+        const sp = skillBankStudent.studentProfile;
+        foundStudent = {
+          id: sp.registerNumber,
+          registerNumber: sp.registerNumber,
+          name: sp.studentName,
+          department: sp.department,
+          year: sp.academicYear || '',
+          section: sp.section,
+          batch: sp.batch,
+          email: sp.studentEmail,
+          mobile: sp.studentMobile,
+          password: 'student',
+        };
+      }
+    }
+    
+    // Only expose scheduled/active exams that are assigned to this student.
     const availableExams = cdcExams.filter((exam) => {
       if (!foundStudent) return false;
+      // Draft & Cancelled exams are not published, so students must not see them.
+      if (exam.status === 'Draft' || exam.status === 'Cancelled') return false;
       return exam.assignments.some((a) => {
-        const deptMatches = normalize(a.department) === normalize(foundStudent.department);
-        const yearMatches = normalize(a.year) === normalize(foundStudent.year);
+        const deptMatches = normalize(a.department) === normalize(foundStudent!.department);
+        const yearMatches = normalize(a.year) === normalize(foundStudent!.year);
         if (!deptMatches || !yearMatches) return false;
-        // If specific sections are set on the assignment, the student's section must be included.
+        // If specific sections are set on the assignment, the student's section
+        // must be included — unless the student has no section recorded, in which
+        // case a newly added student must still see the exam.
         if (a.sections && a.sections.length > 0) {
-          return a.sections.some((sec) => normalize(sec) === normalize(foundStudent.section));
+          if (!foundStudent!.section || !foundStudent!.section.trim()) return true;
+          return a.sections.some((sec) => normalize(sec) === normalize(foundStudent!.section));
         }
         // If specific register numbers are set, the student must be listed.
         if (a.studentRegisterNumbers && a.studentRegisterNumbers.length > 0) {
-          return a.studentRegisterNumbers.some((r) => normalize(r) === normalize(foundStudent.registerNumber));
+          return a.studentRegisterNumbers.some((r) => normalize(r) === normalize(foundStudent!.registerNumber));
         }
         return true;
       });
@@ -462,14 +523,26 @@ export const StudentExamView: React.FC = () => {
     return <WebcamVerification onVerified={handleWebcamVerified} onCancel={() => { setShowWebcam(false); setSelectedExam(null); }} studentName={student.name} />;
   }
 
-  if (submitted && attempt) {
+  // Show results both right after an exam is submitted AND when a student
+  // opens "View Result" on an already-completed exam. We read the authoritative
+  // attempt from context (which carries the computed score/correct/wrong/…)
+  // so the figures always reflect the latest submission, instead of relying on
+  // the in-component `attempt` snapshot (which has no evaluated score).
+  if (viewResultAttempt || (submitted && attempt)) {
+    const attemptToShow =
+      viewResultAttempt ||
+      (selectedExam && student
+        ? getAttemptByExamAndStudent(selectedExam.id, student.registerNumber)
+        : undefined) ||
+      attempt;
+
     const result = {
-      score: attempt.score || 0,
-      correct: attempt.correctCount || 0,
-      wrong: attempt.wrongCount || 0,
-      unanswered: attempt.unansweredCount || 0,
-      percentage: attempt.percentage || 0,
-      accuracy: attempt.accuracy || 0,
+      score: attemptToShow?.score || 0,
+      correct: attemptToShow?.correctCount || 0,
+      wrong: attemptToShow?.wrongCount || 0,
+      unanswered: attemptToShow?.unansweredCount || 0,
+      percentage: attemptToShow?.percentage || 0,
+      accuracy: attemptToShow?.accuracy || 0,
     };
 
     return (
@@ -519,7 +592,7 @@ export const StudentExamView: React.FC = () => {
                 <p className="text-xs text-slate-500">Accuracy</p>
               </div>
             </div>
-            <button onClick={() => { setSelectedExam(null); setSubmitted(false); setAttempt(null); }} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm">
+            <button onClick={() => { setSelectedExam(null); setSubmitted(false); setAttempt(null); setViewResultAttempt(null); }} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm">
               Back to Exams
             </button>
           </div>

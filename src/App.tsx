@@ -45,6 +45,13 @@ const MainContent: React.FC = () => {
       return;
     }
 
+    // CDC Dashboard for HOD (admin), Principal, and the CDC Coordinator.
+    const isCdcCoordinatorUser = currentUser.role === 'staff' && currentUser.coordinatorRole === 'CDC Coordinator';
+    if (activeTab === 'cdc' && currentUser.role !== 'principal' && currentUser.role !== 'admin' && !isCdcCoordinatorUser) {
+      setActiveTab('dashboard');
+      return;
+    }
+
     if (isStaffUser) {
       const hodOnlyTabs = ['staff', 'observations', 'monitoring', 'daily_report', 'mentor_mapping'];
 
@@ -60,9 +67,13 @@ const MainContent: React.FC = () => {
         return;
       }
 
-      // CDC tab only accessible if CDC Coordinator
-      if (activeTab === 'cdc' && currentUser.coordinatorRole !== 'CDC Coordinator') {
-        setActiveTab('dashboard');
+      // CDC Coordinator does not use the Command/Common Dashboard,
+      // Mentor-Mentee Mapping, Student Attendance Today, or IQAC modules.
+      if (
+        currentUser.coordinatorRole === 'CDC Coordinator' &&
+        ['dashboard', 'mentor_mapping', 'student_attendance', 'iqac_ccm', 'iqac_lesson_plan'].includes(activeTab)
+      ) {
+        setActiveTab('cdc_exams');
         return;
       }
 

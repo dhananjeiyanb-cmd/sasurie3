@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { useCdc } from '../context/CdcContext';
+import { useApp } from '../context/AppContext';
 import { DEPARTMENTS } from '../types';
-import { CdcQuestion, CdcExam, QuestionCategory, DifficultyLevel } from '../types/cdc';
+import { CdcQuestion, CdcExam, CdcExamAssignment, QuestionCategory, DifficultyLevel } from '../types/cdc';
 
 const CDC_YEAR_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+const CDC_ACADEMIC_YEARS = ['2024-2025', '2025-2026', '2026-2027', '2027-2028'];
 import {
   Plus,
   Trash2,
@@ -21,6 +24,9 @@ import {
   AlertTriangle,
   Timer,
   CheckCircle2,
+  FileSpreadsheet,
+  RefreshCw,
+  Filter,
 } from 'lucide-react';
 
 export const CdcExamManagementView: React.FC = () => {
@@ -34,6 +40,8 @@ export const CdcExamManagementView: React.FC = () => {
     deleteExam,
     addStudent,
   } = useCdc();
+  
+  const { skillBankStudents } = useApp();
 
   const [activeTab, setActiveTab] = useState<'exams' | 'questions' | 'students'>('exams');
 
@@ -49,10 +57,26 @@ export const CdcExamManagementView: React.FC = () => {
   const [examNegMarks, setExamNegMarks] = useState(0.25);
   const [examPassing, setExamPassing] = useState(4);
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
-  const [examDept, setExamDept] = useState(DEPARTMENTS[0]);
-  const [examYear, setExamYear] = useState(CDC_YEAR_OPTIONS[0]);
-  const [examBatch, setExamBatch] = useState('');
-  const [examSections, setExamSections] = useState<string>('');
+  const [examAssignments, setExamAssignments] = useState<CdcExamAssignment[]>([
+    { department: DEPARTMENTS[0], year: CDC_YEAR_OPTIONS[0], batch: '', sections: [] },
+  ]);
+
+  const [studentDeptFilter, setStudentDeptFilter] = useState('All Departments');
+  const [studentYearFilter, setStudentYearFilter] = useState('All Years');
+
+  const resetExamForm = () => {
+    setEditingExamId(null);
+    setExamTitle('');
+    setExamDesc('');
+    setExamDate('');
+    setExamTime('');
+    setExamDuration(60);
+    setExamTotalMarks(10);
+    setExamNegMarks(0.25);
+    setExamPassing(4);
+    setSelectedQuestions([]);
+    setExamAssignments([{ department: DEPARTMENTS[0], year: CDC_YEAR_OPTIONS[0], batch: '', sections: [] }]);
+  };
 
   // Question form state
   const [showQForm, setShowQForm] = useState(false);
@@ -65,6 +89,229 @@ export const CdcExamManagementView: React.FC = () => {
   const [qCorrect, setQCorrect] = useState(0);
   const [qMarks, setQMarks] = useState(1);
   const [qNegMarks, setQNegMarks] = useState(0.25);
+
+  // Student import from SkillBank state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importDeptFilter, setImportDeptFilter] = useState('');
+  const [importYearFilter, setImportYearFilter] = useState('');
+  
+  // Filter students from skillBank based on department and year
+  const filteredSkillBankStudents = useMemo(() => {
+    return skillBankStudents.filter(s => {
+      const sp = s.studentProfile;
+      const deptMatch = !importDeptFilter || sp.department === importDeptFilter;
+      const yearMatch = !importYearFilter || (sp.academicYear || sp.batch) === importYearFilter;
+      return deptMatch && yearMatch;
+    });
+  }, [skillBankStudents, importDeptFilter, importYearFilter]);
+
+  // Get unique departments and years from skillBank
+  const availableDepartments = useMemo(() => {
+    const depts = new Set(skillBankStudents.map(s => s.studentProfile.department));
+    return Array.from(depts).filter(Boolean);
+  }, [skillBankStudents]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set(skillBankStudents.map(s => s.studentProfile.academicYear || s.studentProfile.batch));
+    return Array.from(years).filter(Boolean);
+  }, [skillBankStudents]);
+
+  const availableStudentDepartments = useMemo(() => {
+    const departments = new Set(cdcStudents.map((s) => s.department));
+    return ['All Departments', ...Array.from(departments).sort()];
+  }, [cdcStudents]);
+
+  const availableStudentYears = useMemo(() => {
+    const years = new Set(cdcStudents.map((s) => s.year));
+    return ['All Years', ...Array.from(years).sort()];
+  }, [cdcStudents]);
+
+  const filteredCdcStudents = useMemo(() => {
+    return cdcStudents.filter((s) => {
+      const departmentMatches = studentDeptFilter === 'All Departments' || s.department === studentDeptFilter;
+      const yearMatches = studentYearFilter === 'All Years' || s.year === studentYearFilter;
+      return departmentMatches && yearMatches;
+    });
+  }, [cdcStudents, studentDeptFilter, studentYearFilter]);
+
+  const updateExamAssignment = (index: number, field: keyof CdcExamAssignment, value: string) => {
+    setExamAssignments((prev) =>
+      prev.map((assignment, idx) =>
+        idx === index ? { ...assignment, [field]: field === 'sections' ? value.split(',').map((s) => s.trim()).filter(Boolean) : value } : assignment
+      )
+    );
+  };
+
+  const addExamAssignment = () => {
+    setExamAssignments((prev) => [
+      ...prev,
+      { department: DEPARTMENTS[0], year: CDC_YEAR_OPTIONS[0], batch: '', sections: [] },
+    ]);
+  };
+
+  const removeExamAssignment = (index: number) => {
+    setExamAssignments((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleImportStudents = () => {
+    const studentsToImport = filteredSkillBankStudents.map(s => {
+      const sp = s.studentProfile;
+      return {
+        registerNumber: sp.registerNumber,
+        name: sp.studentName,
+        department: sp.department,
+        year: sp.academicYear || '',
+        section: sp.section,
+        batch: sp.batch,
+        email: sp.studentEmail,
+        mobile: sp.studentMobile,
+        password: 'student',
+      };
+    });
+    
+    // Add each student to CDC (skip if already exists)
+    let importedCount = 0;
+    studentsToImport.forEach(student => {
+      const exists = cdcStudents.some(s => s.registerNumber === student.registerNumber);
+      if (!exists) {
+        addStudent(student);
+        importedCount++;
+      }
+    });
+    
+    alert(`Successfully imported ${importedCount} students to CDC database!`);
+    setShowImportModal(false);
+  };
+
+  const downloadQuestionsTemplate = () => {
+    const headers = ['Category', 'Subject', 'Topic', 'Difficulty', 'Question Text', 'Option 1', 'Option 2', 'Option 3', 'Option 4', 'Correct Answer (1-4)', 'Marks', 'Negative Marks'];
+    const sampleRow = ['CSE Cluster', 'Data Structures', 'Arrays', 'Medium', 'What is the time complexity of accessing an element in an array?', 'O(1)', 'O(n)', 'O(log n)', 'O(n²)', '1', '1', '0.25'];
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Questions');
+    XLSX.writeFile(workbook, 'cdc_questions_template.xlsx');
+  };
+
+  const downloadStudentMappingTemplate = () => {
+    const headers = ['RegisterNumber', 'StudentName', 'Department', 'AcademicYear', 'Batch', 'Section', 'MentorStaffId', 'MentorFaculty', 'HodDepartment', 'YearGroup'];
+    const sampleRow = ['732723243001', 'Aakash V', 'Artificial Intelligence & Data Science (AI & DS)', '2025-2026', '2025', 'A', 'STF001', 'Dr. M. Kaviyarasu', 'AI & DS', '2nd Year'];
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, sampleRow]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
+    XLSX.writeFile(workbook, 'cdc_student_mapping_template.xlsx');
+  };
+
+  const parseExcelFile = (file: File) => {
+    return new Promise<any[]>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const data = event.target?.result;
+        if (!data) {
+          reject(new Error('No file data available.'));
+          return;
+        }
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheet];
+        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: '' });
+        resolve(rows);
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const handleQuestionExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const rows = await parseExcelFile(file);
+      let importedCount = 0;
+      rows.forEach((row) => {
+        const category = String(row['Category'] || row['category'] || '').trim();
+        const subject = String(row['Subject'] || row['subject'] || '').trim();
+        const topic = String(row['Topic'] || row['topic'] || '').trim();
+        const difficulty = String(row['Difficulty'] || row['difficulty'] || 'Medium').trim() as DifficultyLevel;
+        const questionText = String(row['Question Text'] || row['questionText'] || row['question text'] || '').trim();
+        const options = [
+          String(row['Option 1'] || row['option1'] || row['Option1'] || row['option 1'] || '').trim(),
+          String(row['Option 2'] || row['option2'] || row['Option2'] || row['option 2'] || '').trim(),
+          String(row['Option 3'] || row['option3'] || row['Option3'] || row['option 3'] || '').trim(),
+          String(row['Option 4'] || row['option4'] || row['Option4'] || row['option 4'] || '').trim(),
+        ];
+        const correctAnswer = Number(row['Correct Answer (1-4)'] || row['CorrectAnswer'] || row['correctAnswer'] || row['correct answer'] || row['Correct Answer'] || 1);
+        const marks = Number(row['Marks'] || row['marks'] || 1);
+        const negativeMarks = Number(row['Negative Marks'] || row['negativeMarks'] || row['negative marks'] || 0.25);
+
+        if (!category || !subject || !topic || !questionText || options.some((opt) => !opt) || ![1, 2, 3, 4].includes(correctAnswer)) {
+          return;
+        }
+
+        addQuestion({
+          category: category as QuestionCategory,
+          subject,
+          topic,
+          difficulty: ['Easy', 'Medium', 'Hard'].includes(difficulty) ? (difficulty as DifficultyLevel) : 'Medium',
+          questionText,
+          options,
+          correctOptionIndex: correctAnswer - 1,
+          marks: marks || 1,
+          negativeMarks: negativeMarks || 0,
+        });
+        importedCount++;
+      });
+      alert(`Imported ${importedCount} questions from the file.`);
+    } catch (error) {
+      console.error('Failed to import questions:', error);
+      alert('Failed to parse the uploaded file. Use the sample questions template and try again.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleStudentExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const rows = await parseExcelFile(file);
+      let importedCount = 0;
+      rows.forEach((row) => {
+        const registerNumber = String(row['RegisterNumber'] || row['registerNumber'] || row['Register Number'] || '').trim();
+        const name = String(row['StudentName'] || row['studentName'] || row['Student Name'] || '').trim();
+        const department = String(row['Department'] || row['department'] || '').trim();
+        const year = String(row['AcademicYear'] || row['academicYear'] || row['Year'] || '').trim();
+        const section = String(row['Section'] || row['section'] || '').trim();
+        const batch = String(row['Batch'] || row['batch'] || '').trim();
+
+        if (!registerNumber || !name || !department || !year) {
+          return;
+        }
+
+        const exists = cdcStudents.some((s) => s.registerNumber === registerNumber);
+        if (!exists) {
+          addStudent({
+            registerNumber,
+            name,
+            department,
+            year,
+            section,
+            batch,
+            password: 'student',
+          });
+          importedCount++;
+        }
+      });
+
+      alert(`Imported ${importedCount} students from the file.`);
+    } catch (error) {
+      console.error('Failed to import students:', error);
+      alert('Failed to parse the uploaded file. Use the sample student mapping template and try again.');
+    } finally {
+      e.target.value = '';
+    }
+  };
 
   const handleSaveExam = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,14 +331,12 @@ export const CdcExamManagementView: React.FC = () => {
       negativeMarksPerWrong: examNegMarks,
       passingMarks: examPassing,
       questionIds: selectedQuestions,
-      assignments: [
-        {
-          department: examDept,
-          year: examYear,
-          batch: examBatch,
-          sections: examSections ? examSections.split(',').map((s) => s.trim()) : undefined,
-        },
-      ],
+      assignments: examAssignments.map((assignment) => ({
+        department: assignment.department,
+        year: assignment.year,
+        batch: assignment.batch,
+        sections: assignment.sections && assignment.sections.length > 0 ? assignment.sections : undefined,
+      })),
       createdBy: 'CDC Coordinator',
     };
 
@@ -102,12 +347,7 @@ export const CdcExamManagementView: React.FC = () => {
     }
 
     setShowExamForm(false);
-    setEditingExamId(null);
-    setExamTitle('');
-    setExamDesc('');
-    setExamDate('');
-    setExamTime('');
-    setSelectedQuestions([]);
+    resetExamForm();
   };
 
   const handleCreateQuestion = (e: React.FormEvent) => {
@@ -146,37 +386,41 @@ export const CdcExamManagementView: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">CDC Exam Management</h1>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActiveTab('exams')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold ${activeTab === 'exams' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-            >
-              Exams
-            </button>
-            <button
-              onClick={() => setActiveTab('questions')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold ${activeTab === 'questions' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-            >
-              Questions
-            </button>
-            <button
-              onClick={() => setActiveTab('students')}
-              className={`px-4 py-2 rounded-xl text-sm font-bold ${activeTab === 'students' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
-            >
-              Students
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setActiveTab('exams')}
+                className={`px-4 py-2 rounded-xl text-sm font-bold ${activeTab === 'exams' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+              >
+                Exams
+              </button>
+              <button
+                onClick={() => setActiveTab('questions')}
+                className={`px-4 py-2 rounded-xl text-sm font-bold ${activeTab === 'questions' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+              >
+                Questions
+              </button>
+              <button
+                onClick={() => setActiveTab('students')}
+                className={`px-4 py-2 rounded-xl text-sm font-bold ${activeTab === 'students' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800'}`}
+              >
+                Students
+              </button>
+            </div>
           </div>
         </div>
-
         {activeTab === 'questions' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <p className="text-sm text-slate-500">{cdcQuestions.length} questions in bank</p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <label className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold cursor-pointer hover:bg-slate-300 flex items-center gap-2">
-                  <Upload className="w-4 h-4" /> Upload Excel
-                  <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelUpload} />
+                  <Upload className="w-4 h-4" /> Upload Questions
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleQuestionExcelUpload} />
                 </label>
+                <button onClick={downloadQuestionsTemplate} className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-300 flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Download Sample Template
+                </button>
                 <button onClick={() => setShowQForm(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold flex items-center gap-2">
                   <Plus className="w-4 h-4" /> Add Question
                 </button>
@@ -298,7 +542,7 @@ export const CdcExamManagementView: React.FC = () => {
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <p className="text-sm text-slate-500">{cdcExams.length} exams</p>
-              <button onClick={() => setShowExamForm(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold flex items-center gap-2">
+              <button onClick={() => { resetExamForm(); setShowExamForm(true); }} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold flex items-center gap-2">
                 <Plus className="w-4 h-4" /> Create Exam
               </button>
             </div>
@@ -307,7 +551,7 @@ export const CdcExamManagementView: React.FC = () => {
               <form onSubmit={handleSaveExam} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">{editingExamId ? 'Edit Exam' : 'Create New Exam'}</h3>
-                  <button type="button" onClick={() => { setShowExamForm(false); setEditingExamId(null); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
+                  <button type="button" onClick={() => { setShowExamForm(false); resetExamForm(); }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
@@ -342,25 +586,46 @@ export const CdcExamManagementView: React.FC = () => {
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Passing Marks</label>
                     <input type="number" value={examPassing} onChange={(e) => setExamPassing(Number(e.target.value))} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm" />
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Department</label>
-                    <select value={examDept} onChange={(e) => setExamDept(e.target.value)} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm">
-                      {DEPARTMENTS.map((d) => (
-                        <option key={d} value={d}>{d}</option>
+                  <div className="sm:col-span-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Exam Assignments</label>
+                      <button type="button" onClick={addExamAssignment} className="text-xs text-blue-600 hover:text-blue-500 font-semibold">+ Add Mapping</button>
+                    </div>
+                    <div className="space-y-4">
+                      {examAssignments.map((assignment, idx) => (
+                        <div key={`assignment-${idx}`} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Department</label>
+                            <select value={assignment.department} onChange={(e) => updateExamAssignment(idx, 'department', e.target.value)} required className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm">
+                              {DEPARTMENTS.map((d) => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Year</label>
+                            <select value={assignment.year} onChange={(e) => updateExamAssignment(idx, 'year', e.target.value)} required className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm">
+                              {CDC_YEAR_OPTIONS.map((y) => (
+                                <option key={y} value={y}>{y}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Batch</label>
+                            <input type="text" value={assignment.batch} onChange={(e) => updateExamAssignment(idx, 'batch', e.target.value)} className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Sections</label>
+                            <div className="flex gap-2 items-center">
+                              <input type="text" value={assignment.sections?.join(', ') || ''} onChange={(e) => updateExamAssignment(idx, 'sections', e.target.value)} placeholder="A, B" className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm" />
+                              {examAssignments.length > 1 && (
+                                <button type="button" onClick={() => removeExamAssignment(idx)} className="px-3 py-2 bg-red-100 dark:bg-red-950 text-red-700 rounded-xl text-xs font-semibold">Unmap</button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Year</label>
-                    <select value={examYear} onChange={(e) => setExamYear(e.target.value)} required className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm">
-                      {CDC_YEAR_OPTIONS.map((y) => (
-                        <option key={y} value={y}>{y}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Batch</label>
-                    <input type="text" value={examBatch} onChange={(e) => setExamBatch(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-sm" />
+                    </div>
                   </div>
                 </div>
 
@@ -424,12 +689,16 @@ export const CdcExamManagementView: React.FC = () => {
                         setExamNegMarks(exam.negativeMarksPerWrong);
                         setExamPassing(exam.passingMarks);
                         setSelectedQuestions(exam.questionIds);
-                        const savedDept = exam.assignments[0]?.department;
-                        const savedYear = exam.assignments[0]?.year;
-                        setExamDept((savedDept && (DEPARTMENTS as readonly string[]).includes(savedDept)) ? savedDept : DEPARTMENTS[0]);
-                        setExamYear((savedYear && CDC_YEAR_OPTIONS.includes(savedYear)) ? savedYear : CDC_YEAR_OPTIONS[0]);
-                        setExamBatch(exam.assignments[0]?.batch || '');
-                        setExamSections(exam.assignments[0]?.sections?.join(',') || '');
+                        setExamAssignments(
+                          exam.assignments.length > 0
+                            ? exam.assignments.map((assignment) => ({
+                                department: assignment.department,
+                                year: assignment.year,
+                                batch: assignment.batch || '',
+                                sections: assignment.sections || [],
+                              }))
+                            : [{ department: DEPARTMENTS[0], year: CDC_YEAR_OPTIONS[0], batch: '', sections: [] }]
+                        );
                         setShowExamForm(true);
                       }} className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg">
                         <Edit3 className="w-4 h-4" />
@@ -452,19 +721,44 @@ export const CdcExamManagementView: React.FC = () => {
 
         {activeTab === 'students' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <p className="text-sm text-slate-500">{cdcStudents.length} students</p>
-              <button onClick={() => {
-                const name = prompt('Student Name:');
-                const reg = prompt('Register Number:');
-                const dept = prompt('Department:');
-                const year = prompt('Year:');
-                const section = prompt('Section:');
-                const batch = prompt('Batch:');
-                if (name && reg && dept && year) addStudent({ name, registerNumber: reg, department: dept, year, section: section || '', batch: batch || '', password: 'student' });
-              }} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold flex items-center gap-2">
-                <Plus className="w-4 h-4" /> Add Student
-              </button>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-slate-500">Showing {filteredCdcStudents.length} of {cdcStudents.length} students</p>
+                <select value={studentDeptFilter} onChange={(e) => setStudentDeptFilter(e.target.value)} className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-300">
+                  {availableStudentDepartments.map((dept) => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+                <select value={studentYearFilter} onChange={(e) => setStudentYearFilter(e.target.value)} className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-300">
+                  {availableStudentYears.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => { setStudentDeptFilter('All Departments'); setStudentYearFilter('All Years'); }} className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white">Reset Filters</button>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <label className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold cursor-pointer hover:bg-slate-300 flex items-center gap-2">
+                  <Upload className="w-4 h-4" /> Upload Student Mapping
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleStudentExcelUpload} />
+                </label>
+                <button onClick={downloadStudentMappingTemplate} className="px-4 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-300 flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Download Sample Excel
+                </button>
+                <button onClick={handleImportStudents} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4" /> Import from SkillBank
+                </button>
+                <button onClick={() => {
+                  const name = prompt('Student Name:');
+                  const reg = prompt('Register Number:');
+                  const dept = prompt('Department:');
+                  const year = prompt('Year:');
+                  const section = prompt('Section:');
+                  const batch = prompt('Batch:');
+                  if (name && reg && dept && year) addStudent({ name, registerNumber: reg, department: dept, year, section: section || '', batch: batch || '', password: 'student' });
+                }} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold flex items-center gap-2">
+                  <Plus className="w-4 h-4" /> Add Student
+                </button>
+              </div>
             </div>
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
               <table className="w-full text-sm">
@@ -478,7 +772,7 @@ export const CdcExamManagementView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {cdcStudents.map((s) => (
+                  {filteredCdcStudents.map((s) => (
                     <tr key={s.id} className="hover:bg-slate-50 dark:hover:bg-slate-950/50">
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{s.registerNumber}</td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{s.name}</td>

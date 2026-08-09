@@ -61,5 +61,25 @@ service cloud.firestore {
     match /settings/{docId} {
       allow read, write: if true;
     }
+
+    match /cdcQuestions/{docId} {
+      allow read, write: if true;
+    }
+
+    match /cdcExams/{docId} {
+      allow read, write: if true;
+    }
+
+    match /cdcStudents/{docId} {
+      allow read, write: if true;
+    }
+
+    match /cdcExamAttempts/{docId} {
+      allow read, write: if true;
+    }
+
+    match /cdcSuspiciousLogs/{docId} {
+      allow read, write: if true;
+    }
   }
 }

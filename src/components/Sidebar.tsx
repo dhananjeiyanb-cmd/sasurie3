@@ -40,8 +40,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const pendingCount = taskList.filter((t) => t.status === 'Pending' || t.status === 'In Progress' || t.status === 'Submitted').length;
 
   const [iqacOpen, setIqacOpen] = useState(false);
+  const [cdcOpen, setCdcOpen] = useState(false);
 
   const executiveRoles = ['principal', 'secretary', 'principal_pa', 'secretary_pa', 'admin'];
+  const isCdcCoordinator = currentUser?.role === 'staff' && currentUser?.coordinatorRole === 'CDC Coordinator';
+  const canViewCdc = currentUser?.role === 'principal' || currentUser?.role === 'admin';
+  // CDC group is shown to executive roles and staff (role-based); the
+  // "Dashboard" sub-item stays HOD/Principal only.
+  const canSeeCdc = currentUser?.role ? [...executiveRoles, 'staff'].includes(currentUser.role) : false;
 
   const navItems = [
     {
@@ -111,22 +117,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       badgeColor: currentUser?.coordinatorRole === 'CDC Coordinator' || currentUser?.coordinatorRole === 'Placement Coordinator' ? 'bg-indigo-600 text-white font-bold' : 'bg-amber-500 text-slate-950 font-bold',
     },
     {
-      id: 'cdc',
-      label: 'CDC Dashboard',
-      icon: BarChart3,
-      roles: [...executiveRoles, 'staff'],
-      badge: currentUser?.coordinatorRole === 'CDC Coordinator' ? 'CDC' : undefined,
-      badgeColor: 'bg-indigo-600 text-white font-bold',
-    },
-    {
-      id: 'cdc_exams',
-      label: 'CDC Exam Management',
-      icon: BookOpen,
-      roles: [...executiveRoles, 'staff'],
-      badge: currentUser?.coordinatorRole === 'CDC Coordinator' ? 'Exams' : undefined,
-      badgeColor: 'bg-blue-600 text-white font-bold',
-    },
-        {
       id: 'faculty_kpi',
       label: 'My KPI Dashboard',
       icon: Award,
@@ -170,6 +160,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         return false;
       }
       if (item.id === 'classes' && currentUser.coordinatorRole !== 'Timetable Coordinator') {
+        return false;
+      }
+      // CDC Coordinator does not need the Command/Common Dashboard,
+      // Mentor-Mentee Mapping, or Student Attendance Today.
+      if (isCdcCoordinator && ['dashboard', 'mentor_mapping', 'student_attendance'].includes(item.id)) {
         return false;
       }
     }
@@ -268,8 +263,64 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             );
           })}
 
-        {/* IQAC Module */}
-          <div className="mt-4 mb-2">
+        {/* CDC Module (collapsible group, like IQAC) */}
+          {canSeeCdc && (
+          <div className="mt-2 mb-2">
+            <button
+              onClick={() => setCdcOpen(!cdcOpen)}
+              className={`w-full flex items-center justify-between px-6 py-3 text-xs font-semibold transition-colors group ${
+                cdcOpen || activeTab === 'cdc' || activeTab === 'cdc_exams'
+                  ? 'bg-slate-800 text-blue-400'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <Rocket className={`w-4 h-4 shrink-0 ${cdcOpen || activeTab === 'cdc' || activeTab === 'cdc_exams' ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                <span className="truncate">CDC</span>
+              </div>
+              {currentUser?.coordinatorRole === 'CDC Coordinator' && (
+                <span className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold rounded-md">Coordinator</span>
+              )}
+              <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${cdcOpen || activeTab === 'cdc' || activeTab === 'cdc_exams' ? 'rotate-180' : ''}`} />
+            </button>
+
+            {(cdcOpen || activeTab === 'cdc' || activeTab === 'cdc_exams') && (
+              <div className="ml-4 border-l border-slate-800">
+                <button
+                  onClick={() => {
+                    setActiveTab('cdc_exams');
+                    onClose();
+                  }}
+                  className={`w-full flex items-center gap-3 pl-4 pr-3 py-2.5 text-xs font-medium transition-colors ${
+                    activeTab === 'cdc_exams' ? 'text-blue-400 border-l-2 border-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Exam Management</span>
+                </button>
+
+                {canViewCdc || isCdcCoordinator ? (
+                  <button
+                    onClick={() => {
+                      setActiveTab('cdc');
+                      onClose();
+                    }}
+                    className={`w-full flex items-center gap-3 pl-4 pr-3 py-2.5 text-xs font-medium transition-colors ${
+                      activeTab === 'cdc' ? 'text-blue-400 border-l-2 border-blue-400' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <BarChart3 className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Dashboard</span>
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
+          )}
+
+          {/* IQAC Module (for Principal, HoDs & Staff — shown below CDC) */}
+          {!isCdcCoordinator && (
+          <div className="mt-2 mb-2">
             <button
               onClick={() => setIqacOpen(!iqacOpen)}
               className={`w-full flex items-center justify-between px-6 py-3 text-xs font-semibold transition-colors group ${
@@ -317,29 +368,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </div>
             )}
           </div>
-
-          {/* CDC Module */}
-          <div className="mt-2 mb-2">
-            <button
-              onClick={() => {
-                setActiveTab('cdc');
-                onClose();
-              }}
-              className={`w-full flex items-center justify-between px-6 py-3 text-xs font-semibold transition-colors group ${
-                activeTab === 'cdc'
-                  ? 'bg-slate-800 text-blue-400'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Rocket className={`w-4 h-4 shrink-0 ${activeTab === 'cdc' ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
-                <span className="truncate">CDC</span>
-              </div>
-              {currentUser?.coordinatorRole === 'CDC Coordinator' && (
-                <span className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold rounded-md">Coordinator</span>
-              )}
-            </button>
-          </div>
+          )}
 
           {visibleNavItems.length > 6 && (
             <>

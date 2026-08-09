@@ -1,0 +1,6 @@
+RegisterNumber,StudentName,Department,AcademicYear,Batch,Section,MentorStaffId,MentorFaculty,HodDepartment,YearGroup
+732723243001,Aakash V,Artificial Intelligence & Data Science (AI & DS),2025-2026,2025,A,STF001,Dr. M. Kaviyarasu,AI & DS,2nd Year
+732723243002,Bhavani S,Artificial Intelligence & Data Science (AI & DS),2025-2026,2025,B,STF001,Dr. M. Kaviyarasu,AI & DS,2nd Year
+732723243003,Charan P,Computer Science & Engineering (CSE),2024-2025,2024,A,STF002,Prof. K. Deepa,CSE,1st Year
+732723243004,Dhanya R,Computer Science & Engineering (CSE),2024-2025,2024,B,STF002,Prof. K. Deepa,CSE,1st Year
+732723243005,Esha N,Information Technology (IT),2026-2027,2026,A,STF003,Prof. N. Tech,IT,3rd Year

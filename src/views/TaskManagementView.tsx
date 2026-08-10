@@ -68,9 +68,20 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
   const [workspaceModalTask, setWorkspaceModalTask] = useState<Task | null>(null);
 
   // Split View State (for staff)
+  const [assignedByFilter, setAssignedByFilter] = useState<'all'|'principal'|'hod'|'others'>('all');
   const isStaffUser = currentUser?.role === 'staff';
   const [isSplitView, setIsSplitView] = useState(isStaffUser);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  // Tabs & Calendar state
+  const [activeTab, setActiveTab] = useState<'tasks' | 'calendar'>('tasks');
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
+  // Inline reschedule state for calendar todos
+  const [rescheduleTaskId, setRescheduleTaskId] = useState<string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>('');
+  const [rescheduleAssignee, setRescheduleAssignee] = useState<string>('');
 
   // Reassign modal state
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
@@ -356,6 +367,11 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
       if (!isDeptTask) return false;
     }
 
+    // Assigned-by filter: Principal / HOD / Others
+    if (assignedByFilter === 'principal' && t.assignedByRole !== 'principal') return false;
+    if (assignedByFilter === 'hod' && t.assignedByRole !== 'hod') return false;
+    if (assignedByFilter === 'others' && (t.assignedByRole === 'principal' || t.assignedByRole === 'hod')) return false;
+
     const q = (search || filterState.searchQuery).toLowerCase();
     const matchesSearch =
       t.title.toLowerCase().includes(q) ||
@@ -389,6 +405,9 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
 
     return matchesSearch && matchesStatus && matchesPriority && matchesStaff && matchesDate;
   });
+
+  const tasksPrincipal = filteredTasks.filter((t) => t.assignedByRole === 'principal');
+  const tasksHod = filteredTasks.filter((t) => t.assignedByRole === 'hod');
 
   return (
     <div className="space-y-6">
@@ -441,6 +460,16 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
             </button>
           )}
         </div>
+      </div>
+
+      {/* Tabs: Tasks / Calendar */}
+      <div className="flex items-center gap-2">
+        <button onClick={() => setActiveTab('tasks')} className={`px-3 py-2 rounded-xl text-sm font-semibold ${/* @ts-ignore */ activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'}`}>
+          Tasks
+        </button>
+        <button onClick={() => setActiveTab('calendar')} className={`px-3 py-2 rounded-xl text-sm font-semibold ${/* @ts-ignore */ activeTab === 'calendar' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200'}`}>
+          Calendar
+        </button>
       </div>
 
       {/* Filter Controls Bar */}
@@ -515,6 +544,15 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
           </div>
         </div>
 
+        {/* Assigned-by quick filters */}
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60 overflow-x-auto text-xs">
+          <span className="text-slate-400 font-medium shrink-0">Assigned By:</span>
+          <button onClick={() => setAssignedByFilter('all')} className={`px-3 py-1 rounded-xl text-xs ${assignedByFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300'}`}>All ({taskList.length})</button>
+          <button onClick={() => setAssignedByFilter('principal')} className={`px-3 py-1 rounded-xl text-xs ${assignedByFilter === 'principal' ? 'bg-amber-600 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300'}`}>Principal ({taskList.filter(t => t.assignedByRole === 'principal').length}) <span className="ml-1 text-[11px] text-slate-400">({taskList.filter(t => t.assignedByRole === 'principal' && t.status !== 'Completed' && t.status !== 'Cancelled').length} pending)</span></button>
+          <button onClick={() => setAssignedByFilter('hod')} className={`px-3 py-1 rounded-xl text-xs ${assignedByFilter === 'hod' ? 'bg-emerald-600 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300'}`}>HOD ({taskList.filter(t => t.assignedByRole === 'hod').length}) <span className="ml-1 text-[11px] text-slate-400">({taskList.filter(t => t.assignedByRole === 'hod' && t.status !== 'Completed' && t.status !== 'Cancelled').length} pending)</span></button>
+          <button onClick={() => setAssignedByFilter('others')} className={`px-3 py-1 rounded-xl text-xs ${assignedByFilter === 'others' ? 'bg-slate-700 text-white' : 'bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300'}`}>Others ({taskList.filter(t => !t.assignedByRole || (t.assignedByRole !== 'principal' && t.assignedByRole !== 'hod')).length})</button>
+        </div>
+
         {/* Date Quick Filter Pills */}
         <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60 overflow-x-auto text-xs">
           <span className="text-slate-400 font-medium shrink-0">Timeframe:</span>
@@ -534,23 +572,140 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
         </div>
       </div>
 
-      {/* Task Cards Grid / Split View */}
-      {isStaffUser && isSplitView ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-320px)] min-h-[400px]">
-          {/* Left: Task List */}
-          <div className="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+      {/* Task Panels: Principal (left) & HOD (right) for Split View */}
+      {activeTab === 'calendar' ? (
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/80">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <button onClick={() => { const m = new Date(calendarMonth); m.setMonth(m.getMonth() - 1); setCalendarMonth(new Date(m)); }} className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-700">◀</button>
+              <div className="font-bold text-sm">{calendarMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' })}</div>
+              <button onClick={() => { const m = new Date(calendarMonth); m.setMonth(m.getMonth() + 1); setCalendarMonth(new Date(m)); }} className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-700">▶</button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setCalendarMonth(new Date()); setSelectedDate(todayStr); }} className="px-3 py-1 rounded-xl bg-blue-600 text-white text-xs">Today</button>
+            </div>
+          </div>
+
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-1 text-[12px]">
+            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+              <div key={d} className="text-center text-slate-500 font-medium">{d}</div>
+            ))}
+
+            {(() => {
+              const year = calendarMonth.getFullYear();
+              const month = calendarMonth.getMonth();
+              const firstDay = new Date(year, month, 1);
+              const lastDay = new Date(year, month + 1, 0);
+              const startOffset = firstDay.getDay();
+              const totalDays = lastDay.getDate();
+              const cells = [] as any[];
+
+              const userTasks = taskList.filter((t) => t.assignedToStaffId === currentUser?.staffId);
+              const tasksByDate: Record<string, any[]> = {};
+              userTasks.forEach((t) => {
+                const d = (t.targetDate || t.assignedDate || '').split('T')[0] || '';
+                if (!d) return;
+                tasksByDate[d] = tasksByDate[d] || [];
+                tasksByDate[d].push(t);
+              });
+
+              for (let i = 0; i < startOffset; i++) cells.push(null);
+              for (let d = 1; d <= totalDays; d++) {
+                const dateStr = new Date(year, month, d).toISOString().split('T')[0];
+                const dayTasks = tasksByDate[dateStr] || [];
+                cells.push({ d, dateStr, dayTasks });
+              }
+
+              while (cells.length % 7 !== 0) cells.push(null);
+
+              return cells.map((c, idx) => {
+                if (!c) return <div key={`empty-${idx}`} className="h-20 rounded-lg bg-transparent"></div>;
+                const isToday = c.dateStr === todayStr;
+                const isSelected = c.dateStr === selectedDate;
+                return (
+                  <button key={c.dateStr} onClick={() => setSelectedDate(c.dateStr)} className={`h-20 p-2 text-left rounded-lg transition-colors ${isSelected ? 'ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-950' : 'hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+                    <div className="flex items-center justify-between">
+                      <div className={`font-semibold text-sm ${isToday ? 'text-emerald-600' : 'text-slate-700 dark:text-slate-200'}`}>{c.d}</div>
+                      {c.dayTasks.length > 0 && <div className="text-[11px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">{c.dayTasks.length}</div>}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-500 truncate">
+                      {c.dayTasks.slice(0,2).map((t:any)=> t.title).join(', ')}{c.dayTasks.length>2? '…':''}
+                    </div>
+                  </button>
+                );
+              });
+            })()}
+          </div>
+
+          <div className="mt-4">
+            <h4 className="font-bold text-sm">Todos for {selectedDate}</h4>
+            <div className="mt-2 space-y-2">
+              {taskList.filter(t => t.assignedToStaffId === currentUser?.staffId && (t.targetDate === selectedDate || t.assignedDate === selectedDate)).length === 0 ? (
+                <div className="text-slate-500 text-xs">No todos for this date.</div>
+              ) : (
+                taskList.filter(t => t.assignedToStaffId === currentUser?.staffId && (t.targetDate === selectedDate || t.assignedDate === selectedDate)).map(t => (
+                  <div key={t.id} className="p-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-start justify-between">
+                    <div className="flex-1 pr-3">
+                      <div className="font-semibold text-sm">{t.title}</div>
+                      <div className="text-[11px] text-slate-500 mb-2">{t.description}</div>
+                      <div className="text-[11px] text-slate-400">Status: <strong className="text-slate-700 dark:text-slate-200">{t.status}</strong> • Due: <strong className="text-slate-700 dark:text-slate-200">{t.targetDate || t.assignedDate || '—'}</strong></div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-2">
+                      {rescheduleTaskId === t.id ? (
+                        <div className="flex items-center gap-2">
+                          <input type="date" value={rescheduleDate} onChange={(e) => setRescheduleDate(e.target.value)} className="px-2 py-1 border rounded-md text-sm" />
+                          {/* Allow supervisors (HOD/Principal) to reassign while rescheduling */}
+                          {(isHod || isPrincipal) && (
+                            <select value={rescheduleAssignee} onChange={(e) => setRescheduleAssignee(e.target.value)} className="px-2 py-1 border rounded-md text-sm">
+                              <option value="">Keep assignee</option>
+                              {availableStaffList.map(s => (
+                                <option key={s.id} value={s.id}>{s.facultyName} — {s.department}</option>
+                              ))}
+                            </select>
+                          )}
+                          <button onClick={async () => {
+                            if (!rescheduleDate) return;
+                            const updates: any = { targetDate: rescheduleDate };
+                            if ((isHod || isPrincipal) && rescheduleAssignee) {
+                              const staff = staffList.find(st => st.id === rescheduleAssignee);
+                              updates.assignedToStaffId = rescheduleAssignee;
+                              updates.assignedToName = staff ? `${staff.facultyName} (${staff.department})` : updates.assignedToName;
+                              updates.department = staff?.department || t.department;
+                            }
+                            await updateTask(t.id, updates);
+                            setRescheduleTaskId(null);
+                            setRescheduleDate('');
+                            setRescheduleAssignee('');
+                          }} className="px-3 py-1 rounded bg-emerald-600 text-white text-xs">Save</button>
+                          <button onClick={() => { setRescheduleTaskId(null); setRescheduleDate(''); setRescheduleAssignee(''); }} className="px-3 py-1 rounded bg-slate-100 dark:bg-slate-700 text-xs">Cancel</button>
+                        </div>
+                      ) : (
+                        <>
+                          <button onClick={() => { setRescheduleTaskId(t.id); setRescheduleDate((t.targetDate || t.assignedDate || selectedDate)); setRescheduleAssignee(t.assignedToStaffId || ''); }} className="px-3 py-1 rounded bg-amber-500 text-white text-xs">Reschedule</button>
+                          <button onClick={() => { setSelectedTaskId(t.id); }} className="px-3 py-1 rounded bg-slate-100 dark:bg-slate-700 text-xs">Open</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : isStaffUser && isSplitView ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[calc(100vh-320px)] min-h-[400px]">
+          {/* Principal Assigned Tasks */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
             <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-              <h3 className="font-bold text-xs text-slate-700 dark:text-slate-300">
-                My Tasks ({filteredTasks.length})
-              </h3>
+              <h3 className="font-bold text-xs text-slate-700 dark:text-slate-300">Principal Assigned ({tasksPrincipal.length})</h3>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {filteredTasks.length === 0 ? (
-                <div className="p-6 text-center text-slate-500 text-xs">
-                  No tasks found matching current filter criteria.
-                </div>
+              {tasksPrincipal.length === 0 ? (
+                <div className="p-6 text-center text-slate-500 text-xs">No Principal-assigned tasks.</div>
               ) : (
-                filteredTasks.map((task) => {
+                tasksPrincipal.map((task) => {
                   const isSelected = selectedTaskId === task.id;
                   return (
                     <button
@@ -563,24 +718,14 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                          {task.id}
-                        </span>
+                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{task.id}</span>
                         <TaskStatusBadge status={task.status} />
                       </div>
-                      <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate mb-1">
-                        {task.title}
-                      </h4>
+                      <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate mb-1">{task.title}</h4>
                       <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                        <span className="truncate">{task.assignedByName || 'System'}</span>
+                        <span className="truncate">{task.assignedByName || 'Principal'}</span>
                         <span className="shrink-0">Due: {task.targetDate}</span>
                       </div>
-                      {/* Delegation chain indicator */}
-                      {(task.assignedByRole === 'principal' || task.assignedByRole === 'hod') && (
-                        <div className="mt-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 inline-flex items-center gap-1">
-                          {task.assignedByRole === 'principal' ? '👑 Principal' : '🎓 HOD'} → You
-                        </div>
-                      )}
                     </button>
                   );
                 })
@@ -588,26 +733,62 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
             </div>
           </div>
 
-          {/* Right: Task Detail & Status Update */}
-          <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
-            {selectedTaskId && filteredTasks.find((t) => t.id === selectedTaskId) ? (
-              <TaskDetailPanel
-                task={filteredTasks.find((t) => t.id === selectedTaskId)!}
-                onUpdateStatus={(status, remarks, attachmentUrl, attachmentName) =>
-                  updateTaskStatus(selectedTaskId, status, remarks, attachmentUrl, attachmentName)
-                }
-                currentUser={currentUser}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center p-10 text-slate-500 text-xs">
-                <div className="text-center">
-                  <CheckSquare className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600" />
-                  <p className="font-semibold">Select a task from the list to view details</p>
-                  <p className="mt-1">Choose any task on the left to update its status or upload proof.</p>
-                </div>
-              </div>
-            )}
+          {/* HOD Assigned Tasks */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+            <div className="p-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+              <h3 className="font-bold text-xs text-slate-700 dark:text-slate-300">HOD Assigned ({tasksHod.length})</h3>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {tasksHod.length === 0 ? (
+                <div className="p-6 text-center text-slate-500 text-xs">No HOD-assigned tasks.</div>
+              ) : (
+                tasksHod.map((task) => {
+                  const isSelected = selectedTaskId === task.id;
+                  return (
+                    <button
+                      key={task.id}
+                      onClick={() => setSelectedTaskId(task.id)}
+                      className={`w-full text-left p-3 rounded-xl transition-all border ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 ring-1 ring-blue-400/40'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{task.id}</span>
+                        <TaskStatusBadge status={task.status} />
+                      </div>
+                      <h4 className="font-bold text-xs text-slate-900 dark:text-white truncate mb-1">{task.title}</h4>
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                        <span className="truncate">{task.assignedByName || 'HOD'}</span>
+                        <span className="shrink-0">Due: {task.targetDate}</span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
+
+          {/* Task Detail Modal (centered overlay) */}
+          {selectedTaskId && filteredTasks.find((t) => t.id === selectedTaskId) && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60">
+              <div className="w-full max-w-4xl">
+                <div className="flex justify-end mb-2">
+                  <button onClick={() => setSelectedTaskId(null)} className="p-2 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <TaskDetailPanel
+                  task={filteredTasks.find((t) => t.id === selectedTaskId)!}
+                  onUpdateStatus={(status, remarks, attachmentUrl, attachmentName) =>
+                    updateTaskStatus(selectedTaskId, status, remarks, attachmentUrl, attachmentName)
+                  }
+                  currentUser={currentUser}
+                />
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

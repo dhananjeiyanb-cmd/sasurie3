@@ -1,5 +1,5 @@
 import { User, Staff, StudentAttendanceSummary, ClassRoom, StudentAttendanceRecord, DEPARTMENTS } from '../types';
-import { StudentSkillBankData } from '../types/skillBank';
+import { StudentSkillBankData, StudentProfile } from '../types/skillBank';
 
 export function getCollegeLogoText(collegeName?: string): string {
   if (!collegeName) return 'SCE';
@@ -394,6 +394,100 @@ export function getMentorAssignedClasses(
   }
 
   return classList;
+}
+
+/**
+ * Returns the student skill-bank records whose mentor-mentee mapping points to the
+ * given staff user. It uses EXACTLY the same matching rules as the Mentor-Mentee
+ * Mapping module (mentorFaculty === staff.facultyName OR mentorStaffId === staff.id).
+ * Matching is trimmed + case-insensitive so the auto-fetched "Total Students Strength"
+ * always equals the "N Mentees" count shown on the Mentor-Mentee Mapping screen
+ * (e.g. II CYBER 41, III CYBER 48, IV CYBER 12) for every mentor.
+ */
+export function getStudentsAssignedToMentor(
+  currentUser: User | null,
+  skillBankStudents: StudentSkillBankData[]
+): StudentSkillBankData[] {
+  if (!currentUser) return [];
+  const staffId = String(currentUser.staffId || currentUser.username || '').trim().toLowerCase();
+  const staffName = String(currentUser.name || '').trim().toLowerCase();
+  return (skillBankStudents || []).filter((s) => {
+    const prof = s?.studentProfile;
+    if (!prof) return false;
+    // Exact mentorStaffId -> staff.id match (same as Mentor-Mentee Mapping "Map Selected Mentees")
+    const matchedById = Boolean(
+      staffId && String(prof.mentorStaffId || '').trim().toLowerCase() === staffId
+    );
+    // Exact mentorFaculty -> staff.facultyName match (same rule the Mapping screen uses)
+    const matchedByName = Boolean(
+      staffName && String(prof.mentorFaculty || '').trim().toLowerCase() === staffName
+    );
+    return matchedById || matchedByName;
+  });
+}
+
+/** Best-effort: maps a student profile to a year index (1..4); 0 when unknown. */
+function getStudentYearIndex(prof: StudentProfile | undefined): number {
+  if (!prof) return 0;
+  const sem = String(prof.semester || '').toLowerCase();
+  const m = sem.match(/\bsem\s*([ivx]+|\d{1,2})/);
+  if (m) {
+    let idx = 0;
+    if (/^\d+$/.test(m[1])) idx = parseInt(m[1], 10);
+    else idx = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii'].indexOf(m[1]) + 1;
+    if (idx >= 1) return Math.min(4, Math.ceil(idx / 2)); // Sem I/II → 1, III/IV → 2, V/VI → 3, VII/VIII → 4
+  }
+  const batchMatch = String(prof.batch || '').match(/\d{4}/);
+  const acadMatch = String(prof.academicYear || '').match(/\d{4}/);
+  if (batchMatch && acadMatch) {
+    const y = parseInt(acadMatch[0], 10) - parseInt(batchMatch[0], 10) + 1;
+    if (y >= 1 && y <= 4) return y;
+  }
+  return 0;
+}
+
+/** Best-effort: maps a ClassRoom year label (e.g. '2nd Year') to a year index (1..4); 0 when unknown. */
+function getClassYearIndex(year?: string): number {
+  const y = String(year || '').toLowerCase();
+  if (/iv|4/.test(y)) return 4;
+  if (/iii|3/.test(y)) return 3;
+  if (/ii|2/.test(y)) return 2;
+  if (/[i1]/.test(y)) return 1;
+  return 0;
+}
+
+/**
+ * Total Students Strength for a mentor, auto-fetched from the mentor-mentee mapping.
+ * - Without a class filter: count of every mentee mapped to the logged-in mentor.
+ * - With a class filter: count of mentees matching the class department (+ section + year
+ *   whenever the year can be derived from the student profile). If no mentee matches the
+ *   given ClassRoom record, the mentor's overall strength is returned as a fallback.
+ */
+export function getMentorMappedClassStrength(
+  currentUser: User | null,
+  skillBankStudents: StudentSkillBankData[],
+  cls?: ClassRoom | null
+): number {
+  const assigned = getStudentsAssignedToMentor(currentUser, skillBankStudents);
+  if (assigned.length === 0) return 0;
+  if (!cls) return assigned.length;
+
+  const clsYearIdx = getClassYearIndex(cls.year);
+  const clsSection = normalizeSection(cls.section || '');
+
+  const inClass = assigned.filter((s) => {
+    const prof = s?.studentProfile;
+    if (!prof) return false;
+    if (!isSameDept(prof.department, cls.department)) return false;
+    if (clsSection && normalizeSection(prof.section || '') !== clsSection) return false;
+    if (clsYearIdx > 0) {
+      const stYearIdx = getStudentYearIndex(prof);
+      if (stYearIdx > 0 && stYearIdx !== clsYearIdx) return false;
+    }
+    return true;
+  });
+
+  return inClass.length > 0 ? inClass.length : assigned.length;
 }
 
 /** Normalises a section string so 'A' and 'Sec A' compare equal. */

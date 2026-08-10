@@ -252,13 +252,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                   <span className="truncate">{item.label}</span>
                 </div>
 
-                {item.badge && (
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${item.badgeColor}`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
+                {/* Hide numeric/urgent pending badges (e.g., "12 Pending", "3 Overdue") — keep other helpful badges */}
+                {item.badge && (() => {
+                  const b = String(item.badge);
+                  const hideForPending = /\b(pending|overdue)\b|^\d+/i.test(b) || item.id === 'tasks';
+                  if (hideForPending) return null;
+                  return (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${item.badgeColor}`}
+                    >
+                      {item.badge}
+                    </span>
+                  );
+                })()}
               </button>
             );
           })}

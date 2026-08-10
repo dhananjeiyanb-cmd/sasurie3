@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { StudentAttendanceSummary } from '../types';
-import { isSameDept, getDepartmentAttendanceSummaries, getDeptTag } from '../utils/departmentUtils';
+import { isSameDept, getDepartmentAttendanceSummaries, getDeptTag, getMentorAssignedClasses, getStudentsAssignedToMentor, getMentorMappedClassStrength } from '../utils/departmentUtils';
 import {
   X,
   Users,
@@ -22,7 +22,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords, clearAllAttendance, deleteAttendanceRecord, addAttendanceRecord } = useApp();
+  const { dailyReport, updateDailyReport, classList, currentUser, attendanceRecords, skillBankStudents, clearAllAttendance, deleteAttendanceRecord, addAttendanceRecord } = useApp();
 
   const userDept = currentUser?.department;
   const isFacultyOrHod = currentUser?.role === 'staff' || currentUser?.role === 'admin';
@@ -41,6 +41,47 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     currentUser?.designation?.toLowerCase().includes('hod') ||
     currentUser?.designation?.toLowerCase().includes('head of department');
 
+  // ===== Mentor mode: Total Strength auto-fetched from Mentor-Mentee Mapping =====
+  const isMentorMode = !isHodOrAdmin && currentUser?.role === 'staff';
+
+  const mentorMappedStudents = useMemo(
+    () => getStudentsAssignedToMentor(currentUser, skillBankStudents || []),
+    [currentUser, skillBankStudents]
+  );
+  const mentorTotalStrength = mentorMappedStudents.length;
+
+  // Classes assigned to the logged-in mentor (from their mapped mentees / class advisory)
+  const mentorClasses = useMemo(
+    () => getMentorAssignedClasses(currentUser, classList, skillBankStudents || []),
+    [currentUser, classList, skillBankStudents]
+  );
+
+  /** Builds a fresh attendance row for a mentor's class with the auto-strength. */
+  const buildMentorClassRow = (cls: { id: string; year: string; department: string; section: string }, strength: number): StudentAttendanceSummary => ({
+    classId: cls.id,
+    className: `${cls.year} ${cls.department} - Sec ${cls.section}`,
+    department: cls.department,
+    year: cls.year,
+    section: cls.section,
+    totalStudents: strength,
+    presentStudents: 0,
+    absentStudents: 0,
+    odStudents: 0,
+    othersStudents: 0,
+    attendancePercentage: 0,
+    morningPresent: 0,
+    morningAbsent: 0,
+    morningOd: 0,
+    morningOthers: 0,
+    morningPercentage: 0,
+    eveningPresent: 0,
+    eveningAbsent: 0,
+    eveningOd: 0,
+    eveningOthers: 0,
+    eveningPercentage: 0,
+    variation: 0,
+  });
+
   const [summaries, setSummaries] = useState<StudentAttendanceSummary[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [customClassName, setCustomClassName] = useState<string>('');
@@ -55,15 +96,47 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       const activeDept = userDept || 'Artificial Intelligence & Data Science (AI & DS)';
-      const summariesForDept = getDepartmentAttendanceSummaries(
+      let summariesForDept = getDepartmentAttendanceSummaries(
         dailyReport.studentAttendanceSummaries || [],
         classList,
         activeDept,
         attendanceRecords
       );
+
+      // Mentor mode: override Total Strength with the count of mentees mapped
+      // to this mentor, and make sure every one of the mentor's assigned classes
+      // appears as a row (so strength is never blank / missing for them).
+      if (isMentorMode) {
+        summariesForDept = summariesForDept.map((s) => {
+          const cls = classList.find((c) => c.id === s.classId);
+          const autoStr =
+            mentorTotalStrength ||
+            getMentorMappedClassStrength(currentUser, skillBankStudents || [], cls) ||
+            0;
+          if (autoStr > 0) {
+            s.totalStudents = autoStr;
+          }
+          return s;
+        });
+
+        const existingIds = new Set(summariesForDept.map((s) => s.classId));
+        const addedRows: StudentAttendanceSummary[] = [];
+        mentorClasses.forEach((c) => {
+          if (existingIds.has(c.id)) return;
+          const clsStrength =
+            mentorTotalStrength ||
+            getMentorMappedClassStrength(currentUser, skillBankStudents || [], c) ||
+            0;
+          if (clsStrength > 0) {
+            addedRows.push(buildMentorClassRow(c, clsStrength));
+          }
+        });
+        summariesForDept = [...addedRows, ...summariesForDept];
+      }
+
       setSummaries(summariesForDept);
     }
-  }, [isOpen, dailyReport.studentAttendanceSummaries, classList, userDept, attendanceRecords]);
+  }, [isOpen, dailyReport.studentAttendanceSummaries, classList, userDept, attendanceRecords, isMentorMode, currentUser, skillBankStudents, mentorTotalStrength, mentorClasses]);
 
   if (!isOpen) return null;
 
@@ -200,7 +273,7 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
     const mentorStaffId = currentUser?.staffId || currentUser?.username || '';
     const now = new Date().toISOString();
 
-    const updatedSummariesWithDept = summaries.map((s) => ({
+    let updatedSummariesWithDept = summaries.map((s) => ({
       ...s,
       department: s.department || activeDept,
       enteredByName: mentorName,
@@ -209,18 +282,35 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
       date: todayStr,
     }));
 
-    // Identify which classIds were removed from activeDept summaries and purge from DB
-    const initialDeptSummaries = (dailyReport.studentAttendanceSummaries || []).filter((s) => {
-      if (s.department) return isSameDept(s.department, activeDept);
-      const classObj = classList.find((c) => c.id === s.classId);
-      if (classObj) return isSameDept(classObj.department, activeDept);
-      return isSameDept(s.className, activeDept);
-    });
+    // Mentor mode: force Total Strength to the auto-fetched mentor-mentee value
+    if (isMentorMode) {
+      updatedSummariesWithDept = updatedSummariesWithDept.map((s) => {
+        const cls = classList.find((c) => c.id === s.classId);
+        const autoStr =
+          mentorTotalStrength ||
+          getMentorMappedClassStrength(currentUser, skillBankStudents || [], cls) ||
+          0;
+        if (autoStr > 0) {
+          s.totalStudents = autoStr;
+        }
+        return s;
+      });
+    }
 
+    // Purge today's attendance record rows for any class that was removed from the
+    // summary list. Records are keyed by their own id, so resolve the actual record
+    // id(s) for the removed classId + date instead of using classId as an id.
     const keptClassIds = new Set(updatedSummariesWithDept.map((s) => s.classId));
-    initialDeptSummaries.forEach((oldSum) => {
-      if (oldSum.classId && !keptClassIds.has(oldSum.classId)) {
-        deleteAttendanceRecord(oldSum.classId);
+    const todayRecords = (attendanceRecords || []).filter((r) => r.date === todayStr);
+    todayRecords.forEach((r) => {
+      const classObj = classList.find((c) => c.id === r.classId);
+      const inActiveDept = r.department
+        ? isSameDept(r.department, activeDept)
+        : classObj
+        ? isSameDept(classObj.department, activeDept)
+        : isSameDept(r.className, activeDept);
+      if (inActiveDept && r.classId && !keptClassIds.has(r.classId)) {
+        deleteAttendanceRecord(r.id);
       }
     });
 
@@ -278,15 +368,16 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   const handleClearAllData = async () => {
     if (window.confirm("Are you sure you want to clear all student attendance data for today? This cannot be undone.")) {
       const activeDept = userDept || 'Artificial Intelligence & Data Science (AI & DS)';
-      const currentDeptSummaries = (dailyReport.studentAttendanceSummaries || []).filter((s) => {
-        if (s.department) return isSameDept(s.department, activeDept);
-        const classObj = classList.find((c) => c.id === s.classId);
-        if (classObj) return isSameDept(classObj.department, activeDept);
-        return isSameDept(s.className, activeDept);
-      });
-
-      currentDeptSummaries.forEach((s) => {
-        if (s.classId) deleteAttendanceRecord(s.classId);
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todayRecords = (attendanceRecords || []).filter((r) => r.date === todayStr);
+      todayRecords.forEach((r) => {
+        const classObj = classList.find((c) => c.id === r.classId);
+        const inActiveDept = r.department
+          ? isSameDept(r.department, activeDept)
+          : classObj
+          ? isSameDept(classObj.department, activeDept)
+          : isSameDept(r.className, activeDept);
+        if (inActiveDept) deleteAttendanceRecord(r.id);
       });
 
       setSummaries([]);
@@ -312,8 +403,8 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
   const overallPercentage = grandTotal > 0 ? Number((((grandPresent + grandOd) / grandTotal) * 100).toFixed(1)) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-800 w-full max-w-5xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl p-6 relative max-h-[92vh] flex flex-col animate-in fade-in zoom-in duration-150">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white dark:bg-slate-800 w-full max-w-5xl rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl p-4 sm:p-6 relative max-h-[94vh] min-h-0 flex flex-col overflow-hidden animate-in fade-in zoom-in duration-150">
         
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-700 mb-4">
@@ -340,26 +431,55 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
         </div>
 
         {/* Notice for Mentors & HODs */}
-        <div className="mb-3 px-3 py-2 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-xs flex items-center justify-between text-blue-900 dark:text-blue-200">
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] uppercase tracking-wider">
+        <div className="mb-3 px-3 py-2 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-xs flex flex-wrap items-center justify-between gap-2 text-blue-900 dark:text-blue-200">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-extrabold px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] uppercase tracking-wider shrink-0">
               {isHodOrAdmin ? 'HOD / Admin Mode' : 'Mentor / Staff Mode'}
             </span>
             <span>
               {isHodOrAdmin
                 ? 'You can set fixed Class Sections and Total Strength. Mentors enter Morning & Evening attendance.'
-                : 'Class Section and Total Strength are fixed by HOD. Enter Morning & Evening mentor hour attendance below.'}
+                : 'Total Strength is auto-filled from your Mentor-Mentee Mapping. Enter Morning & Evening mentor hour attendance below.'}
             </span>
           </div>
           {!isHodOrAdmin && (
-            <span className="text-[10px] font-bold text-slate-500 bg-white dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
-              🔒 Total Strength Fixed
+            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-800 px-2 py-1 rounded border border-emerald-300 dark:border-emerald-700">
+              🔒 Auto Strength from Mapping
             </span>
           )}
         </div>
 
+        {/* Mentors: their auto Total Students Strength shown in the frame */}
+        {!isHodOrAdmin && (
+          <div className="mb-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-950/30 border-2 border-emerald-300 dark:border-emerald-700 rounded-xl flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">
+                  Total Students Strength
+                </div>
+                <div className="text-[11px] text-emerald-700/90 dark:text-emerald-300/90 font-semibold">
+                  Auto-fetched from Mentor-Mentee Mapping — {mentorMappedStudents.length} mentee{mentorMappedStudents.length === 1 ? '' : 's'} assigned to you
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 leading-none">
+                  {mentorTotalStrength}
+                </div>
+                <div className="text-[10px] font-bold text-emerald-700/80 dark:text-emerald-300/80 mt-1">
+                  Total Strength
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Summary Stats Overview Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 mb-4 p-3 bg-slate-50 dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-700/80 text-center">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4 p-3 bg-slate-50 dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-700/80 text-center">
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase">Total Strength</div>
             <div className="text-base font-black text-slate-900 dark:text-white">{grandTotal}</div>
@@ -400,8 +520,8 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
         </div>
 
         {/* Table area */}
-        <div className="flex-1 overflow-y-auto mb-4 border border-slate-200 dark:border-slate-700 rounded-xl">
-          <table className="w-full text-xs text-left border-collapse min-w-[700px]">
+        <div className="flex-1 overflow-auto min-h-0 mb-4 border border-slate-200 dark:border-slate-700 rounded-xl">
+          <table className="w-full text-xs text-left border-collapse min-w-[640px]">
             <thead className="bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-bold sticky top-0 z-10">
               <tr>
                 <th className="p-2.5 border-b border-slate-200 dark:border-slate-700">Year / Class Section</th>
@@ -466,6 +586,16 @@ export const StudentAttendanceModal: React.FC<StudentAttendanceModalProps> = ({
                             onChange={(e) => handleFieldChange(idx, 'totalStudents', e.target.value)}
                             className="w-16 px-1.5 py-1 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded font-bold text-slate-900 dark:text-white text-xs"
                           />
+                        ) : isMentorMode ? (
+                          <span
+                            className="inline-flex flex-col items-center px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-black rounded text-xs border border-emerald-300 dark:border-emerald-700"
+                            title="Auto-fetched from Mentor-Mentee Mapping"
+                          >
+                            {s.totalStudents}
+                            <span className="text-[9px] font-bold uppercase tracking-wide">
+                              Auto (Mapping)
+                            </span>
+                          </span>
                         ) : (
                           <span className="inline-block px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-black rounded text-xs border border-slate-200 dark:border-slate-700">
                             {s.totalStudents}

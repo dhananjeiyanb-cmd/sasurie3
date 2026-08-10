@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { CdcProvider } from './context/CdcContext';
 import { Header } from './components/Header';

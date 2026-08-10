@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { useCdc } from '../context/CdcContext';
 import { useApp } from '../context/AppContext';
 import { DEPARTMENTS } from '../types';
-import { CdcQuestion, CdcExam, CdcExamAssignment, QuestionCategory, DifficultyLevel } from '../types/cdc';
+import { CdcQuestion, CdcExam, CdcStudent, CdcExamAssignment, QuestionCategory, DifficultyLevel } from '../types/cdc';
 
 const CDC_YEAR_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 const CDC_ACADEMIC_YEARS = ['2024-2025', '2025-2026', '2026-2027', '2027-2028'];
@@ -78,8 +78,14 @@ export const CdcExamManagementView: React.FC = () => {
     setExamAssignments([{ department: DEPARTMENTS[0], year: CDC_YEAR_OPTIONS[0], batch: '', sections: [] }]);
   };
 
+  const openManageMappedStudentsModal = (examId: string) => {
+    setManageMappedExamId(examId);
+  };
+
   // Question form state
   const [showQForm, setShowQForm] = useState(false);
+  // Manage mapped students modal state
+  const [manageMappedExamId, setManageMappedExamId] = useState<string | null>(null);
   const [qCategory, setQCategory] = useState<QuestionCategory>('CSE Cluster');
   const [qSubject, setQSubject] = useState('');
   const [qTopic, setQTopic] = useState('');
@@ -133,6 +139,33 @@ export const CdcExamManagementView: React.FC = () => {
       return departmentMatches && yearMatches;
     });
   }, [cdcStudents, studentDeptFilter, studentYearFilter]);
+
+  const normalizeReg = (reg: string) => reg.trim().toLowerCase();
+
+  const getStudentsForAssignment = (assignment: CdcExamAssignment) => {
+    const explicitRegs = assignment.studentRegisterNumbers?.map(normalizeReg) || [];
+    if (explicitRegs.length > 0) {
+      return cdcStudents.filter((student) => explicitRegs.includes(normalizeReg(student.registerNumber)));
+    }
+
+    return cdcStudents.filter((student) => {
+      const departmentMatch = student.department === assignment.department;
+      const yearMatch = student.year === assignment.year;
+      const batchMatch = !assignment.batch || student.batch === assignment.batch;
+      const sectionMatch = !assignment.sections || assignment.sections.length === 0 || assignment.sections.includes(student.section);
+      return departmentMatch && yearMatch && batchMatch && sectionMatch;
+    });
+  };
+
+  const getMappedStudentsForExam = (exam: CdcExam) => {
+    const studentMap = new Map<string, CdcStudent>();
+    exam.assignments.forEach((assignment) => {
+      getStudentsForAssignment(assignment).forEach((student) => {
+        studentMap.set(student.registerNumber, student);
+      });
+    });
+    return Array.from(studentMap.values());
+  };
 
   const updateExamAssignment = (index: number, field: keyof CdcExamAssignment, value: string) => {
     setExamAssignments((prev) =>
@@ -331,12 +364,19 @@ export const CdcExamManagementView: React.FC = () => {
       negativeMarksPerWrong: examNegMarks,
       passingMarks: examPassing,
       questionIds: selectedQuestions,
-      assignments: examAssignments.map((assignment) => ({
-        department: assignment.department,
-        year: assignment.year,
-        batch: assignment.batch,
-        sections: assignment.sections && assignment.sections.length > 0 ? assignment.sections : undefined,
-      })),
+      assignments: examAssignments.map((assignment) => {
+        const matchedStudents = getStudentsForAssignment(assignment);
+        const studentRegisterNumbers = matchedStudents.length > 0
+          ? matchedStudents.map((student) => student.registerNumber)
+          : undefined;
+        return {
+          department: assignment.department,
+          year: assignment.year,
+          batch: assignment.batch,
+          sections: assignment.sections && assignment.sections.length > 0 ? assignment.sections : undefined,
+          ...(studentRegisterNumbers ? { studentRegisterNumbers } : {}),
+        };
+      }),
       createdBy: 'CDC Coordinator',
     };
 
@@ -677,7 +717,7 @@ export const CdcExamManagementView: React.FC = () => {
                         </div>
                       ))}
                     </div>
-                    <div className="flex items-center">
+                      <div className="flex items-center">
                       <button onClick={() => {
                         setEditingExamId(exam.id);
                         setExamTitle(exam.title);
@@ -706,6 +746,10 @@ export const CdcExamManagementView: React.FC = () => {
                       <button onClick={() => { if (confirm('Delete this exam?')) deleteExam(exam.id); }} className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 rounded-lg ml-4">
                         <Trash2 className="w-4 h-4" />
                       </button>
+                      {/* Manage mapped students */}
+                      <button onClick={() => openManageMappedStudentsModal(exam.id)} className="p-2 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg ml-4">
+                        <Users className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -715,11 +759,57 @@ export const CdcExamManagementView: React.FC = () => {
                   No exams created yet. Click "Create Exam" to get started.
                 </div>
               )}
-            </div>
-          </div>
-        )}
+             </div>
+           </div>
+         )}
 
-        {activeTab === 'students' && (
+         {/* Manage Mapped Students Modal */}
+         {manageMappedExamId && (
+           <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-900/60">
+             <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white">Manage Mapped Students</h3>
+                <button onClick={() => setManageMappedExamId(null)} className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-white">Close</button>
+              </div>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {(() => {
+                  const exam = cdcExams.find((ex) => ex.id === manageMappedExamId);
+                  if (!exam) return <div className="text-sm text-slate-500">Exam not found.</div>;
+                  const mappedStudents = getMappedStudentsForExam(exam);
+                  if (mappedStudents.length === 0) return <div className="text-sm text-slate-500">No students are currently mapped to this exam.</div>;
+                  return mappedStudents.map((student) => (
+                    <div key={student.registerNumber} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                      <div>
+                        <div className="font-semibold">{student.name}</div>
+                        <div className="text-xs text-slate-500">{student.registerNumber} • {student.department}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => {
+                          const exam = cdcExams.find((ex) => ex.id === manageMappedExamId);
+                          if (!exam) return;
+                          const updatedAssignments = exam.assignments.map((assignment) => {
+                            const assignmentStudents = getStudentsForAssignment(assignment);
+                            const currentRegs = assignment.studentRegisterNumbers && assignment.studentRegisterNumbers.length > 0
+                              ? assignment.studentRegisterNumbers
+                              : assignmentStudents.map((s) => s.registerNumber);
+                            const filtered = currentRegs.filter((reg) => normalizeReg(reg) !== normalizeReg(student.registerNumber));
+                            if (filtered.length === 0) {
+                              return { ...assignment, studentRegisterNumbers: [] } as CdcExamAssignment;
+                            }
+                            return { ...assignment, studentRegisterNumbers: filtered } as CdcExamAssignment;
+                          });
+                          updateExam(exam.id, { assignments: updatedAssignments });
+                        }} className="px-3 py-1 rounded bg-rose-600 text-white text-xs">Unmap</button>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+             </div>
+           </div>
+         )}
+
+         {activeTab === 'students' && (
           <div className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-3">

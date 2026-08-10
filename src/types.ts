@@ -158,6 +158,7 @@ export interface StudentAttendanceSummary {
   className: string;
   department?: string;
   year?: string; // 'I Year', 'II Year', 'III Year', 'IV Year'
+  section?: string; // e.g., 'A', 'B'
   totalStudents: number; // Fixed Strength set by HOD
   presentStudents: number; // Overall / Evening Present
   absentStudents?: number;

@@ -440,7 +440,10 @@ export const StudentExamView: React.FC = () => {
           return a.sections.some((sec) => normalize(sec) === normalize(foundStudent!.section));
         }
         // If specific register numbers are set, the student must be listed.
-        if (a.studentRegisterNumbers && a.studentRegisterNumbers.length > 0) {
+11        if (a.studentRegisterNumbers) {
+          if (a.studentRegisterNumbers.length === 0) {
+            return false;
+          }
           return a.studentRegisterNumbers.some((r) => normalize(r) === normalize(foundStudent!.registerNumber));
         }
         return true;

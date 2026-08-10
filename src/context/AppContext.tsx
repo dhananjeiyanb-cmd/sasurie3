@@ -17,6 +17,7 @@ import {
   TaskStatus,
   LessonPlanItem,
   StudentAttendanceRecord,
+  StudentAttendanceSummary,
   EventRecord,
   EventParticipant,
   EventDocument,
@@ -189,6 +190,63 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY_PREFIX = 'hod_task_system_v3_';
 
+/**
+ * Converts a persisted StudentAttendanceRecord into the light-weight summary
+ * used by the Dashboard's "Student Attendance Today" / daily report. Keeping
+ * ALL fields (department, section, morning/evening counts, variation, marker)
+ * ensures the Dashboard always shows the exact same row as the attendance module.
+ */
+const toStudentAttendanceSummary = (r: StudentAttendanceRecord): StudentAttendanceSummary => ({
+  classId: r.classId,
+  className: r.className,
+  department: r.department,
+  year: r.year || 'II Year',
+  section: r.section || 'A',
+  totalStudents: r.totalStudents,
+  presentStudents: r.presentStudents,
+  absentStudents: r.absentStudents || 0,
+  odStudents: r.odStudents || 0,
+  othersStudents: r.othersStudents || 0,
+  attendancePercentage: r.attendancePercentage,
+  morningPresent: r.morningPresent,
+  morningAbsent: r.morningAbsent,
+  morningOd: r.morningOd,
+  morningOthers: r.morningOthers,
+  morningPercentage: r.morningPercentage,
+  eveningPresent: r.eveningPresent,
+  eveningAbsent: r.eveningAbsent,
+  eveningOd: r.eveningOd,
+  eveningOthers: r.eveningOthers,
+  eveningPercentage: r.eveningPercentage,
+  variation: r.variation,
+  variationNote: r.variationNote,
+  enteredByName: r.markedBy,
+  enteredById: r.markedById,
+  enteredAt: r.markedAt,
+  date: r.date,
+});
+
+/**
+ * Keeps at most ONE attendance record per (date + classId), preferring the
+ * freshest entry (by markedAt). This cleans up the duplicate class-attendance
+ * rows that could previously accumulate and ensures both the Dashboard and
+ * "Student Attendance Management & Reports" show a single, consistent row.
+ */
+const dedupeAttendanceRecords = (records: StudentAttendanceRecord[]): StudentAttendanceRecord[] => {
+  const byKey = new Map<string, StudentAttendanceRecord>();
+  (records || []).forEach((r) => {
+    if (!r || !r.id || !r.date || !r.classId) return;
+    const key = `${r.date}::${r.classId}`;
+    const existing = byKey.get(key);
+    const rTime = r.markedAt ? new Date(r.markedAt).getTime() : 0;
+    const eTime = existing?.markedAt ? new Date(existing.markedAt).getTime() : 0;
+    if (!existing || rTime >= eTime) {
+      byKey.set(key, r);
+    }
+  });
+  return Array.from(byKey.values());
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load from localStorage or seed
   const [dailyReport, setDailyReport] = useState<DailyHODReport>(() => {
@@ -307,7 +365,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return dedupeAttendanceRecords(parsed);
       } catch {}
     }
     return INITIAL_ATTENDANCE_RECORDS;
@@ -646,7 +704,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
       } catch {}
       if (snapshot.empty) {
-        const toInit = localArr.length > 0 ? localArr : INITIAL_ATTENDANCE_RECORDS;
+        const toInit = dedupeAttendanceRecords(localArr.length > 0 ? localArr : INITIAL_ATTENDANCE_RECORDS);
         setAttendanceRecords(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(toInit));
       } else {
@@ -658,7 +716,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             map.set(a.id, a);
           }
         });
-        const finalAtt = Array.from(map.values());
+        const finalAtt = dedupeAttendanceRecords(Array.from(map.values()));
         setAttendanceRecords(finalAtt);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(finalAtt));
       }
@@ -2183,29 +2241,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Student Attendance Records
   const addAttendanceRecord = (recordData: Omit<StudentAttendanceRecord, 'id'>) => {
+    // Only one attendance row is allowed per (classId + date). If a record for
+    // this class + date already exists, update it in place and collapse any
+    // stray duplicate rows that may have been created by earlier versions.
+    const existingRecords = attendanceRecords.filter(
+      (r) => r.classId === recordData.classId && r.date === recordData.date
+    );
+
+    if (existingRecords.length > 0) {
+      const primary = existingRecords[0];
+      existingRecords.slice(1).forEach((dup) => deleteAttendanceRecord(dup.id));
+      updateAttendanceRecord(primary.id, recordData);
+      return;
+    }
+
     const newId = `ATT-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
     const newRecord: StudentAttendanceRecord = { id: newId, ...recordData };
     setAttendanceRecords((prev) => [newRecord, ...prev]);
     syncDocToFirestore('attendance', newRecord.id, newRecord);
 
-    // Also sync to current daily report if date is today
+    // Also sync to current daily report if date is today so the Dashboard's
+    // "Student Attendance Today" always shows the exact same row as the module.
     const todayStr = new Date().toISOString().split('T')[0];
     if (recordData.date === todayStr) {
       const summaries = dailyReport.studentAttendanceSummaries || [];
-      const existingIdx = summaries.findIndex((s) => s.classId === recordData.classId);
-      const summaryItem = {
-        classId: recordData.classId,
-        className: recordData.className,
-        year: recordData.year,
-        totalStudents: recordData.totalStudents,
-        presentStudents: recordData.presentStudents,
-        absentStudents: recordData.absentStudents,
-        odStudents: recordData.odStudents,
-        othersStudents: recordData.othersStudents,
-        attendancePercentage: recordData.attendancePercentage,
-      };
+      const existingIdx = summaries.findIndex((s) => s.classId === newRecord.classId);
+      const summaryItem = toStudentAttendanceSummary(newRecord);
 
-      let updatedSummaries = [...summaries];
+      const updatedSummaries = [...summaries];
       if (existingIdx >= 0) {
         updatedSummaries[existingIdx] = summaryItem;
       } else {
@@ -2216,6 +2279,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateAttendanceRecord = (id: string, updates: Partial<StudentAttendanceRecord>) => {
+    let appliedRecord: StudentAttendanceRecord | undefined;
     setAttendanceRecords((prev) =>
       prev.map((rec) => {
         if (rec.id === id) {
@@ -2232,11 +2296,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             updated.attendancePercentage = total > 0 ? Number(((updated.presentStudents / total) * 100).toFixed(1)) : 0;
           }
           syncDocToFirestore('attendance', id, updated);
+          appliedRecord = { ...updated, id: rec.id };
           return updated;
         }
         return rec;
       })
     );
+
+    // Keep the Dashboard's summary identical to edits made in the module.
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (appliedRecord && appliedRecord.date === todayStr) {
+      const summaries = dailyReport.studentAttendanceSummaries || [];
+      const existingIdx = summaries.findIndex((s) => s.classId === appliedRecord?.classId);
+      const summaryItem = toStudentAttendanceSummary(appliedRecord);
+      const updatedSummaries = [...summaries];
+      if (existingIdx >= 0) {
+        updatedSummaries[existingIdx] = summaryItem;
+      } else {
+        updatedSummaries.push(summaryItem);
+      }
+      updateDailyReport({ studentAttendanceSummaries: updatedSummaries });
+    }
   };
 
   const deleteAttendanceRecord = (id: string) => {
@@ -2426,11 +2506,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanRegs = registerNumbers.map((r) => (r || '').trim()).filter(Boolean);
     if (cleanRegs.length === 0) return;
 
+    // Update local state first for immediate UX
     setSkillBankStudents((prev) =>
       prev.map((s) => {
         const reg = (s.studentProfile.registerNumber || '').trim();
         if (cleanRegs.includes(reg)) {
-          const updated = {
+          return {
             ...s,
             studentProfile: {
               ...s.studentProfile,
@@ -2438,13 +2519,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               mentorStaffId: staffId,
             },
           };
-          const docId = reg.replace(/\//g, '_');
-          syncDocToFirestore('skillBankStudents', docId, updated);
-          return updated;
         }
         return s;
       })
     );
+
+    // Persist changes to Firestore and report any failures
+    (async () => {
+      const failures: string[] = [];
+      await Promise.all(
+        cleanRegs.map(async (reg) => {
+          try {
+            const st = skillBankStudents.find((ss) => (ss.studentProfile?.registerNumber || '').trim() === reg);
+            // If not found in current in-memory list, create a minimal doc to persist mapping
+            const docPayload = st
+              ? { ...st, studentProfile: { ...st.studentProfile, mentorFaculty: mentorName, mentorStaffId: staffId } }
+              : { studentProfile: { registerNumber: reg, mentorFaculty: mentorName, mentorStaffId: staffId } };
+            const docId = reg.replace(/\//g, '_');
+            await syncDocToFirestore('skillBankStudents', docId, docPayload);
+          } catch (err) {
+            console.error('Failed saving mentor mapping for', reg, err);
+            failures.push(reg);
+          }
+        })
+      );
+      if (failures.length > 0) {
+        alert(
+          `Failed to persist mentor mapping for ${failures.length} student(s). Please check network/Firestore configuration or try again. Failed Reg Nos: ${failures.join(', ')}`
+        );
+      }
+    })();
   };
 
   const importBulkSkillBankStudents = (newStudents: StudentSkillBankData[]) => {
@@ -2459,10 +2563,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (ns.studentProfile?.registerNumber) {
           map.set(ns.studentProfile.registerNumber, ns);
         }
-        const docId = getStudentDocId(ns);
-        if (docId) syncDocToFirestore('skillBankStudents', docId, ns);
       });
-      return Array.from(map.values());
+      const merged = Array.from(map.values());
+
+      // Persist to Firestore in background and alert on failures
+      (async () => {
+        const failures: string[] = [];
+        await Promise.all(
+          merged.map(async (st) => {
+            try {
+              const docId = getStudentDocId(st);
+              if (docId) await syncDocToFirestore('skillBankStudents', docId, st);
+            } catch (err) {
+              const reg = (st.studentProfile?.registerNumber || getStudentDocId(st) || 'unknown').toString();
+              console.error('Failed to persist skillBankStudent', reg, err);
+              failures.push(reg);
+            }
+          })
+        );
+        if (failures.length > 0) {
+          alert(
+            `Failed to persist ${failures.length} imported student(s) to the database. Please check network/Firestore configuration. Failed Reg Nos: ${failures.join(', ')}`
+          );
+        }
+      })();
+
+      return merged;
     });
   };
 
@@ -2775,7 +2901,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         parsed.hodAttendanceRecords.forEach((r: HODFacultyAttendanceRecord) => syncDocToFirestore('hodFacultyAttendance', r.id, r));
       }
       if (parsed.attendanceRecords && Array.isArray(parsed.attendanceRecords)) {
-        setAttendanceRecords(parsed.attendanceRecords);
+        setAttendanceRecords(dedupeAttendanceRecords(parsed.attendanceRecords));
         parsed.attendanceRecords.forEach((a: StudentAttendanceRecord) => syncDocToFirestore('attendance', a.id, a));
       }
       if (parsed.skillBankStudents && Array.isArray(parsed.skillBankStudents)) {

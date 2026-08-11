@@ -17,6 +17,7 @@ import { LessonPlanView } from './views/LessonPlanView';
 import { SkillBankView } from './views/SkillBankView';
 import { MentorMappingView } from './views/MentorMappingView';
 import { MentorMenteeView } from './views/MentorMenteeView';
+import { PrincipalSsbdashboardView } from './views/PrincipalSsbdashboardView';
 import { LibrarianPortalView } from './views/LibrarianPortalView';
 import { EventsView } from './views/EventsView';
 import { CCMView } from './views/CCMView';
@@ -177,6 +178,8 @@ const MainContent: React.FC = () => {
           {activeTab === 'student_attendance' && <StudentAttendanceView />}
 
           {activeTab === 'skill_bank' && <SkillBankView />}
+
+          {activeTab === 'principal_ssb_dashboard' && <PrincipalSsbdashboardView />}
 
           {activeTab === 'faculty_kpi' && <FacultyKpiView />}
 

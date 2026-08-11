@@ -126,6 +126,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       badgeColor: currentUser?.coordinatorRole === 'CDC Coordinator' || currentUser?.coordinatorRole === 'Placement Coordinator' ? 'bg-indigo-600 text-white font-bold' : 'bg-amber-500 text-slate-950 font-bold',
     },
     {
+      id: 'principal_ssb_dashboard',
+      label: 'SSB Institutional Dashboard',
+      icon: BarChart3,
+      roles: executiveRoles,
+      badge: 'Principal',
+      badgeColor: 'bg-amber-500 text-slate-950 font-bold',
+    },
+    {
       id: 'faculty_kpi',
       label: 'My KPI Dashboard',
       icon: Award,

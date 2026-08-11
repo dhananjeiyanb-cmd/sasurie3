@@ -43,6 +43,7 @@ import { INITIAL_STUDENTS_SKILL_BANK, stripSkillBankDates } from '../data/mockSk
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
 import { isSameDept, getDeptTag, buildMentorMappingsFromStudents } from '../utils/departmentUtils';
 import { normalizeStudentSkillBankRecord } from '../utils/excelSkillBank';
+import { hashPassword, verifyPassword } from '../utils/passwordUtils';
 
 const getStudentDocId = (st: StudentSkillBankData): string => {
   if (!st) return '';
@@ -69,12 +70,12 @@ const isKeepStaff = (s: Staff): boolean => {
 
 interface AppContextType {
   currentUser: User | null;
-  login: (username: string, password: string) => { success: boolean; message?: string };
+  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
   loginWithGoogle: (email: string, role?: Role, customName?: string) => { success: boolean; message?: string };
   isEmailInDatabase: (emailOrUser: string) => boolean;
   loginAsDemo: (role: Role, staffId?: string) => void;
   logout: () => void;
-  updateUserPassword: (targetUsernameOrEmail: string, newPass: string) => void;
+  updateUserPassword: (targetUsernameOrEmail: string, newPass: string, oldPass?: string) => Promise<{ success: boolean; message?: string }>;
   updateUserProfile: (updates: {
     name?: string;
     email?: string;
@@ -1052,13 +1053,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}custom_passwords`, JSON.stringify(customPasswords));
   }, [customPasswords]);
 
-  const updateUserPassword = (targetUsernameOrEmail: string, newPass: string) => {
+  const updateUserPassword = async (targetUsernameOrEmail: string, newPass: string, oldPass?: string): Promise<{ success: boolean; message?: string }> => {
     const key = targetUsernameOrEmail.trim().toLowerCase();
-    if (!key || !newPass) return;
+    if (!key || !newPass) {
+      return { success: false, message: 'Invalid request.' };
+    }
+
+    if (newPass.length < 4) {
+      return { success: false, message: 'Password must be at least 4 characters long.' };
+    }
+
+    // Verify old password if provided (required for security)
+    if (oldPass !== undefined) {
+      const currentHash = customPasswords[key] || 
+        (currentUser?.email ? customPasswords[currentUser.email.toLowerCase()] : undefined) ||
+        (currentUser?.staffId ? customPasswords[currentUser.staffId.toLowerCase()] : undefined);
+      
+      if (currentHash) {
+        const oldPassValid = await verifyPassword(oldPass, currentHash);
+        if (!oldPassValid) {
+          return { success: false, message: 'Current password is incorrect. Please try again.' };
+        }
+      } else if (oldPass !== undefined && oldPass !== '') {
+        // No custom password set yet, but old password was provided
+        // Check against default passwords for backward compatibility
+        const defaultPasses = ['sasurie', 'admin@123', 'staff@123', 'principal@123', 'lib@123', 'incucula@123'];
+        const oldNorm = oldPass.trim().toLowerCase();
+        const isDefault = defaultPasses.some(dp => dp === oldNorm);
+        if (!isDefault) {
+          return { success: false, message: 'Current password is incorrect. Please try again.' };
+        }
+      }
+    }
+
+    // Hash the new password before storing
+    const hashedNewPass = await hashPassword(newPass);
 
     setCustomPasswords((prev) => ({
       ...prev,
-      [key]: newPass,
+      [key]: hashedNewPass,
     }));
 
     // If current logged in user matches, update in session
@@ -1068,7 +1101,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentUser.email?.toLowerCase() === key ||
         currentUser.staffId?.toLowerCase() === key)
     ) {
-      const updatedUser = { ...currentUser, password: newPass };
+      const updatedUser = { ...currentUser, password: hashedNewPass };
       setCurrentUser(updatedUser);
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}user`, JSON.stringify(updatedUser));
     }
@@ -1078,8 +1111,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (s) => s.id?.toLowerCase() === key || (s.email && s.email.toLowerCase() === key)
     );
     if (matchedStaff) {
-      updateStaff(matchedStaff.id, { password: newPass });
+      updateStaff(matchedStaff.id, { password: hashedNewPass });
     }
+
+    return { success: true, message: 'Password changed successfully. Please use your new password for future login.' };
   };
 
   const updateUserProfile = (updates: {
@@ -1140,19 +1175,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Password validation helper
-  const checkPasswordValid = (userKey: string, passToCheck: string, staffObj?: Staff) => {
+  const checkPasswordValid = async (userKey: string, passToCheck: string, staffObj?: Staff): Promise<boolean> => {
     const normKey = userKey.trim().toLowerCase();
-    const normPass = passToCheck.trim().toLowerCase();
+    const normPass = passToCheck.trim();
 
-    // Standard master default passwords
-    if (
-      normPass === 'sasurie' ||
-      normPass === 'admin@123' ||
-      normPass === 'staff@123' ||
-      normPass === 'principal@123' ||
-      normPass === 'lib@123' ||
-      normPass === 'incucula@123'
-    ) {
+    // Standard master default passwords (check against known defaults)
+    const defaultPasses = ['sasurie', 'admin@123', 'staff@123', 'principal@123', 'lib@123', 'incucula@123'];
+    const isDefault = defaultPasses.some(dp => dp === normPass.toLowerCase());
+    if (isDefault) {
       return true;
     }
 
@@ -1163,7 +1193,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       staffObj?.password;
 
     if (savedCustomPass) {
-      return normPass === savedCustomPass.toLowerCase();
+      // If it looks like a hash (64 hex chars), verify it
+      if (/^[a-f0-9]{64}$/i.test(savedCustomPass)) {
+        return await verifyPassword(normPass, savedCustomPass);
+      }
+      // Legacy plaintext fallback (for backward compatibility during migration)
+      return normPass.toLowerCase() === savedCustomPass.toLowerCase();
     }
     return false;
   };
@@ -1244,9 +1279,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Authentication Logic
-  const login = (username: string, password: string): { success: boolean; message?: string } => {
+  const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
     const lowUser = username.trim().toLowerCase();
-    const lowPass = password.trim().toLowerCase();
+    const lowPass = password.trim();
 
     // Check if user/email exists in database
     if (!isEmailInDatabase(lowUser)) {
@@ -1290,7 +1325,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lowUser === 'secpa001';
 
     // System Super Admin Login (All Colleges & All Staff Access)
-    if (isSuperAdminAccount && checkPasswordValid(lowUser, lowPass)) {
+    if (isSuperAdminAccount && await checkPasswordValid(lowUser, lowPass)) {
       const email = lowUser.includes('@') ? lowUser : 'admin@sasurie.com';
       const name = 'System Super Administrator';
       const superAdminUser: User = {
@@ -1308,7 +1343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Principal Login
-    if (isPrincipalUser && checkPasswordValid(lowUser, lowPass)) {
+    if (isPrincipalUser && await checkPasswordValid(lowUser, lowPass)) {
       const matchingStaff = staffList.find((s) => s.role === 'principal');
       const email = matchingStaff?.email || 'principal@sasurie.com';
       const name = matchingStaff?.facultyName || dailyReport.principalName || 'Prof. Dr. Kiruba Shankar R (Principal)';
@@ -1329,7 +1364,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Secretary Login
-    if (isSecretaryUser && checkPasswordValid(lowUser, lowPass)) {
+    if (isSecretaryUser && await checkPasswordValid(lowUser, lowPass)) {
       const email = 'secretary@sasurie.com';
       const name = 'Thiru. S. Subburaj (College Secretary)';
       const secUser: User = {
@@ -1347,7 +1382,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Principal PA Login
-    if (isPrincipalPaUser && checkPasswordValid(lowUser, lowPass)) {
+    if (isPrincipalPaUser && await checkPasswordValid(lowUser, lowPass)) {
       const matchingStaff = staffList.find((s) => s.role === 'principal_pa');
       const email = matchingStaff?.email || 'principal.pa@sasurie.com';
       const name = matchingStaff?.facultyName || 'Er. R. Ramesh (Principal PA)';
@@ -1368,7 +1403,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Secretary PA Login
-    if (isSecretaryPaUser && checkPasswordValid(lowUser, lowPass)) {
+    if (isSecretaryPaUser && await checkPasswordValid(lowUser, lowPass)) {
       const email = 'secretary.pa@sasurie.com';
       const name = 'Er. K. Suresh (Secretary PA)';
       const secPaUser: User = {
@@ -1395,7 +1430,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lowUser.includes('librarian') ||
       lowUser.includes('lib');
 
-    if (isLibrarianUser && checkPasswordValid(lowUser, lowPass)) {
+    if (isLibrarianUser && await checkPasswordValid(lowUser, lowPass)) {
       const email = 'librarian@sasurie.com';
       const name = 'Dr. S. Library Officer (Central Librarian)';
       const librarianUser: User = {
@@ -1420,7 +1455,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lowUser.includes('incucula') ||
       lowUser.includes('incubation');
 
-    if (isIncuculaUser && checkPasswordValid(lowUser, lowPass)) {
+    if (isIncuculaUser && await checkPasswordValid(lowUser, lowPass)) {
       const email = 'incucula@sasurie.com';
       const name = 'Dr. M. Innovation Officer (Incucula Head)';
       const incuculaUser: User = {
@@ -1450,7 +1485,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (lowUser.includes('hod') && !lowUser.includes('dhananjeiyan'));
 
     // HOD Admin Login
-    if (isHodUser && checkPasswordValid(lowUser, lowPass, foundStaff)) {
+    if (isHodUser && await checkPasswordValid(lowUser, lowPass, foundStaff)) {
       const email = foundStaff?.email || 'hodcs@sasurie.com';
       const name = foundStaff?.facultyName || dailyReport.hodName || 'Dr. C. HOD (AI & DS)';
       const department = foundStaff?.department || dailyReport.department || 'Artificial Intelligence & Data Science (AI & DS)';
@@ -1470,7 +1505,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Check staff login by staff ID or Email
-    if (foundStaff && checkPasswordValid(lowUser, lowPass, foundStaff)) {
+    if (foundStaff && await checkPasswordValid(lowUser, lowPass, foundStaff)) {
       const userRole: Role = foundStaff.role || 'staff';
       const staffUser: User = {
         username: foundStaff.id,

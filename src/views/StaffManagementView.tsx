@@ -100,7 +100,7 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
     if (onCloseAddModal) onCloseAddModal();
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!facultyName.trim()) return;
 
@@ -138,8 +138,8 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
         coordinatorRole,
         status,
       });
-      updateUserPassword(cleanId, pass);
-      if (email) updateUserPassword(email, pass);
+      await updateUserPassword(cleanId, pass);
+      if (email) await updateUserPassword(email, pass);
       setSuccessMsg(`Staff member "${facultyName}" (${cleanId}) updated and saved to database successfully.`);
     } else {
       addStaff({
@@ -155,8 +155,8 @@ export const StaffManagementView: React.FC<StaffManagementViewProps> = ({
         coordinatorRole,
         status,
       });
-      updateUserPassword(cleanId, pass);
-      if (email) updateUserPassword(email, pass);
+      await updateUserPassword(cleanId, pass);
+      if (email) await updateUserPassword(email, pass);
       setSuccessMsg(`New staff member "${facultyName}" (${cleanId}) created and saved to database successfully.`);
     }
 

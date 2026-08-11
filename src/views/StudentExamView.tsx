@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useCdc } from '../context/CdcContext';
 import { useApp } from '../context/AppContext';
 import { WebcamVerification } from '../components/WebcamVerification';
+import { analyzeVideoFrame, WebcamVerificationResult } from '../utils/webcamAnalysis';
 import { CdcExam, CdcExamAttempt, CdcQuestion } from '../types/cdc';
-import { Clock, ChevronLeft, ChevronRight, Flag, Send, AlertTriangle, CheckCircle2, XCircle, HelpCircle, BookOpen, Timer, ArrowLeft, BarChart2 } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Flag, Send, AlertTriangle, CheckCircle2, XCircle, HelpCircle, BookOpen, Timer, ArrowLeft, BarChart2, UserCheck, Trophy, Users } from 'lucide-react';
 
 export const StudentExamView: React.FC = () => {
-  const { cdcExams, cdcStudents, startExamAttempt, submitExamAttempt, addSuspiciousEvent, getQuestionsByIds, getAttemptByExamAndStudent } = useCdc();
+  const { cdcExams, cdcStudents, startExamAttempt, submitExamAttempt, updateAttempt, addSuspiciousEvent, getQuestionsByIds, getAttemptByExamAndStudent } = useCdc();
   const { skillBankStudents } = useApp();
   const [selectedExam, setSelectedExam] = useState<CdcExam | null>(null);
   const [student, setStudent] = useState<{ id: string; registerNumber: string; name: string } | null>(null);
@@ -32,6 +33,10 @@ export const StudentExamView: React.FC = () => {
   const examEndedRef = useRef(false);
   const answersRef = useRef<Record<number, number>>({});
   const markedForReviewRef = useRef<Set<number>>(new Set());
+  const multiFaceSinceRef = useRef<number | null>(null);
+  const lastMultiFaceLogRef = useRef<number>(0);
+  const MULTI_FACE_COOLDOWN_MS = 30000;
+  const [multiFaceAlert, setMultiFaceAlert] = useState(false);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -54,6 +59,14 @@ export const StudentExamView: React.FC = () => {
       addSuspiciousEvent(attempt!.id, 'right_click', 'Right-click blocked');
     };
 
+    // Block text selection (best-effort) and log the attempt so it shows up in
+    // the proctoring logs — selection is disabled via CSS as well, but users can
+    // still trigger selectstart via keyboard/mouse, so we intercept it here.
+    const disableTextSelection = (e: Event) => {
+      e.preventDefault();
+      addSuspiciousEvent(attempt!.id, 'text_selection', 'Text selection blocked');
+    };
+
     const handleTabSwitch = () => {
       if (document.hidden) {
         handleForcedAutoSubmit(
@@ -74,6 +87,7 @@ export const StudentExamView: React.FC = () => {
     document.addEventListener('paste', disableCopyPaste);
     document.addEventListener('cut', disableCopyPaste);
     document.addEventListener('contextmenu', disableRightClick);
+    document.addEventListener('selectstart', disableTextSelection);
     document.addEventListener('visibilitychange', handleTabSwitch);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
 
@@ -85,6 +99,7 @@ export const StudentExamView: React.FC = () => {
       document.removeEventListener('paste', disableCopyPaste);
       document.removeEventListener('cut', disableCopyPaste);
       document.removeEventListener('contextmenu', disableRightClick);
+      document.removeEventListener('selectstart', disableTextSelection);
       document.removeEventListener('visibilitychange', handleTabSwitch);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.body.style.userSelect = '';
@@ -134,28 +149,14 @@ export const StudentExamView: React.FC = () => {
 
     let animationId: number;
     let alertLogged = false;
+    const MULTI_FACE_WINDOW_MS = 8000; // sustained presence before logging
 
     const detectFrame = () => {
       if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width = video.videoWidth || 320;
-        canvas.height = video.videoHeight || 240;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const { facePresent, faceCount } = analyzeVideoFrame(video);
 
-        const imageData = ctx.getImageData(
-          canvas.width / 4,
-          canvas.height / 4,
-          canvas.width / 2,
-          canvas.height / 2
-        );
-        const data = imageData.data;
-        let brightness = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          brightness += (data[i] + data[i + 1] + data[i + 2]) / 3;
-        }
-        brightness /= data.length / 4;
-        const faceLikelyPresent = brightness > 40 && brightness < 220;
-
-        if (!faceLikelyPresent) {
+        // --- No face: sustained absence triggers a no_face suspicious event ---
+        if (!facePresent) {
           if (noFaceSinceRef.current === null) noFaceSinceRef.current = Date.now();
           const elapsed = Date.now() - noFaceSinceRef.current;
           if (elapsed >= 10000) {
@@ -169,6 +170,23 @@ export const StudentExamView: React.FC = () => {
           noFaceSinceRef.current = null;
           alertLogged = false;
           setNoFaceAlert(false);
+        }
+
+        // --- Multiple faces: sustained multiplicity triggers a multi_face event ---
+        if (faceCount > 1) {
+          if (multiFaceSinceRef.current === null) multiFaceSinceRef.current = Date.now();
+          const multiElapsed = Date.now() - multiFaceSinceRef.current;
+          if (multiElapsed >= MULTI_FACE_WINDOW_MS) {
+            setMultiFaceAlert(true);
+            const now = Date.now();
+            if (attempt && now - lastMultiFaceLogRef.current >= 30000) {
+              lastMultiFaceLogRef.current = now;
+              addSuspiciousEvent(attempt.id, 'multi_face', `Multiple faces detected (${faceCount})`);
+            }
+          }
+        } else {
+          multiFaceSinceRef.current = null;
+          setMultiFaceAlert(false);
         }
       }
       animationId = requestAnimationFrame(detectFrame);
@@ -283,7 +301,7 @@ export const StudentExamView: React.FC = () => {
     setShowWebcam(true);
   };
 
-  const handleWebcamVerified = () => {
+    const handleWebcamVerified = (verificationResult?: WebcamVerificationResult) => {
     setShowWebcam(false);
     if (!student || !selectedExam) return;
 
@@ -307,6 +325,18 @@ export const StudentExamView: React.FC = () => {
       section: fullStudent?.section || '',
       batch: fullStudent?.batch || '',
     } as any);
+
+    // Persist the webcam / identity verification metadata for audit & the CDC
+    // proctoring logs.
+    if (verificationResult) {
+      updateAttempt(newAttempt.id, {
+        webcamVerified: true,
+        faceVerifiedAt: verificationResult.verifiedAt,
+        verificationFaceCount: verificationResult.faceCount,
+        verificationIdentityMatch: verificationResult.identityMatch,
+        verificationPhotoAvailable: verificationResult.photoAvailable,
+      });
+    }
 
     examEndedRef.current = false;
     setAutoSubmitReason('');
@@ -439,13 +469,11 @@ export const StudentExamView: React.FC = () => {
           if (!foundStudent!.section || !foundStudent!.section.trim()) return true;
           return a.sections.some((sec) => normalize(sec) === normalize(foundStudent!.section));
         }
-        // If specific register numbers are set, the student must be listed.
-11        if (a.studentRegisterNumbers) {
-          if (a.studentRegisterNumbers.length === 0) {
-            return false;
-          }
-          return a.studentRegisterNumbers.some((r) => normalize(r) === normalize(foundStudent!.registerNumber));
-        }
+        // The assignment now acts as a live filter: once the student's
+        // department, year (and, when set, section) match, they are assigned.
+        // We intentionally do NOT gate on the stored `studentRegisterNumbers`
+        // snapshot — that list froze the participants when the exam was created,
+        // which wrongly hid exams from students added or edited later.
         return true;
       });
     });
@@ -520,10 +548,23 @@ export const StudentExamView: React.FC = () => {
         </div>
       </div>
     );
-  }
 
-  if (showWebcam) {
-    return <WebcamVerification onVerified={handleWebcamVerified} onCancel={() => { setShowWebcam(false); setSelectedExam(null); }} studentName={student.name} />;
+    if (showWebcam) {
+    const fullStudent = cdcStudents.find(
+      (s) => s.registerNumber.trim().toLowerCase() === student.registerNumber.trim().toLowerCase()
+    );
+    return (
+      <WebcamVerification
+        onVerified={handleWebcamVerified}
+        onCancel={() => {
+          setShowWebcam(false);
+          setSelectedExam(null);
+        }}
+        studentName={student.name}
+        studentPhotoUrl={fullStudent?.photoUrl}
+      />
+    );
+  }
   }
 
   // Show results both right after an exam is submitted AND when a student
@@ -595,6 +636,63 @@ export const StudentExamView: React.FC = () => {
                 <p className="text-xs text-slate-500">Accuracy</p>
               </div>
             </div>
+
+            {/* Rank & verification summary (auto-evaluation + proctoring outcome) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+              {[
+                { label: 'Overall Rank', value: attemptToShow?.overallRank },
+                { label: 'Department Rank', value: attemptToShow?.departmentRank },
+                { label: 'Branch Rank', value: attemptToShow?.branchRank },
+                { label: 'Year Rank', value: attemptToShow?.yearRank },
+              ].map((r) => (
+                <div key={r.label} className="bg-indigo-50 dark:bg-indigo-950 rounded-xl p-3 text-center">
+                  <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
+                    {r.value ? `#${r.value}` : '—'}
+                  </p>
+                  <p className="text-[10px] text-slate-600 dark:text-slate-400">{r.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8 text-xs text-slate-600 dark:text-slate-400">
+              <div className="flex items-center gap-1.5">
+                {attemptToShow?.webcamVerified ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-rose-600" />
+                )}
+                <span>Webcam verified: {attemptToShow?.webcamVerified ? 'Yes' : 'No'}</span>
+              </div>
+              {attemptToShow?.verificationPhotoAvailable && attemptToShow?.verificationIdentityMatch !== undefined && (
+                <div className="flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-blue-600" />
+                  <span>
+                    Identity match: {attemptToShow.verificationIdentityMatch ? 'Confirmed' : 'Unconfirmed'}
+                  </span>
+                </div>
+              )}
+              {(attemptToShow?.tabSwitchCount ||
+                attemptToShow?.fullscreenExitCount ||
+                attemptToShow?.copyPasteCount ||
+                attemptToShow?.rightClickCount ||
+                attemptToShow?.multiFaceDetectedCount ||
+                attemptToShow?.noFaceDetectedCount) > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <span>
+                    Suspicious activity: {
+                      (attemptToShow.tabSwitchCount || 0) +
+                      (attemptToShow.fullscreenExitCount || 0) +
+                      (attemptToShow.copyPasteCount || 0) +
+                      (attemptToShow.rightClickCount || 0) +
+                      (attemptToShow.multiFaceDetectedCount || 0) +
+                      (attemptToShow.noFaceDetectedCount || 0)
+                    }{' '}
+                    events
+                  </span>
+                </div>
+              )}
+            </div>
             <button onClick={() => { setSelectedExam(null); setSubmitted(false); setAttempt(null); setViewResultAttempt(null); }} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-sm">
               Back to Exams
             </button>
@@ -636,6 +734,16 @@ export const StudentExamView: React.FC = () => {
           </p>
         </div>
       )}
+
+      {multiFaceAlert && (
+        <div className="sticky top-[57px] z-40 bg-rose-700 text-white px-4 py-3 flex items-center gap-3 shadow-lg animate-pulse">
+          <Users className="w-5 h-5 shrink-0" />
+          <p className="text-sm font-bold">
+            ⚠ Multiple faces detected in front of the camera. This activity is being recorded for review.
+          </p>
+        </div>
+      )}
+
 
       <div className="flex-1 flex flex-col lg:flex-row max-w-7xl mx-auto w-full">
         <div className="flex-1 p-4 sm:p-6">

@@ -68,6 +68,16 @@ export const MentorMappingView: React.FC = () => {
   const [dbSyncing, setDbSyncing] = useState<boolean>(false);
   const [dbSyncedSuccess, setDbSyncedSuccess] = useState<boolean>(false);
 
+  // Allocation confirmation message state
+  const [allocationMessage, setAllocationMessage] = useState<string>('');
+  const [allocationMessageType, setAllocationMessageType] = useState<'success' | 'error'>('success');
+
+  const showAllocationMessage = (message: string, type: 'success' | 'error' = 'success') => {
+    setAllocationMessage(message);
+    setAllocationMessageType(type);
+    setTimeout(() => setAllocationMessage(''), 4000);
+  };
+
   const handleSyncAllToFirestore = async () => {
     setDbSyncing(true);
     try {
@@ -158,12 +168,13 @@ export const MentorMappingView: React.FC = () => {
     }
 
     const regNumbers = matchingStudents.map((s) => s.studentProfile.registerNumber);
-    bulkMapStudentsToMentor(regNumbers, staff.id, staff.facultyName);
-    alert(
-      `✓ Successfully mapped all ${regNumbers.length} students of ${
-        yearVal === 'all' ? 'All Years' : yearVal
-      } ${secVal === 'all' ? '' : 'Sec ' + secVal} to Mentor: ${staff.facultyName}!`
-    );
+    bulkMapStudentsToMentor(regNumbers, staff.id, staff.facultyName).then((result) => {
+      if (result.success) {
+        showAllocationMessage(result.message, 'success');
+      } else {
+        showAllocationMessage(result.message, 'error');
+      }
+    });
   };
 
   const handleClearAllDeptMentees = async () => {
@@ -250,21 +261,23 @@ export const MentorMappingView: React.FC = () => {
   };
 
   // Perform Bulk Mapping
-  const handleApplyBulkMapping = () => {
+  const handleApplyBulkMapping = async () => {
     if (selectedRegNumbers.length === 0) return;
     const effectiveStaffId = targetMentorStaffId || scopedStaff[0]?.id || staffList[0]?.id || 'STF001';
     const targetStaff = staffList.find((s) => s.id === effectiveStaffId) || scopedStaff[0] || staffList[0];
     const mentorName = targetStaff?.facultyName || 'Staff Mentor';
 
-    bulkMapStudentsToMentor(selectedRegNumbers, effectiveStaffId, mentorName);
+    const result = await bulkMapStudentsToMentor(selectedRegNumbers, effectiveStaffId, mentorName);
     setSelectedRegNumbers([]);
+    showAllocationMessage(result.message, result.success ? 'success' : 'error');
   };
 
   // Perform Unmap
-  const handleUnmapSelected = () => {
+  const handleUnmapSelected = async () => {
     if (selectedRegNumbers.length === 0) return;
-    bulkMapStudentsToMentor(selectedRegNumbers, '', 'Unassigned');
+    const result = await bulkMapStudentsToMentor(selectedRegNumbers, '', 'Unassigned');
     setSelectedRegNumbers([]);
+    showAllocationMessage(result.message, result.success ? 'success' : 'error');
   };
 
   // Handle CSV File Selection
@@ -500,6 +513,23 @@ export const MentorMappingView: React.FC = () => {
             <span>Sample Excel</span>
           </button>
 
+          {allocationMessage && (
+            <div
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold border flex items-center gap-1.5 animate-fade-in ${
+                allocationMessageType === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'
+                  : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-700'
+              }`}
+            >
+              {allocationMessageType === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+              )}
+              <span>{allocationMessage}</span>
+            </div>
+          )}
+
           <button
             onClick={() => setShowUploadModal(true)}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
@@ -717,10 +747,11 @@ export const MentorMappingView: React.FC = () => {
                           <>
                             <button
                               type="button"
-                              onClick={() => {
+                              onClick={async () => {
                                 if (window.confirm(`Unmap all ${mentees.length} mentees from mentor "${staff.facultyName}"?`)) {
                                   const regNumbers = mentees.map((m) => m.studentProfile.registerNumber);
-                                  bulkMapStudentsToMentor(regNumbers, '', 'Unassigned');
+                                  const result = await bulkMapStudentsToMentor(regNumbers, '', 'Unassigned');
+                                  showAllocationMessage(result.message, result.success ? 'success' : 'error');
                                 }
                               }}
                               className="px-2 py-1 text-[11px] font-bold bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/80 dark:text-amber-300 dark:hover:bg-amber-900 rounded-lg border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer flex items-center gap-1"
@@ -996,13 +1027,14 @@ export const MentorMappingView: React.FC = () => {
                       <td className="p-3.5 text-center">
                         <select
                           value={staffList.find((s) => s.facultyName === prof.mentorFaculty)?.id || ''}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const newStaff = staffList.find((s) => s.id === e.target.value);
-                            bulkMapStudentsToMentor(
+                            const result = await bulkMapStudentsToMentor(
                               [prof.registerNumber],
                               e.target.value,
                               newStaff?.facultyName || 'Unassigned'
                             );
+                            showAllocationMessage(result.message, result.success ? 'success' : 'error');
                           }}
                           className="px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none"
                         >
@@ -1019,7 +1051,10 @@ export const MentorMappingView: React.FC = () => {
                         <div className="flex items-center justify-end gap-1">
                           {isAssigned && (
                             <button
-                              onClick={() => bulkMapStudentsToMentor([prof.registerNumber], '', 'Unassigned')}
+                              onClick={async () => {
+                                const result = await bulkMapStudentsToMentor([prof.registerNumber], '', 'Unassigned');
+                                showAllocationMessage(result.message, result.success ? 'success' : 'error');
+                              }}
                               className="p-1.5 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-lg transition-colors cursor-pointer"
                               title="Unmap Mentor"
                             >

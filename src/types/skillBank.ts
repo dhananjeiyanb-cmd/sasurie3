@@ -518,3 +518,29 @@ export interface GoogleSheetsConfig {
   status: 'Idle' | 'Syncing' | 'Success' | 'Error';
   errorMessage?: string;
 }
+
+// Dedicated Mentor → Mentee mapping record persisted in the `mentorMappings`
+// Firestore collection (one document per mentor). This gives the system a
+// first-class Mentor → Mentee allocation that both the HOD (writer) and the
+// assigned mentor (reader) can rely on, and it is updated in real time.
+export interface MentorMenteeMapping {
+  /** Staff ID of the mentor (e.g. STF001). Document id in Firestore. */
+  mentorStaffId: string;
+  /** Display name of the mentor (e.g. 'M. Kaviyarasu'). */
+  mentorFaculty: string;
+  mentorEmail?: string;
+  department?: string;
+  /** Register numbers of every student currently allocated to this mentor. */
+  menteeRegNumbers: string[];
+  /** Lightweight snapshot of the allocated mentees for quick list rendering. */
+  mentees?: {
+    registerNumber: string;
+    studentName: string;
+    academicYear?: string;
+    semester?: string;
+    section?: string;
+    batch?: string;
+  }[];
+  /** ISO timestamp of the last allocation update. */
+  updatedAt: string;
+}

@@ -165,6 +165,34 @@
         "eventStatus": { "type": "string" }
       },
       "required": ["id", "eventTitle", "eventType", "department", "eventStatus"]
+    },
+    "MentorMenteeMapping": {
+      "title": "MentorMenteeMapping Entity",
+      "description": "Dedicated Mentor → Mentee allocation mapping persisted per mentor",
+      "type": "object",
+      "properties": {
+        "mentorStaffId": { "type": "string" },
+        "mentorFaculty": { "type": "string" },
+        "mentorEmail": { "type": "string" },
+        "department": { "type": "string" },
+        "menteeRegNumbers": { "type": "array", "items": { "type": "string" } },
+        "mentees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "registerNumber": { "type": "string" },
+              "studentName": { "type": "string" },
+              "academicYear": { "type": "string" },
+              "semester": { "type": "string" },
+              "section": { "type": "string" },
+              "batch": { "type": "string" }
+            }
+          }
+        },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["mentorStaffId", "mentorFaculty", "menteeRegNumbers", "updatedAt"]
     }
   },
   "firestore": {
@@ -207,6 +235,10 @@
     "/notifications/{notifDocId}": {
       "schema": { "$ref": "#/entities/AppNotification" },
       "description": "Collection of notifications"
+    },
+    "/mentorMappings/{mentorDocId}": {
+      "schema": { "$ref": "#/entities/MentorMenteeMapping" },
+      "description": "Collection of mentor → mentee allocation mappings"
     }
   }
 }

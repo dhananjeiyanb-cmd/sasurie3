@@ -16,6 +16,7 @@ import { StudentAttendanceView } from './views/StudentAttendanceView';
 import { LessonPlanView } from './views/LessonPlanView';
 import { SkillBankView } from './views/SkillBankView';
 import { MentorMappingView } from './views/MentorMappingView';
+import { MentorMenteeView } from './views/MentorMenteeView';
 import { LibrarianPortalView } from './views/LibrarianPortalView';
 import { EventsView } from './views/EventsView';
 import { CCMView } from './views/CCMView';
@@ -37,6 +38,14 @@ const MainContent: React.FC = () => {
   // Redirect staff users away from unauthorized coordinator tabs or HOD-only tabs
   React.useEffect(() => {
     if (!currentUser) return;
+
+    // These tabs are hidden for ALL roles — force any persisted/current tab back to Dashboard.
+    const globallyHiddenTabs = ['events', 'classes', 'student_attendance', 'cdc', 'cdc_exams', 'iqac_ccm', 'iqac_lesson_plan'];
+    if (globallyHiddenTabs.includes(activeTab)) {
+      setActiveTab('dashboard');
+      return;
+    }
+
     const isStaffUser = currentUser.role === 'staff';
     const isLibrarianUser = currentUser.role === 'librarian';
     
@@ -153,6 +162,8 @@ const MainContent: React.FC = () => {
           )}
 
           {activeTab === 'mentor_mapping' && <MentorMappingView />}
+
+          {activeTab === 'my_mentees' && <MentorMenteeView />}
 
           {activeTab === 'librarian_portal' && <LibrarianPortalView />}
 

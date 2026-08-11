@@ -179,6 +179,8 @@ export const CdcProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       studentRegisterNumber: student.registerNumber,
       studentName: student.name,
       studentDepartment: student.department,
+      studentYear: student.year,
+      studentSection: student.section,
       startTime: new Date().toISOString(),
       answers: {},
       markedForReview: [],

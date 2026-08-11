@@ -49,6 +49,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   // "Dashboard" sub-item stays HOD/Principal only.
   const canSeeCdc = currentUser?.role ? [...executiveRoles, 'staff'].includes(currentUser.role) : false;
 
+  // Tabs hidden for ALL roles (requested): Event, Class Management,
+  // Student Attendance Today, CDC group and IQAC group must not appear
+  // in the sidebar for any login / role.
+  const HIDDEN_NAV_IDS = ['events', 'classes', 'student_attendance', 'cdc', 'cdc_exams', 'iqac_ccm', 'iqac_lesson_plan'];
+
+  // CDC & IQAC collapsible groups are hidden for all roles (requested).
+  const showCdcModule = false;
+  const showIqacModule = false;
+
   const navItems = [
     {
       id: 'dashboard',
@@ -148,10 +157,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       icon: Printer,
       roles: [...executiveRoles, 'staff'],
     },
+    {
+      id: 'my_mentees',
+      label: 'My Mentees',
+      icon: UserCheck,
+      roles: ['staff'],
+    },
   ];
 
   const visibleNavItems = navItems.filter((item) => {
     if (!currentUser) return false;
+    // These tabs are hidden for ALL roles — never show them from navItems.
+    if (HIDDEN_NAV_IDS.includes(item.id)) return false;
     if (!item.roles.includes(currentUser.role)) return false;
 
     // Strict coordinator restrictions for staff users
@@ -269,8 +286,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             );
           })}
 
-        {/* CDC Module (collapsible group, like IQAC) */}
-          {canSeeCdc && (
+        {/* CDC Module (collapsible group, like IQAC) — hidden for all roles */}
+          {showCdcModule && canSeeCdc && (
           <div className="mt-2 mb-2">
             <button
               onClick={() => setCdcOpen(!cdcOpen)}
@@ -324,8 +341,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           </div>
           )}
 
-          {/* IQAC Module (for Principal, HoDs & Staff — shown below CDC) */}
-          {!isCdcCoordinator && (
+          {/* IQAC Module — hidden for all roles */}
+          {showIqacModule && !isCdcCoordinator && (
           <div className="mt-2 mb-2">
             <button
               onClick={() => setIqacOpen(!iqacOpen)}

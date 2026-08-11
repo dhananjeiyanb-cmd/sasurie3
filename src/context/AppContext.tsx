@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { collection, doc, onSnapshot, getDocs, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType, testFirestoreConnection } from '../lib/firebase';
 import { syncDocToFirestore, deleteDocFromFirestore } from '../lib/firestoreSync';
@@ -23,7 +23,7 @@ import {
   EventDocument,
   EventFeedbackResponse,
 } from '../types';
-import { StudentSkillBankData, GoogleSheetsConfig } from '../types/skillBank';
+import { StudentSkillBankData, GoogleSheetsConfig, MentorMenteeMapping } from '../types/skillBank';
 import { FacultyKpiRecord, FacultyPillarClaim } from '../types/facultyKpi';
 import { CCMMeeting, CCMAgendaItem, CCMMeetingStatus } from '../types/ccm';
 import { INITIAL_CCM_MEETINGS, DEFAULT_CCM_AGENDA, buildDefaultAgenda } from '../data/ccmData';
@@ -41,7 +41,7 @@ import {
 } from '../data/seedData';
 import { INITIAL_STUDENTS_SKILL_BANK, stripSkillBankDates } from '../data/mockSkillBank';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
-import { isSameDept, getDeptTag } from '../utils/departmentUtils';
+import { isSameDept, getDeptTag, buildMentorMappingsFromStudents } from '../utils/departmentUtils';
 import { normalizeStudentSkillBankRecord } from '../utils/excelSkillBank';
 
 const getStudentDocId = (st: StudentSkillBankData): string => {
@@ -158,7 +158,19 @@ interface AppContextType {
   deleteSkillBankStudents: (registerNumbers: string[]) => void;
   clearDepartmentSkillBankStudents: (departmentName: string) => void;
   clearAllSkillBankStudents: () => void;
-  bulkMapStudentsToMentor: (registerNumbers: string[], staffId: string, mentorName: string) => void;
+
+  // Mentor → Mentee allocation system (persisted in the `mentorMappings` collection)
+  mentorMappings: MentorMenteeMapping[];
+  bulkMapStudentsToMentor: (
+    registerNumbers: string[],
+    staffId: string,
+    mentorName: string
+  ) => Promise<{ success: boolean; message: string }>;
+  saveMentorMenteeAllocation: (
+    registerNumbers: string[],
+    staffId: string,
+    mentorName: string
+  ) => Promise<{ success: boolean; message: string }>;
   importBulkSkillBankStudents: (newStudents: StudentSkillBankData[]) => void;
 
   // Faculty KPI Cascade (Phase 1: auto B,C,E + self-claim A,D; HOD F in Phase 2)
@@ -408,6 +420,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return INITIAL_STUDENTS_SKILL_BANK;
   });
 
+  const [mentorMappings, setMentorMappings] = useState<MentorMenteeMapping[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}mentor_mappings_v1`);
+    if (saved) {
+      try {
+        const parsed: MentorMenteeMapping[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return buildMentorMappingsFromStudents(INITIAL_STUDENTS_SKILL_BANK);
+  });
+  // Keeps the last derived mapping snapshot so we only write to Firestore when
+  // a mentor's allocation actually changed (avoids write/listener loops).
+  const derivedMentorMappingsRef = useRef<MentorMenteeMapping[]>(mentorMappings);
+
     // Faculty KPI Cascade — persisted self-claims (Pillars A, D) + HOD claims (F, Phase 2).
   // Auto pillars (B, C, E) are recomputed on the fly from the Skill Bank in the view.
   const [facultyKpis, setFacultyKpis] = useState<FacultyKpiRecord[]>(() => {
@@ -505,6 +531,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(skillBankStudents));
   }, [skillBankStudents]);
+
+  // Keep the dedicated Mentor → Mentee mapping collection in sync with the
+  // student records. The mapping is derived deterministically and only written
+  // to Firestore when a mentor's allocation actually changed, so the mentor
+  // dashboard + database stay updated immediately after any add/change/remove.
+  useEffect(() => {
+    const derived = buildMentorMappingsFromStudents(skillBankStudents, staffList);
+    const prev = derivedMentorMappingsRef.current;
+    const prevByStaff = new Map<string, MentorMenteeMapping>();
+    prev.forEach((m) => prevByStaff.set(String(m.mentorStaffId || '').trim().toLowerCase(), m));
+
+    const changed: MentorMenteeMapping[] = [];
+    const nextStaffIds = new Set<string>();
+    derived.forEach((m) => {
+      const key = String(m.mentorStaffId || '').trim().toLowerCase();
+      if (key) nextStaffIds.add(key);
+      const old = key ? prevByStaff.get(key) : undefined;
+      const oldRegs = JSON.stringify(old?.menteeRegNumbers || []);
+      const newRegs = JSON.stringify(m.menteeRegNumbers || []);
+      if (!old || oldRegs !== newRegs) changed.push(m);
+    });
+    const removed = prev.filter((m) => !nextStaffIds.has(String(m.mentorStaffId || '').trim().toLowerCase()));
+
+    if ((changed.length > 0 || removed.length > 0) && !(derived.length === 0 && skillBankStudents.length === 0)) {
+      const now = new Date().toISOString();
+      changed.forEach((m) => {
+        syncDocToFirestore('mentorMappings', m.mentorStaffId, { ...m, updatedAt: now });
+      });
+      removed.forEach((m) => {
+        deleteDocFromFirestore('mentorMappings', m.mentorStaffId);
+      });
+    }
+
+    derivedMentorMappingsRef.current = derived;
+    setMentorMappings(derived);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}mentor_mappings_v1`, JSON.stringify(derived));
+  }, [skillBankStudents, staffList]);
 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(facultyKpis));
@@ -2502,53 +2565,121 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const bulkMapStudentsToMentor = (registerNumbers: string[], staffId: string, mentorName: string) => {
+  const saveMentorMenteeAllocation = async (
+    registerNumbers: string[],
+    staffId: string,
+    mentorName: string
+  ): Promise<{ success: boolean; message: string }> => {
     const cleanRegs = registerNumbers.map((r) => (r || '').trim()).filter(Boolean);
-    if (cleanRegs.length === 0) return;
+    const cleanStaffId = (staffId || '').trim();
+    const cleanMentorName = (mentorName || 'Unassigned').trim();
 
-    // Update local state first for immediate UX
-    setSkillBankStudents((prev) =>
-      prev.map((s) => {
-        const reg = (s.studentProfile.registerNumber || '').trim();
-        if (cleanRegs.includes(reg)) {
-          return {
-            ...s,
-            studentProfile: {
-              ...s.studentProfile,
-              mentorFaculty: mentorName,
-              mentorStaffId: staffId,
-            },
-          };
+    if (cleanRegs.length === 0) {
+      return { success: false, message: 'No students were selected for the mentor allocation.' };
+    }
+    const isUnassign = !cleanStaffId || cleanMentorName === 'Unassigned';
+    const assignedMentorId = isUnassign ? '' : cleanStaffId;
+    const assignedMentorName = isUnassign ? '' : cleanMentorName;
+
+    // 1) Update the local student list immediately for instant UX.
+    const nextStudents = skillBankStudents.map((s) => {
+      const reg = (s.studentProfile?.registerNumber || '').trim();
+      if (cleanRegs.includes(reg)) {
+        return {
+          ...s,
+          studentProfile: {
+            ...s.studentProfile,
+            mentorFaculty: assignedMentorName,
+            mentorStaffId: assignedMentorId,
+          },
+        };
+      }
+      return s;
+    });
+    setSkillBankStudents(nextStudents);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(nextStudents));
+
+    // 2) Save every affected student doc to the database immediately
+    //    (mentorStaffId + mentorFaculty are stored on the student record too).
+    const failures: string[] = [];
+    await Promise.all(
+      cleanRegs.map(async (reg) => {
+        try {
+          const st = nextStudents.find((ss) => (ss.studentProfile?.registerNumber || '').trim() === reg)
+            ?? skillBankStudents.find((ss) => (ss.studentProfile?.registerNumber || '').trim() === reg);
+          const docPayload = st
+            ? {
+                ...st,
+                studentProfile: {
+                  ...st.studentProfile,
+                  mentorFaculty: assignedMentorName,
+                  mentorStaffId: assignedMentorId,
+                },
+              }
+            : {
+                studentProfile: {
+                  registerNumber: reg,
+                  mentorFaculty: assignedMentorName,
+                  mentorStaffId: assignedMentorId,
+                },
+              };
+          const docId = reg.replace(/\//g, '_');
+          await syncDocToFirestore('skillBankStudents', docId, docPayload);
+        } catch (err) {
+          console.error('Failed saving mentor allocation for', reg, err);
+          failures.push(reg);
         }
-        return s;
       })
     );
 
-    // Persist changes to Firestore and report any failures
-    (async () => {
-      const failures: string[] = [];
-      await Promise.all(
-        cleanRegs.map(async (reg) => {
-          try {
-            const st = skillBankStudents.find((ss) => (ss.studentProfile?.registerNumber || '').trim() === reg);
-            // If not found in current in-memory list, create a minimal doc to persist mapping
-            const docPayload = st
-              ? { ...st, studentProfile: { ...st.studentProfile, mentorFaculty: mentorName, mentorStaffId: staffId } }
-              : { studentProfile: { registerNumber: reg, mentorFaculty: mentorName, mentorStaffId: staffId } };
-            const docId = reg.replace(/\//g, '_');
-            await syncDocToFirestore('skillBankStudents', docId, docPayload);
-          } catch (err) {
-            console.error('Failed saving mentor mapping for', reg, err);
-            failures.push(reg);
-          }
-        })
-      );
-      if (failures.length > 0) {
-        alert(
-          `Failed to persist mentor mapping for ${failures.length} student(s). Please check network/Firestore configuration or try again. Failed Reg Nos: ${failures.join(', ')}`
-        );
+    // 3) Rebuild the dedicated Mentor → Mentee mapping and persist it to the
+    //    `mentorMappings` collection (one doc per mentor).
+    const derived = buildMentorMappingsFromStudents(nextStudents, staffList);
+    const involvedStaffIds = new Set<string>();
+    nextStudents.forEach((ss) => {
+      const reg = (ss.studentProfile?.registerNumber || '').trim();
+      if (cleanRegs.includes(reg) && (ss.studentProfile?.mentorStaffId || '').trim()) {
+        involvedStaffIds.add((ss.studentProfile?.mentorStaffId || '').trim());
       }
-    })();
+    });
+    const now = new Date().toISOString();
+    const derivedWithTime = derived.map((m) => ({
+      ...m,
+      updatedAt: involvedStaffIds.has(m.mentorStaffId) ? now : m.updatedAt,
+    }));
+    setMentorMappings(derivedWithTime);
+    derivedMentorMappingsRef.current = derivedWithTime;
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}mentor_mappings_v1`, JSON.stringify(derivedWithTime));
+
+    await Promise.all(
+      derivedWithTime.map(async (m) => {
+        try {
+          await syncDocToFirestore('mentorMappings', m.mentorStaffId, m);
+        } catch (err) {
+          console.error('Failed saving mentor mapping document for', m.mentorStaffId, err);
+          failures.push(m.mentorStaffId);
+        }
+      })
+    );
+
+    if (failures.length > 0) {
+      return {
+        success: false,
+        message: `Failed to persist the allocation for ${failures.length} record(s) (${failures
+          .slice(0, 5)
+          .join(', ')})${failures.length > 5 ? '…' : ''}. Please check your network / Firestore configuration and try again.`,
+      };
+    }
+
+    return { success: true, message: 'Mentor–Mentee allocation updated successfully.' };
+  };
+
+  const bulkMapStudentsToMentor = (
+    registerNumbers: string[],
+    staffId: string,
+    mentorName: string
+  ): Promise<{ success: boolean; message: string }> => {
+    return saveMentorMenteeAllocation(registerNumbers, staffId, mentorName);
   };
 
   const importBulkSkillBankStudents = (newStudents: StudentSkillBankData[]) => {
@@ -2850,6 +2981,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hodAttendanceRecords,
       attendanceRecords,
       skillBankStudents,
+      mentorMappings,
       eventsList,
       googleSheetsConfig,
       notifications,
@@ -2910,6 +3042,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const docId = getStudentDocId(st);
           if (docId) syncDocToFirestore('skillBankStudents', docId, st);
         });
+      }
+      if (parsed.mentorMappings && Array.isArray(parsed.mentorMappings)) {
+        const restoredMappings = buildMentorMappingsFromStudents(
+          parsed.skillBankStudents && Array.isArray(parsed.skillBankStudents) ? parsed.skillBankStudents : skillBankStudents,
+          parsed.staffList && Array.isArray(parsed.staffList) ? parsed.staffList : staffList
+        );
+        const restoredWithTime = restoredMappings.map((m) => {
+          const saved = (parsed.mentorMappings as MentorMenteeMapping[]).find((pm) => pm.mentorStaffId === m.mentorStaffId);
+          return { ...m, updatedAt: saved?.updatedAt || new Date().toISOString() };
+        });
+        setMentorMappings(restoredWithTime);
+        restoredWithTime.forEach((m) => syncDocToFirestore('mentorMappings', m.mentorStaffId, m));
       }
       if (parsed.googleSheetsConfig && typeof parsed.googleSheetsConfig === 'object') setGoogleSheetsConfig(parsed.googleSheetsConfig);
       if (parsed.notifications && Array.isArray(parsed.notifications)) {
@@ -3102,7 +3246,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteSkillBankStudents,
         clearDepartmentSkillBankStudents,
         clearAllSkillBankStudents,
+        mentorMappings,
         bulkMapStudentsToMentor,
+        saveMentorMenteeAllocation,
         importBulkSkillBankStudents,
         facultyKpis,
         upsertFacultyKpiClaim,

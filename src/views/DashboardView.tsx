@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { TaskStatusBadge, PriorityBadge } from '../components/StatusBadge';
-import { StudentAttendanceModal } from '../components/StudentAttendanceModal';
 import { FacultyAttendanceModal } from '../components/FacultyAttendanceModal';
-import { DailyRemarksModal } from '../components/DailyRemarksModal';
 import { DEPARTMENTS } from '../types';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
-import { getDeptHodName, isSameDept, getDepartmentAttendanceSummaries, getUserCollege, isStaffInCollege } from '../utils/departmentUtils';
+import { isSameDept, getUserCollege, isStaffInCollege, getStudentsAssignedToMentor } from '../utils/departmentUtils';
 import {
   Users,
   GraduationCap,
@@ -16,8 +14,6 @@ import {
   AlertTriangle,
   Eye,
   Plus,
-  ArrowRight,
-  TrendingUp,
   FileText,
   Calendar,
   Sparkles,
@@ -26,35 +22,10 @@ import {
   BookOpen,
   Layers,
   Shield,
-  Activity,
-  BarChart3,
-  CalendarDays,
   Hourglass,
   UserCheck,
-  ChevronRight,
   Building2,
-  Lock,
-  Trash2,
-  Filter,
 } from 'lucide-react';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  ComposedChart,
-} from 'recharts';
 
 interface DashboardViewProps {
   onOpenAddTask?: () => void;
@@ -80,29 +51,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     filterState,
     setFilterState,
     updateDailyReport,
-    skillBankStudents,
-    attendanceRecords,
-    clearAllAttendance,
     hodAttendanceRecords,
+    skillBankStudents,
+    mentorMappings,
   } = useApp();
 
-  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [isFacultyAttendanceModalOpen, setIsFacultyAttendanceModalOpen] = useState(false);
-  const [isRemarksModalOpen, setIsRemarksModalOpen] = useState(false);
-  const [remarksTab, setRemarksTab] = useState<'events' | 'discipline' | 'hod'>('discipline');
 
   const isStaff = currentUser?.role === 'staff';
   const isHod = currentUser?.role === 'admin';
   const isPrincipal = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
   const isSecretary = currentUser?.role === 'secretary' || currentUser?.role === 'secretary_pa';
-  const isManagementUser = isPrincipal || isSecretary || (currentUser?.role === 'admin' && currentUser?.username === 'ADM001');
   const isReadOnlyUser = isPrincipal || isSecretary;
   const principalCollege = getUserCollege(currentUser, dailyReport?.collegeName);
   const hodDepartment = currentUser?.department || 'Artificial Intelligence & Data Science (AI & DS)';
-
-  const availableAttendanceDepts = isManagementUser
-    ? DEPARTMENTS
-    : DEPARTMENTS.filter((d) => isSameDept(d, hodDepartment));
 
   const selectedDept = (isPrincipal || isSecretary)
     ? (filterState.department || dailyReport?.department || 'All Departments')
@@ -177,142 +139,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   });
   const todaysObservations = displayObservationList.filter((o) => o.date === todayStr).length;
 
-  // Student Attendance Calculations
-  const rawStudentAttendanceList = dailyReport.studentAttendanceSummaries || [];
-  const activeAttendanceDept = isManagementUser
-    ? selectedDept
-    : hodDepartment;
-
-  const studentAttendanceList = getDepartmentAttendanceSummaries(
-    rawStudentAttendanceList,
-    classList,
-    activeAttendanceDept,
-    attendanceRecords
-  );
-  const totalStudentsCount = studentAttendanceList.reduce((acc, curr) => acc + Number(curr.totalStudents || 0), 0);
-  const totalPresentCount = studentAttendanceList.reduce((acc, curr) => acc + Number(curr.presentStudents || 0), 0);
-  const totalAbsentCount = Math.max(0, totalStudentsCount - totalPresentCount);
-  const overallStudentAttendancePct = totalStudentsCount > 0 ? Number(((totalPresentCount / totalStudentsCount) * 100).toFixed(1)) : 0;
-
-  // Pie Chart Data
-  const pieData = [
-    { name: 'Completed', value: completedTasks, color: '#10b981' }, // Emerald
-    { name: 'In Progress', value: inProgressTasks, color: '#3b82f6' }, // Blue
-    { name: 'Pending', value: pendingTasks, color: '#f59e0b' }, // Amber
-    { name: 'Overdue', value: overdueTasks, color: '#f43f5e' }, // Rose
-  ].filter((d) => d.value > 0);
-
-  // Faculty Task completion breakdown for bar chart
-  const facultyChartData = displayStaffList.slice(0, 5).map((staff) => {
-    const assigned = displayTaskList.filter((t) => t.assignedToStaffId === staff.id);
-    const completed = assigned.filter((t) => t.status === 'Completed').length;
-    const pending = assigned.filter((t) => t.status === 'Pending' || t.status === 'In Progress').length;
-    const overdue = assigned.filter((t) => t.status === 'Overdue').length;
-
-    const fName = staff.facultyName || staff.id || 'Staff';
-
-    return {
-      name: fName.includes(' ') ? (fName.split(' ')[1] || fName.split(' ')[0]) : fName,
-      Completed: completed,
-      Pending: pending,
-      Overdue: overdue,
-    };
-  });
-
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-  // Priority Completion Breakdown for Task Completion Rate Visualization
-  const highPriorityTasks = displayTaskList.filter((t) => t.priority === 'High');
-  const highPriorityDone = highPriorityTasks.filter((t) => t.status === 'Completed').length;
-  const highPriorityPct = highPriorityTasks.length > 0 ? Math.round((highPriorityDone / highPriorityTasks.length) * 100) : 0;
-
-  const medPriorityTasks = displayTaskList.filter((t) => t.priority === 'Medium');
-  const medPriorityDone = medPriorityTasks.filter((t) => t.status === 'Completed').length;
-  const medPriorityPct = medPriorityTasks.length > 0 ? Math.round((medPriorityDone / medPriorityTasks.length) * 100) : 0;
-
-  const lowPriorityTasks = displayTaskList.filter((t) => t.priority === 'Low');
-  const lowPriorityDone = lowPriorityTasks.filter((t) => t.status === 'Completed').length;
-  const lowPriorityPct = lowPriorityTasks.length > 0 ? Math.round((lowPriorityDone / lowPriorityTasks.length) * 100) : 0;
-
-  // Faculty & Student Attendance Trends Data (Past 6 days + Today)
-  const attendanceTrendData = React.useMemo(() => {
-    const activeStaffPct = displayStaffList.length > 0
-      ? Math.round((displayStaffList.filter((s) => s.status === 'Active').length / displayStaffList.length) * 100)
-      : 95;
-
-    const baseStudentPct = overallStudentAttendancePct > 0 ? overallStudentAttendancePct : 92.0;
-
-    return [
-      { day: 'Mon', facultyAttendance: 96, studentAttendance: 89.5 },
-      { day: 'Tue', facultyAttendance: 98, studentAttendance: 92.0 },
-      { day: 'Wed', facultyAttendance: 94, studentAttendance: 88.5 },
-      { day: 'Thu', facultyAttendance: 97, studentAttendance: 94.0 },
-      { day: 'Fri', facultyAttendance: 99, studentAttendance: 91.0 },
-      { day: 'Sat', facultyAttendance: 92, studentAttendance: 85.0 },
-      { day: 'Today', facultyAttendance: activeStaffPct, studentAttendance: baseStudentPct },
-    ];
-  }, [displayStaffList, overallStudentAttendancePct]);
-
-  // Upcoming Deadlines Breakdown Data (Proximity to targetDate)
-  const upcomingDeadlinesData = React.useMemo(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    let overdue = 0;
-    let dueToday = 0;
-    let due3Days = 0;
-    let due7Days = 0;
-    let dueLater = 0;
-
-    let overdueHigh = 0;
-    let dueTodayHigh = 0;
-    let due3DaysHigh = 0;
-    let due7DaysHigh = 0;
-    let dueLaterHigh = 0;
-
-    displayTaskList.forEach((t) => {
-      if (!t.targetDate) return;
-      const target = new Date(t.targetDate);
-      target.setHours(0, 0, 0, 0);
-
-      const diffDays = Math.ceil((target.getTime() - now.getTime()) / (1000 * 3600 * 24));
-
-      if (t.status === 'Completed') return; // Only open/pending tasks for deadlines
-
-      if (diffDays < 0 || t.status === 'Overdue') {
-        overdue++;
-        if (t.priority === 'High') overdueHigh++;
-      } else if (diffDays === 0) {
-        dueToday++;
-        if (t.priority === 'High') dueTodayHigh++;
-      } else if (diffDays <= 3) {
-        due3Days++;
-        if (t.priority === 'High') due3DaysHigh++;
-      } else if (diffDays <= 7) {
-        due7Days++;
-        if (t.priority === 'High') due7DaysHigh++;
-      } else {
-        dueLater++;
-        if (t.priority === 'High') dueLaterHigh++;
-      }
-    });
-
-    return [
-      { window: 'Overdue', Tasks: overdue, HighPriority: overdueHigh, fill: '#f43f5e' },
-      { window: 'Due Today', Tasks: dueToday, HighPriority: dueTodayHigh, fill: '#ef4444' },
-      { window: 'Next 3 Days', Tasks: due3Days, HighPriority: due3DaysHigh, fill: '#f59e0b' },
-      { window: 'Next 7 Days', Tasks: due7Days, HighPriority: due7DaysHigh, fill: '#3b82f6' },
-      { window: '8+ Days', Tasks: dueLater, HighPriority: dueLaterHigh, fill: '#10b981' },
-    ];
-  }, [displayTaskList]);
-
-  // Urgent upcoming deadline tasks for preview list
-  const sortedUpcomingTasks = React.useMemo(() => {
-    return displayTaskList
-      .filter((t) => t.status !== 'Completed')
-      .sort((a, b) => new Date(a.targetDate).getTime() - new Date(b.targetDate).getTime())
-      .slice(0, 4);
-  }, [displayTaskList]);
+  // Mentor Mentee Data for staff dashboard
+  const myMentees = useMemo(
+    () => getStudentsAssignedToMentor(currentUser, skillBankStudents || []),
+    [currentUser, skillBankStudents]
+  );
+  const myMentorMapping = useMemo(
+    () => mentorMappings.find((m) => m.mentorStaffId === (currentUser?.staffId || '').trim()) || null,
+    [mentorMappings, currentUser]
+  );
 
   // Key Performance Indicator (KPI) Computed Metrics
   const totalPendingTasks = pendingTasks + inProgressTasks;
@@ -806,686 +643,69 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-
-
-      {/* EXECUTIVE RECHARTS ANALYTICS DASHBOARD SUMMARY */}
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-sm">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
-                EXECUTIVE ANALYTICS DASHBOARD SUMMARY
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Interactive Recharts visualization for task completion rates, faculty attendance trends, and upcoming deadlines
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 text-xs font-bold flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-              Live Visual Sync
-            </span>
-          </div>
-        </div>
-
-        {/* 3 Core Summary Visual Analytics Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-          {/* 1. TASK COMPLETION RATES VISUALIZATION */}
-          <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="text-xs font-black uppercase text-blue-600 dark:text-blue-400 tracking-wider flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                  1. Task Completion Rates
-                </h4>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-[10px] font-black border border-emerald-300">
-                  {completionRate}% Completed
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Overall task execution status & priority compliance rates
-              </p>
-            </div>
-
-            {/* Recharts Pie Donut Chart */}
-            <div className="h-48 w-full relative flex items-center justify-center">
-              {pieData.length > 0 ? (
-                <>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={75}
-                        paddingAngle={4}
-                        dataKey="value"
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`completion-cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#0f172a',
-                          borderRadius: '8px',
-                          color: '#fff',
-                          fontSize: '11px',
-                          border: '1px solid #334155',
-                        }}
-                      />
-                      <Legend verticalAlign="bottom" height={32} iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-8 text-center pointer-events-none">
-                    <span className="text-xl font-black text-slate-900 dark:text-white block">
-                      {completedTasks}/{totalTasks}
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">
-                      Tasks Done
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <div className="text-xs text-slate-400 text-center italic">No task data recorded</div>
-              )}
-            </div>
-
-            {/* Priority Progress Bars */}
-            <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-xs">
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="font-bold text-slate-700 dark:text-slate-300">High Priority Completion</span>
-                  <span className="font-black text-rose-600 dark:text-rose-400">{highPriorityDone}/{highPriorityTasks.length} ({highPriorityPct}%)</span>
-                </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5">
-                  <div className="bg-rose-500 h-1.5 rounded-full transition-all" style={{ width: `${highPriorityPct}%` }} />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="font-bold text-slate-700 dark:text-slate-300">Medium Priority Completion</span>
-                  <span className="font-black text-amber-600 dark:text-amber-400">{medPriorityDone}/{medPriorityTasks.length} ({medPriorityPct}%)</span>
-                </div>
-                <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5">
-                  <div className="bg-amber-500 h-1.5 rounded-full transition-all" style={{ width: `${medPriorityPct}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. FACULTY & STUDENT ATTENDANCE TRENDS VISUALIZATION */}
-          <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="text-xs font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-indigo-500" />
-                  2. Faculty Attendance Trends
-                </h4>
-                <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 text-[10px] font-black border border-indigo-300">
-                  Daily Presence Log
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Tracking faculty & student presence percentage over time
-              </p>
-            </div>
-
-            {/* Recharts Area Chart for Attendance Trends */}
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={attendanceTrendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="facultyGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0.05}/>
-                    </linearGradient>
-                    <linearGradient id="studentGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.05}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                  <XAxis dataKey="day" tick={{ fontSize: 10 }} />
-                  <YAxis domain={[70, 100]} tick={{ fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0f172a',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '11px',
-                      border: '1px solid #334155',
-                    }}
-                    formatter={(val: any) => [`${val}%`, '']}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '10px' }} />
-                  <Area
-                    type="monotone"
-                    dataKey="facultyAttendance"
-                    name="Faculty Presence %"
-                    stroke="#6366f1"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#facultyGradient)"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="studentAttendance"
-                    name="Student Attendance %"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#studentGradient)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Attendance Quick Metrics Footer */}
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200 dark:border-slate-800 text-center">
-              <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800">
-                <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 block">Today's Faculty</span>
-                <span className="text-xs font-black text-indigo-900 dark:text-indigo-200">
-                  {displayStaffList.filter(s => s.status === 'Active').length} Active ({attendanceTrendData[6].facultyAttendance}%)
-                </span>
-              </div>
-              <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800">
-                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 block">Today's Students</span>
-                <span className="text-xs font-black text-emerald-900 dark:text-emerald-200">
-                  {overallStudentAttendancePct}% Present
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* 3. UPCOMING DEADLINES VISUALIZATION */}
-          <div className="p-4 rounded-xl bg-slate-50/70 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700/80 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="text-xs font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider flex items-center gap-1.5">
-                  <CalendarDays className="w-4 h-4 text-amber-500" />
-                  3. Upcoming Deadlines
-                </h4>
-                <button
-                  onClick={() => setActiveTab('tasks')}
-                  className="text-[10px] text-blue-600 hover:text-blue-700 font-bold flex items-center gap-0.5"
-                >
-                  Tasks Tab <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Tasks grouped by upcoming target date proximity
-              </p>
-            </div>
-
-            {/* Recharts Composed Bar Chart for Deadline Proximity */}
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={upcomingDeadlinesData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                  <XAxis dataKey="window" tick={{ fontSize: 9 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0f172a',
-                      borderRadius: '8px',
-                      color: '#fff',
-                      fontSize: '11px',
-                      border: '1px solid #334155',
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '10px' }} />
-                  <Bar dataKey="Tasks" name="Open Tasks" radius={[4, 4, 0, 0]}>
-                    {upcomingDeadlinesData.map((entry, index) => (
-                      <Cell key={`deadline-cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                  <Bar dataKey="HighPriority" name="High Priority" fill="#8884d8" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Upcoming Deadline Task Preview List */}
-            <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-800">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Urgent Upcoming Tasks:</span>
-              {sortedUpcomingTasks.length === 0 ? (
-                <div className="text-[11px] text-slate-400 italic">No upcoming pending tasks.</div>
-              ) : (
-                sortedUpcomingTasks.slice(0, 2).map((t, idx) => (
-                  <div key={t.id || `upcoming-${idx}`} onClick={() => setActiveTab('tasks')} className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs cursor-pointer hover:border-blue-400 transition-all">
-                    <div className="truncate mr-2">
-                      <span className="font-bold text-slate-800 dark:text-slate-200 truncate block text-[11px]">{t.title}</span>
-                      <span className="text-[10px] text-slate-400">{t.assignedToName}</span>
-                    </div>
-                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300">
-                      {t.targetDate}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-        </div>
-
-        {/* FACULTY WORKLOAD BREAKDOWN BAR CHART */}
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-700/80">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h4 className="text-xs font-black uppercase text-slate-800 dark:text-slate-200 tracking-wider flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-blue-500" />
-                Faculty Workload & Task Execution Comparison
-              </h4>
-              <p className="text-[11px] text-slate-500">
-                Individual task assignments and progress per faculty member
-              </p>
-            </div>
+      {/* Mentor Mentee Widget for Staff */}
+      {isStaff && (
+        <div className="mt-6 bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-indigo-600" />
+              My Assigned Mentees
+            </h3>
             <button
-              onClick={() => setActiveTab('staff')}
-              className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 font-bold flex items-center gap-1"
+              onClick={() => setActiveTab('my_mentees')}
+              className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-semibold"
             >
-              View All Faculty <ArrowRight className="w-3.5 h-3.5" />
+              View All ({myMentees.length})
             </button>
           </div>
-
-          <div className="h-52 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={facultyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    fontSize: '11px',
-                    border: '1px solid #334155',
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: '11px' }} />
-                <Bar dataKey="Completed" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Pending" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Overdue" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-
-
-      {/* STUDENT ATTENDANCE SUMMARY (TODAY) CARD - DEPARTMENT-WISE SINGLE VIEW */}
-      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400">
-              <GraduationCap className="w-5 h-5" />
+          {myMentees.length === 0 ? (
+            <div className="p-6 text-center text-slate-500 dark:text-slate-400">
+              <Users className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+              <p className="text-xs font-semibold">No mentees assigned yet</p>
+              <p className="text-[11px] mt-1">Contact your HOD to allocate students under your mentorship.</p>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                STUDENT ATTENDANCE SUMMARY (TODAY)
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Live department-wise student attendance log for {todayStr}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-bold text-slate-900 dark:text-white">
-                {totalPresentCount} / {totalStudentsCount} Present ({overallStudentAttendancePct}%)
-              </div>
-              <div className="text-[10px] text-slate-500">{totalAbsentCount} Students Absent Today</div>
-            </div>
-
-            {isReadOnlyUser ? (
-              <div className="px-3 py-1.5 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs">
-                <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                Read-Only Principal View
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={async () => {
-                    if (window.confirm("Are you sure you want to clear all student attendance data for today?")) {
-                      await clearAllAttendance();
-                    }
-                  }}
-                  className="px-3 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
-                  title="Clear all today's attendance entries"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Clear Data
-                </button>
-                <button
-                  onClick={() => setIsAttendanceModalOpen(true)}
-                  className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
-                >
-                  <Edit3 className="w-3.5 h-3.5" /> Enter / Update Attendance
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Department Filter Pills Bar */}
-        <div className="mb-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0 mr-1">
-            <Filter className="w-3 h-3" /> Dept:
-          </span>
-          {isManagementUser ? (
-            <>
-              <button
-                onClick={() => setFilterState((prev) => ({ ...prev, department: 'all' }))}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                  !filterState.department || filterState.department === 'all' || filterState.department === 'All Departments'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                All Departments Overview
-              </button>
-              {availableAttendanceDepts.map((dept) => {
-                const isSel = isSameDept(filterState.department, dept);
-                const deptItems = rawStudentAttendanceList.filter((sa) => isSameDept(sa.department, dept));
-                const deptTot = deptItems.reduce((a, b) => a + Number(b.totalStudents || 0), 0);
-                const deptPres = deptItems.reduce((a, b) => a + Number(b.presentStudents || 0), 0);
-                const deptPct = deptTot > 0 ? ((deptPres / deptTot) * 100).toFixed(0) : '0';
-
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {myMentees.slice(0, 6).map((s) => {
+                const prof = s.studentProfile;
                 return (
-                  <button
-                    key={dept}
-                    onClick={() => setFilterState((prev) => ({ ...prev, department: dept }))}
-                    className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 ${
-                      isSel
-                        ? 'bg-blue-600 text-white shadow-xs font-bold'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
+                  <div
+                    key={prof.registerNumber}
+                    className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors"
                   >
-                    <span>{dept.replace(/ \(.*\)/, '')}</span>
-                    {deptTot > 0 && (
-                      <span
-                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-extrabold ${
-                          isSel
-                            ? 'bg-white/20 text-white'
-                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'
-                        }`}
-                      >
-                        {deptPct}%
-                      </span>
-                    )}
-                  </button>
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-[10px] font-bold">
+                        {(prof.studentName || 'S')[0]}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {prof.studentName}
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          {prof.registerNumber} • {prof.skillBankAccountNo}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Sem {prof.semester} • Sec {prof.section} • {prof.academicYear || prof.batch}
+                    </div>
+                  </div>
                 );
               })}
-            </>
-          ) : (
-            <div className="px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0">
-              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-              <span>Department: <strong>{hodDepartment}</strong></span>
+            </div>
+          )}
+          {myMentees.length > 6 && (
+            <div className="mt-3 text-center">
+              <button
+                onClick={() => setActiveTab('my_mentees')}
+                className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-semibold"
+              >
+                View all {myMentees.length} mentees →
+              </button>
             </div>
           )}
         </div>
-
-        {/* Variation Alert Banner */}
-        {(() => {
-          const totalVar = studentAttendanceList.reduce((acc, curr) => {
-            const m = curr.morningPresent ?? curr.presentStudents ?? 0;
-            const e = curr.eveningPresent ?? curr.presentStudents ?? 0;
-            return acc + Math.abs(m - e);
-          }, 0);
-
-          if (totalVar > 0) {
-            return (
-              <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between text-amber-900 dark:text-amber-200 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 bg-amber-600 text-white font-extrabold rounded text-[10px] uppercase">
-                    Variation Alert
-                  </span>
-                  <span className="font-semibold">
-                    {totalVar} student attendance variation(s) detected between Morning and Evening Mentor Hours across sections.
-                  </span>
-                </div>
-                <span className="font-bold text-[11px] text-amber-700 dark:text-amber-300">
-                  Principal Review Required
-                </span>
-              </div>
-            );
-          }
-          return null;
-        })()}
-
-        {/* Department-Wise UI Grid */}
-        <div className="space-y-6">
-          {availableAttendanceDepts.filter((dept) => {
-            if (!filterState.department || filterState.department === 'all' || filterState.department === 'All Departments') {
-              return true;
-            }
-            return isSameDept(filterState.department, dept);
-          }).map((deptName) => {
-            const deptSections = getDepartmentAttendanceSummaries(
-              rawStudentAttendanceList,
-              classList,
-              deptName,
-              attendanceRecords
-            );
-
-            const deptTotStrength = deptSections.reduce((acc, curr) => acc + Number(curr.totalStudents || 0), 0);
-            const deptMorPres = deptSections.reduce((acc, curr) => acc + Number(curr.morningPresent ?? curr.presentStudents ?? 0), 0);
-            const deptEvePres = deptSections.reduce((acc, curr) => acc + Number(curr.eveningPresent ?? curr.presentStudents ?? 0), 0);
-            const deptOverallPct = deptTotStrength > 0 ? Number(((deptEvePres / deptTotStrength) * 100).toFixed(1)) : 0;
-            const hodName = getDeptHodName(staffList, deptName, currentUser);
-
-            return (
-              <div
-                key={deptName}
-                className="bg-slate-50/70 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700/70 overflow-hidden"
-              >
-                {/* Department Card Header */}
-                <div className="p-3.5 bg-slate-100/80 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                      {deptName}
-                    </h4>
-                    <span className="text-[10px] font-semibold text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                      HOD: {hodName}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Strength: <span className="text-slate-900 dark:text-white">{deptTotStrength}</span>
-                    </div>
-                    <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                      Mor: <span>{deptMorPres}</span>
-                    </div>
-                    <div className="text-xs font-bold text-blue-700 dark:text-blue-400">
-                      Eve: <span>{deptEvePres}</span>
-                    </div>
-                    <span
-                      className={`px-2.5 py-0.5 rounded text-xs font-extrabold ${
-                        deptOverallPct >= 90
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                          : deptOverallPct >= 75
-                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                          : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                      }`}
-                    >
-                      {deptOverallPct}% Overall
-                    </span>
-                  </div>
-                </div>
-
-                {/* Section Table */}
-                {deptSections.length === 0 ? (
-                  <div className="p-4 text-center text-slate-400 text-xs italic">
-                    No section attendance records for {deptName} today.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left border-collapse">
-                      <thead>
-                        <tr className="bg-white/60 dark:bg-slate-800/40 text-slate-500 dark:text-slate-400 font-bold text-[11px] border-b border-slate-200/80 dark:border-slate-700/60 uppercase">
-                          <th className="p-2.5 pl-4">Year / Class Section</th>
-                          <th className="p-2.5 text-center">Strength</th>
-                          <th className="p-2.5 text-center text-emerald-700 dark:text-emerald-400 bg-emerald-50/30 dark:bg-emerald-950/20">
-                            Morning (Mentor)
-                          </th>
-                          <th className="p-2.5 text-center text-blue-700 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">
-                            Evening (Mentor)
-                          </th>
-                          <th className="p-2.5 text-center text-amber-700 dark:text-amber-400">
-                            Variation
-                          </th>
-                          <th className="p-2.5 text-center pr-4">Attendance %</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200/50 dark:divide-slate-700/40">
-                        {deptSections.map((sa, idx) => {
-                          const mPres = sa.morningPresent ?? sa.presentStudents ?? 0;
-                          const ePres = sa.eveningPresent ?? sa.presentStudents ?? 0;
-                          const mAbs = sa.morningAbsent ?? Math.max(0, sa.totalStudents - mPres);
-                          const eAbs = sa.eveningAbsent ?? Math.max(0, sa.totalStudents - ePres);
-                          const mOd = sa.morningOd ?? sa.odStudents ?? 0;
-                          const eOd = sa.eveningOd ?? sa.odStudents ?? 0;
-
-                          const varVal = mPres - ePres;
-                          const hasVar = varVal !== 0;
-                          const pct = sa.eveningPercentage || sa.attendancePercentage;
-                          const isHigh = pct >= 90;
-                          const isMed = pct >= 75 && pct < 90;
-
-                          return (
-                            <tr
-                              key={sa.classId ? `${sa.classId}-${idx}` : `sa-${deptName}-${idx}`}
-                              className="hover:bg-white dark:hover:bg-slate-800/60 transition-colors"
-                            >
-                              <td className="p-2.5 pl-4 font-bold text-slate-900 dark:text-white">
-                                {sa.className}
-                              </td>
-                              <td className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">
-                                {sa.totalStudents}
-                              </td>
-                              <td className="p-2.5 text-center bg-emerald-50/20 dark:bg-emerald-950/10 font-medium">
-                                <span className="font-bold text-emerald-700 dark:text-emerald-400">{mPres} Pres</span>
-                                <span className="text-[10px] text-slate-500 block">{mAbs} Abs | {mOd} OD</span>
-                              </td>
-                              <td className="p-2.5 text-center bg-blue-50/20 dark:bg-blue-950/10 font-medium">
-                                <span className="font-bold text-blue-700 dark:text-blue-400">{ePres} Pres</span>
-                                <span className="text-[10px] text-slate-500 block">{eAbs} Abs | {eOd} OD</span>
-                              </td>
-                              <td className="p-2.5 text-center">
-                                {hasVar ? (
-                                  <span
-                                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black ${
-                                      varVal > 0
-                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300'
-                                        : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border border-rose-300'
-                                    }`}
-                                  >
-                                    {varVal > 0 ? `+${varVal} (Mor > Eve)` : `${varVal} (Eve > Mor)`}
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                                    0 (Match)
-                                  </span>
-                                )}
-                              </td>
-                              <td className="p-2.5 text-center pr-4 font-extrabold text-slate-900 dark:text-white">
-                                <span
-                                  className={`inline-block px-2.5 py-0.5 rounded text-xs ${
-                                    isHigh
-                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                      : isMed
-                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
-                                  }`}
-                                >
-                                  {pct}%
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* DISCIPLINE ISSUES, SPECIAL REMARKS & HOD OVERALL REMARKS CARD */}
-      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                DISCIPLINE ISSUES, SPECIAL REMARKS & HOD OVERALL REMARKS
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Official daily log entries for {selectedDept === 'all' || selectedDept === 'All Departments' ? 'All Departments' : selectedDept} ({todayStr})
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              setRemarksTab('discipline');
-              setIsRemarksModalOpen(true);
-            }}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 shrink-0"
-          >
-            <Edit3 className="w-3.5 h-3.5" /> Enter / Update Remarks
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700/80">
-            <div className="text-xs font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-              6. Discipline Issues
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              {dailyReport.disciplineIssues || 'None reported.'}
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-700/80">
-            <div className="text-xs font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-1.5">
-              <FileText className="w-3.5 h-3.5 text-blue-500" />
-              6. Special Remarks
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              {dailyReport.specialRemarks || 'No special remarks recorded.'}
-            </p>
-          </div>
-
-          <div className="p-3.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/50">
-            <div className="text-xs font-bold text-indigo-900 dark:text-indigo-300 mb-1 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              7. HOD Overall Remarks
-            </div>
-            <p className="text-xs text-slate-800 dark:text-slate-200 font-semibold italic">
-              "{dailyReport.hodRemarks || 'Satisfactory academic progress across all classes today.'}"
-            </p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Bottom Grid: Recent Tasks & Class Observations */}
       <div className={`grid grid-cols-1 ${!isStaff ? 'lg:grid-cols-2' : ''} gap-6`}>
@@ -1570,21 +790,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         )}
       </div>
 
-      <StudentAttendanceModal
-        isOpen={isAttendanceModalOpen}
-        onClose={() => setIsAttendanceModalOpen(false)}
-      />
 
       <FacultyAttendanceModal
         isOpen={isFacultyAttendanceModalOpen}
         onClose={() => setIsFacultyAttendanceModalOpen(false)}
       />
 
-      <DailyRemarksModal
-        isOpen={isRemarksModalOpen}
-        onClose={() => setIsRemarksModalOpen(false)}
-        initialTab={remarksTab}
-      />
     </div>
   );
 };

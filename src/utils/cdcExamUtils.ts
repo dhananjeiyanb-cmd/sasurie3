@@ -5,6 +5,11 @@ import {
   CdcExamResultSummary,
   CdcWeaknessReport,
   CdcDepartmentGapReport,
+  CdcDepartmentResult,
+  CdcStudentRanks,
+  CdcRankListEntry,
+  CdcProctoringLogRow,
+  CdcSuspiciousEvent,
 } from '../types/cdc';
 
 export function evaluateExamAttempt(
@@ -45,34 +50,87 @@ export function evaluateExamAttempt(
   } as CdcExamAttempt;
 }
 
-export function calculateRanks(
-  attempts: CdcExamAttempt[]
-): Map<string, { overall: number; department: number; branch: number; year: number }> {
-  const rankMap = new Map<string, { overall: number; department: number; branch: number; year: number }>();
+const PARTICIPATED_STATUSES: CdcExamAttempt['status'][] = ['submitted', 'auto_submitted'];
 
-  const sortedOverall = [...attempts].sort((a, b) => (b.score || 0) - (a.score || 0));
-  sortedOverall.forEach((a, i) => {
-    const existing = rankMap.get(a.studentRegisterNumber) || { overall: 0, department: 0, branch: 0, year: 0 };
-    existing.overall = i + 1;
-    rankMap.set(a.studentRegisterNumber, existing);
+/** Whether an attempt counts as having appeared for the exam. */
+export function hasAppeared(a: Pick<CdcExamAttempt, 'status'>): boolean {
+  return PARTICIPATED_STATUSES.includes(a.status);
+}
+
+/**
+ * Assigns competitive (competition-style) ranks: students sharing the same
+ * score receive the same rank; the next distinct score gets a gap.
+ * Stored on the attempt via a private __ranks bag.
+ */
+function assignRanksToGroup(list: CdcExamAttempt[], key: string): void {
+  const sorted = [...list].sort((a, b) => (b.score || 0) - (a.score || 0));
+  let lastScore: number | null = null;
+  let lastRank = 0;
+  sorted.forEach((a, i) => {
+    if (a.score !== lastScore) {
+      lastRank = i + 1;
+      lastScore = a.score ?? null;
+    }
+    if (!(a as any).__ranks) (a as any).__ranks = {};
+    (a as any).__ranks[key] = lastRank;
+  });
+}
+
+/**
+ * Computes four competitive ranks per student for a set of exam attempts:
+ * - overall    → across everyone who appeared
+ * - department → within the same department (e.g. CSE)
+ * - branch     → within the same department + section (e.g. CSE · Sec A);
+ *                falls back to the department group when no section is recorded
+ * - year       → within the same academic year (e.g. 3rd Year), across departments
+ *
+ * Ranks are keyed by student register number. Students who did not appear are
+ * omitted.
+ */
+export function calculateRanks(attempts: CdcExamAttempt[]): Map<string, CdcStudentRanks> {
+  const participated = attempts.filter(hasAppeared);
+
+  const byDepartments = new Map<string, CdcExamAttempt[]>();
+  const byBranches = new Map<string, CdcExamAttempt[]>();
+  const byYears = new Map<string, CdcExamAttempt[]>();
+
+  participated.forEach((a) => {
+    const dept = a.studentDepartment || 'Unknown';
+    const section = (a.studentSection || '').trim();
+    const branchKey = `${dept}${section ? ` · ${section}` : ''}`;
+    const yearKey = (a.studentYear || '').trim() || 'Unknown';
+    pushTo(dept, byDepartments, a);
+    pushTo(branchKey, byBranches, a);
+    pushTo(yearKey, byYears, a);
   });
 
-  const byDept = new Map<string, CdcExamAttempt[]>();
-  attempts.forEach((a) => {
-    const arr = byDept.get(a.studentDepartment) || [];
-    arr.push(a);
-    byDept.set(a.studentDepartment, arr);
-  });
-  byDept.forEach((list) => {
-    const sorted = list.sort((a, b) => (b.score || 0) - (a.score || 0));
-    sorted.forEach((a, i) => {
-      const existing = rankMap.get(a.studentRegisterNumber) || { overall: 0, department: 0, branch: 0, year: 0 };
-      existing.department = i + 1;
-      rankMap.set(a.studentRegisterNumber, existing);
+  assignRanksToGroup(participated, 'overall');
+  byDepartments.forEach((list) => assignRanksToGroup(list, 'department'));
+  byBranches.forEach((list) => assignRanksToGroup(list, 'branch'));
+  byYears.forEach((list) => assignRanksToGroup(list, 'year'));
+
+  const rankMap = new Map<string, CdcStudentRanks>();
+  participated.forEach((a) => {
+    const dept = a.studentDepartment || 'Unknown';
+    const section = (a.studentSection || '').trim();
+    const branchKey = `${dept}${section ? ` · ${section}` : ''}`;
+    const yearKey = (a.studentYear || '').trim() || 'Unknown';
+    const ranks = (a as any).__ranks || {};
+    rankMap.set(a.studentRegisterNumber, {
+      overall: ranks['overall'] ?? 0,
+      department: ranks['department'] ?? ranks[dept] ?? 0,
+      branch: ranks['branch'] ?? ranks[branchKey] ?? 0,
+      year: ranks['year'] ?? ranks[yearKey] ?? 0,
     });
   });
 
   return rankMap;
+}
+
+function pushTo(key: string, map: Map<string, CdcExamAttempt[]>, a: CdcExamAttempt): void {
+  let arr = map.get(key);
+  if (!arr) map.set(key, (arr = []));
+  arr.push(a);
 }
 
 export function generateStudentWeaknessReport(
@@ -209,4 +267,107 @@ export function generateExamSummary(
   };
 }
 
-// placeholder
+/** Builds the Rank List shown (and exported) from the CDC Dashboard. */
+export function generateRankList(attempts: CdcExamAttempt[]): CdcRankListEntry[] {
+  const rankMap = calculateRanks(attempts);
+  return attempts
+    .filter(hasAppeared)
+    .sort(
+      (a, b) =>
+        (rankMap.get(a.studentRegisterNumber)?.overall ?? Number.MAX_SAFE_INTEGER) -
+        (rankMap.get(b.studentRegisterNumber)?.overall ?? Number.MAX_SAFE_INTEGER)
+    )
+    .map((a) => {
+      const r = rankMap.get(a.studentRegisterNumber);
+      return {
+        registerNumber: a.studentRegisterNumber,
+        name: a.studentName,
+        department: a.studentDepartment || '—',
+        year: a.studentYear || '—',
+        section: a.studentSection || '—',
+        score: a.score || 0,
+        percentage: a.percentage || 0,
+        overallRank: r?.overall ?? a.overallRank ?? 0,
+        departmentRank: r?.department ?? a.departmentRank ?? 0,
+        branchRank: r?.branch ?? a.branchRank ?? 0,
+        yearRank: r?.year ?? a.yearRank ?? 0,
+      };
+    });
+}
+
+/** Per-department result breakdown for the CDC Dashboard. */
+export function generateDepartmentWiseResults(exam: CdcExam, attempts: CdcExamAttempt[]): CdcDepartmentResult[] {
+  const examAttempts = attempts.filter((a) => a.examId === exam.id);
+  const totalMarks = exam.totalMarks || 1;
+  const baseThresholdPct =
+    typeof exam.passingMarks === 'number' && exam.passingMarks > 0
+      ? (exam.passingMarks / totalMarks) * 100
+      : 40;
+
+  const grouped = new Map<string, CdcExamAttempt[]>();
+  examAttempts.forEach((a) => {
+    const dept = a.studentDepartment || 'Unknown';
+    const arr = grouped.get(dept) || [];
+    arr.push(a);
+    grouped.set(dept, arr);
+  });
+
+  const results: CdcDepartmentResult[] = [];
+  grouped.forEach((list, department) => {
+    const appeared = list.filter(hasAppeared);
+    const absent = list.filter((a) => a.status === 'abandoned');
+    const scores = appeared.map((a) => a.score || 0);
+    const passCount = appeared.filter((a) => (a.percentage || 0) >= baseThresholdPct).length;
+    results.push({
+      department,
+      totalStudents: list.length,
+      appeared: appeared.length,
+      absent: absent.length,
+      averageMarks: scores.length > 0 ? Math.round((scores.reduce((s, v) => s + v, 0) / scores.length) * 100) / 100 : 0,
+      highestMarks: scores.length > 0 ? Math.max(...scores) : 0,
+      passPercentage: appeared.length > 0 ? Math.round((passCount / appeared.length) * 100) : 0,
+      passCount,
+      passThresholdPercent: Math.round(baseThresholdPct * 100) / 100,
+    });
+  });
+
+  return results.sort((a, b) => b.totalStudents - a.totalStudents || a.department.localeCompare(b.department));
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  tab_switch: 'Tab / window switch',
+  fullscreen_exit: 'Fullscreen exit',
+  copy_paste: 'Copy / paste attempt',
+  right_click: 'Right-click attempt',
+  multi_face: 'Multiple faces detected',
+  no_face: 'No face detected',
+  text_selection: 'Text selection attempt',
+};
+
+/** Joins stored suspicious events with attempt info for the proctoring log view. */
+export function generateProctoringLogs(
+  examId: string,
+  attempts: CdcExamAttempt[],
+  suspiciousLogs: CdcSuspiciousEvent[]
+): CdcProctoringLogRow[] {
+  const attemptById = new Map(attempts.map((a) => [a.id, a]));
+  return suspiciousLogs
+    .filter((e) => attemptById.get(e.attemptId)?.examId === examId)
+    .map((e) => {
+      const attempt = attemptById.get(e.attemptId);
+      return {
+        id: e.id,
+        attemptId: e.attemptId,
+        studentRegisterNumber: attempt?.studentRegisterNumber || '—',
+        studentName: attempt?.studentName || 'Unknown student',
+        examId,
+        type: e.type,
+        timestamp: e.timestamp,
+        details: e.details,
+      };
+    })
+    .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+}
+
+export const suspiciousEventLabel = (type: CdcSuspiciousEvent['type']): string =>
+  EVENT_LABELS[type] || type.replace(/_/g, ' ');

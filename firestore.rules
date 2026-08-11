@@ -50,6 +50,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /mentorMappings/{docId} {
+      allow read, write: if true;
+    }
+
     match /facultyKpis/{docId} {
       allow read, write: if true;
     }

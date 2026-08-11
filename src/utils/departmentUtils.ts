@@ -1,5 +1,5 @@
 import { User, Staff, StudentAttendanceSummary, ClassRoom, StudentAttendanceRecord, DEPARTMENTS } from '../types';
-import { StudentSkillBankData, StudentProfile } from '../types/skillBank';
+import { StudentSkillBankData, StudentProfile, MentorMenteeMapping } from '../types/skillBank';
 
 export function getCollegeLogoText(collegeName?: string): string {
   if (!collegeName) return 'SCE';
@@ -139,27 +139,17 @@ export function getScopedStudents(
     return pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
   }
 
-  // Staff (Faculty Mentor): Sees assigned mentees or department students
+  // Staff (Faculty Mentor): Sees ONLY the mentees that the HOD has assigned to
+  // them — never other mentors' students and never the raw department fallback.
   if (currentUser.role === 'staff') {
-    const staffId = currentUser.staffId;
-    const staffName = currentUser.name?.toLowerCase() || '';
+    const staffId = (currentUser.staffId || '').trim().toLowerCase();
+    const staffName = (currentUser.name || '').trim().toLowerCase();
 
-    const deptStudents = pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
-
-    const assignedMentees = deptStudents.filter((s) => {
-      const stMentorId = s.studentProfile?.mentorStaffId;
-      const stMentor = (s.studentProfile?.mentorFaculty || '').toLowerCase();
-      return (
-        Boolean(staffId && stMentorId === staffId) ||
-        Boolean(staffName && stMentor.includes(staffName))
-      );
+    return pool.filter((s) => {
+      const stMentorId = String(s.studentProfile?.mentorStaffId || '').trim().toLowerCase();
+      const stMentor = (s.studentProfile?.mentorFaculty || '').trim().toLowerCase();
+      return (Boolean(staffId && stMentorId === staffId) || Boolean(staffName && stMentor === staffName));
     });
-
-    if (assignedMentees.length > 0) {
-      return assignedMentees;
-    }
-
-    return deptStudents;
   }
 
   return pool.filter((s) => isSameDept(s.studentProfile?.department, targetDept));
@@ -512,6 +502,61 @@ export function checkIsHodOrAdmin(currentUser?: User | null): boolean {
     desig.includes('head of department') ||
     desig.includes('principal')
   );
+}
+
+/**
+ * Builds the dedicated Mentor → Mentee mapping list from the student skill-bank
+ * records. Every student that carries a mentorStaffId / mentorFaculty produces
+ * one entry in its mentor's mentee list. `updatedAt` is left empty here so the
+ * computed list is deterministic (callers stamp the timestamp when persisting).
+ */
+export function buildMentorMappingsFromStudents(
+  skillBankStudents: StudentSkillBankData[],
+  staffList?: Staff[]
+): MentorMenteeMapping[] {
+  const map = new Map<string, MentorMenteeMapping>();
+
+  (skillBankStudents || []).forEach((s) => {
+    const prof = s?.studentProfile;
+    if (!prof) return;
+    const staffId = String(prof.mentorStaffId || '').trim();
+    const facultyName = String(prof.mentorFaculty || '').trim();
+    if (!staffId && !facultyName) return; // unassigned students do not belong to any mentor
+
+    const staffInfo = staffList?.find((st) => st.id === staffId);
+    const key = staffId || `NAME_${facultyName.toLowerCase().replace(/\s+/g, '_')}`;
+
+    let mapping = map.get(key);
+    if (!mapping) {
+      mapping = {
+        mentorStaffId: staffId,
+        mentorFaculty: facultyName || staffInfo?.facultyName || 'Staff Mentor',
+        mentorEmail: staffInfo?.email || prof.studentEmail,
+        department: prof.department,
+        menteeRegNumbers: [],
+        mentees: [],
+        updatedAt: '',
+      };
+      map.set(key, mapping);
+    } else if (facultyName && !mapping.mentorFaculty) {
+      mapping.mentorFaculty = facultyName;
+    }
+
+    const reg = String(prof.registerNumber || '').trim();
+    if (reg && !mapping.menteeRegNumbers.includes(reg)) {
+      mapping.menteeRegNumbers.push(reg);
+      mapping.mentees?.push({
+        registerNumber: reg,
+        studentName: prof.studentName,
+        academicYear: prof.academicYear,
+        semester: prof.semester,
+        section: prof.section,
+        batch: prof.batch,
+      });
+    }
+  });
+
+  return Array.from(map.values());
 }
 
 

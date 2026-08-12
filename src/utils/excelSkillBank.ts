@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { StudentSkillBankData } from '../types/skillBank';
+import { sanitizeDepartmentName } from './departmentUtils';
 
 // Function to check if a student matches a target cohort year (e.g. 'I Year', 'II Year', 'III Year', 'IV Year')
 export function isStudentInCohortYear(
@@ -57,6 +58,11 @@ export function normalizeStudentSkillBankRecord(record: StudentSkillBankData): S
   if (!record || !record.studentProfile) return record;
 
   const prof = { ...record.studentProfile };
+  const cleanedDepartment = sanitizeDepartmentName(prof.department);
+  if (cleanedDepartment) {
+    prof.department = cleanedDepartment;
+  }
+
   const pYear = (prof.academicYear || '').trim().toLowerCase();
   const pSem = (prof.semester || '').trim().toLowerCase();
   const pBatch = (prof.batch || '').trim().toLowerCase();

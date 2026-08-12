@@ -41,7 +41,7 @@ import {
 } from '../data/seedData';
 import { INITIAL_STUDENTS_SKILL_BANK } from '../data/mockSkillBank';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
-import { isSameDept, getDeptTag, buildMentorMappingsFromStudents } from '../utils/departmentUtils';
+import { isSameDept, getDeptTag, buildMentorMappingsFromStudents, sanitizeDepartmentName } from '../utils/departmentUtils';
 import { normalizeStudentSkillBankRecord } from '../utils/excelSkillBank';
 import { hashPassword, verifyPassword } from '../utils/passwordUtils';
 
@@ -419,13 +419,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed: StudentSkillBankData[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(normalizeStudentSkillBankRecord);
+          return parsed
+            .map(normalizeStudentSkillBankRecord)
+            .filter((st) => sanitizeDepartmentName(st.studentProfile?.department));
         }
       } catch (err) {
         console.error('Error parsing saved skill bank students:', err);
       }
     }
-    return INITIAL_STUDENTS_SKILL_BANK;
+    return INITIAL_STUDENTS_SKILL_BANK.filter((st) => sanitizeDepartmentName(st.studentProfile?.department));
   });
 
   const [mentorMappings, setMentorMappings] = useState<MentorMenteeMapping[]>(() => {
@@ -869,26 +871,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localArr = localArr.filter(isNotRecentlyDeletedStudent);
 
       if (snapshot.empty) {
-        if (localArr.length > 0) {
-          setSkillBankStudents(localArr);
+        const cleanedLocal = localArr
+          .map(normalizeStudentSkillBankRecord)
+          .filter((st) => sanitizeDepartmentName(st.studentProfile?.department) && isNotRecentlyDeletedStudent(st));
+        if (cleanedLocal.length > 0) {
+          setSkillBankStudents(cleanedLocal);
         } else {
-          setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK);
+          setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK.filter((st) => sanitizeDepartmentName(st.studentProfile?.department)));
         }
       } else {
         const items = snapshot.docs
           .map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData))
-          .filter(isNotRecentlyDeletedStudent);
+          .filter((st) => sanitizeDepartmentName(st.studentProfile?.department) && isNotRecentlyDeletedStudent(st));
         const map = new Map<string, StudentSkillBankData>();
         items.forEach((st) => {
           const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
           if (key) map.set(key, st);
         });
-        localArr.forEach((st) => {
-          const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
-          if (key && !map.has(key)) {
-            map.set(key, st);
-          }
-        });
+        localArr
+          .map(normalizeStudentSkillBankRecord)
+          .filter((st) => sanitizeDepartmentName(st.studentProfile?.department) && isNotRecentlyDeletedStudent(st))
+          .forEach((st) => {
+            const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
+            if (key && !map.has(key)) {
+              map.set(key, st);
+            }
+          });
         const finalStudents = Array.from(map.values());
         setSkillBankStudents(finalStudents);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(finalStudents));

@@ -10,11 +10,68 @@ export function getCollegeLogoText(collegeName?: string): string {
   return 'SCE';
 }
 
+export function sanitizeDepartmentName(value?: string): string {
+  if (!value) return '';
+
+  const cleaned = String(value)
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned) return '';
+
+  const lower = cleaned.toLowerCase();
+  const asciiOnly = cleaned.replace(/[^\x00-\x7F]/g, '');
+  if (!asciiOnly || asciiOnly.length < 3) return '';
+
+  const aliasMap: Record<string, string> = {
+    'artificial intelligence & data science': 'Artificial Intelligence & Data Science (AI & DS)',
+    'ai & ds': 'Artificial Intelligence & Data Science (AI & DS)',
+    'ai&ds': 'Artificial Intelligence & Data Science (AI & DS)',
+    'aids': 'Artificial Intelligence & Data Science (AI & DS)',
+    'ai and ds': 'Artificial Intelligence & Data Science (AI & DS)',
+    'computer science & engineering': 'Computer Science & Engineering',
+    'computer science engineering': 'Computer Science & Engineering',
+    'cse': 'Computer Science & Engineering',
+    'cyber security': 'Cyber Security (CYBER)',
+    'cyber': 'Cyber Security (CYBER)',
+    'information technology': 'Information Technology',
+    'it': 'Information Technology',
+    'electrical & electronics engineering': 'Electrical & Electronics Engineering',
+    'electrical and electronics engineering': 'Electrical & Electronics Engineering',
+    'eee': 'Electrical & Electronics Engineering',
+    'electronics & communication engineering': 'Electronics & Communication Engineering',
+    'electronics and communication engineering': 'Electronics & Communication Engineering',
+    'ece': 'Electronics & Communication Engineering',
+    'mechanical engineering': 'Mechanical Engineering',
+    'mech': 'Mechanical Engineering',
+    'civil engineering': 'Civil Engineering',
+    'civil': 'Civil Engineering',
+    'science and humanities': 'Science and Humanities',
+    's & h': 'Science and Humanities',
+    's&h': 'Science and Humanities',
+    'humanities': 'Science and Humanities',
+  };
+
+  const exact = aliasMap[lower];
+  if (exact) return exact;
+
+  const match = DEPARTMENTS.find((dept) => {
+    const deptLower = dept.toLowerCase();
+    return lower === deptLower || lower.includes(deptLower) || deptLower.includes(lower);
+  });
+
+  if (match) return match;
+
+  return '';
+}
+
 export function normalizeDept(dept?: string): string {
   if (!dept) return '';
-  let d = dept.trim().toLowerCase();
-  d = d.replace(/^department of\s+/i, '').replace(/^b\.e\.\s+/i, '').replace(/^b\.tech\.\s+/i, '');
+  const safeDept = sanitizeDepartmentName(dept);
+  if (!safeDept) return '';
 
+  const d = safeDept.trim().toLowerCase();
   if (d.includes('artificial intelligence') || d.includes('ai & ds') || d.includes('ai&ds') || d.includes('aids') || d.includes('ai and ds')) {
     return 'ai & ds';
   }

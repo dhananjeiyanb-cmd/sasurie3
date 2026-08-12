@@ -39,7 +39,7 @@ import {
   INITIAL_ATTENDANCE_RECORDS,
   INITIAL_EVENTS,
 } from '../data/seedData';
-import { INITIAL_STUDENTS_SKILL_BANK, stripSkillBankDates } from '../data/mockSkillBank';
+import { INITIAL_STUDENTS_SKILL_BANK } from '../data/mockSkillBank';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
 import { isSameDept, getDeptTag, buildMentorMappingsFromStudents } from '../utils/departmentUtils';
 import { normalizeStudentSkillBankRecord } from '../utils/excelSkillBank';
@@ -3152,10 +3152,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     INITIAL_DAILY_MONITORING.forEach((m) => syncDocToFirestore('monitoring', m.id, m));
     INITIAL_LESSON_PLANS.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
     INITIAL_ATTENDANCE_RECORDS.forEach((a) => syncDocToFirestore('attendance', a.id, a));
-    INITIAL_STUDENTS_SKILL_BANK.forEach((st) => {
-      const docId = getStudentDocId(st);
-      if (docId) syncDocToFirestore('skillBankStudents', docId, st);
-    });
+    // Note: SSB Grade Coin data is no longer seeded with dummy records.
+    // The skillBankStudents collection starts empty and must be populated
+    // through portal data entry only.
     syncDocToFirestore('settings', 'dailyReport', INITIAL_HOD_REPORT);
     INITIAL_NOTIFICATIONS.forEach((n) => syncDocToFirestore('notifications', n.id, n));
     INITIAL_EVENTS.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
@@ -3169,6 +3168,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students`);
+    localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}report`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}hod_attendance_records`);
     localStorage.removeItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`);

@@ -695,13 +695,15 @@ export const SkillBankView: React.FC = () => {
             </button>
           )}
 
-          <button
-            onClick={() => setIsAddStudentModalOpen(true)}
-            className="px-3 py-2 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5 text-amber-400" />
-            <span>Add Student</span>
-          </button>
+          {isHodOrPrincipal && (
+            <button
+              onClick={() => setIsAddStudentModalOpen(true)}
+              className="px-3 py-2 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 text-amber-400" />
+              <span>Add Student</span>
+            </button>
+          )}
 
           {isHodOrPrincipal && (
             <button
@@ -1509,20 +1511,24 @@ export const SkillBankView: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center justify-center gap-3 pt-2">
-            <button
-              onClick={() => setIsAddStudentModalOpen(true)}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Student</span>
-            </button>
-            <button
-              onClick={() => setIsExcelUploadModalOpen(true)}
-              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all"
-            >
-              <FileSpreadsheet className="w-4 h-4" />
-              <span>Import Excel</span>
-            </button>
+            {isHodOrPrincipal && (
+              <button
+                onClick={() => setIsAddStudentModalOpen(true)}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Student</span>
+              </button>
+            )}
+            {isHodOrPrincipal && (
+              <button
+                onClick={() => setIsExcelUploadModalOpen(true)}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md transition-all"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Import Excel</span>
+              </button>
+            )}
           </div>
         </div>
       )}

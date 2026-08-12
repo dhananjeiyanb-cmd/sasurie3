@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { computeDepartmentSsb, DepartmentSsbtotals } from '../utils/principalSsbutil';
-import { DEPARTMENTS } from '../types';
-import { StudentSkillBankData } from '../types/skillBank';
+import { isSameDept } from '../utils/departmentUtils';
 import {
   BarChart3,
   TrendingUp,
@@ -35,6 +34,18 @@ import {
 
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
+const DEPARTMENT_RANKING_OPTIONS = [
+  'Cyber Security (CYBER)',
+  'Computer Science & Engineering',
+  'Artificial Intelligence & Data Science (AI & DS)',
+  'Information Technology',
+  'Electrical & Electronics Engineering',
+  'Electronics & Communication Engineering',
+  'Mechanical Engineering',
+  'Civil Engineering',
+  'MBA',
+] as const;
+
 const DIM_LABELS: Record<keyof Pick<DepartmentSsbtotals, 'dim1Total' | 'dim2Total' | 'dim3Total' | 'dim4Total' | 'dim5Total'>, string> = {
   dim1Total: 'DIM 1',
   dim2Total: 'DIM 2',
@@ -59,7 +70,7 @@ export const PrincipalSsbdashboardView: React.FC = () => {
   const filteredStudents = useMemo(() => {
     return (skillBankStudents || []).filter((s) => {
       const prof = s.studentProfile;
-      const matchesDept = deptFilter === 'all' || prof?.department === deptFilter;
+      const matchesDept = deptFilter === 'all' || isSameDept(prof?.department, deptFilter);
       const matchesYear = yearFilter === 'all' || (prof?.academicYear || '').includes(yearFilter) || (prof?.batch || '').includes(yearFilter);
       const matchesSem = semesterFilter === 'all' || (prof?.semester || '').toLowerCase().includes(semesterFilter.toLowerCase());
       const matchesSearch = !searchQuery || (prof?.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (prof?.registerNumber || '').toLowerCase().includes(searchQuery.toLowerCase());
@@ -67,8 +78,7 @@ export const PrincipalSsbdashboardView: React.FC = () => {
     });
   }, [skillBankStudents, deptFilter, yearFilter, semesterFilter, searchQuery]);
 
-  const departmentsInData = useMemo(() => Array.from(new Set((skillBankStudents || []).map((s) => s.studentProfile?.department).filter(Boolean))), [skillBankStudents]);
-  const availableDepartments = useMemo(() => (departmentsInData.length > 0 ? departmentsInData : DEPARTMENTS) as string[], [departmentsInData]);
+  const availableDepartments = useMemo(() => Array.from(DEPARTMENT_RANKING_OPTIONS), []);
 
   const departmentData = useMemo(() => computeDepartmentSsb(filteredStudents, availableDepartments), [filteredStudents, availableDepartments]);
 
@@ -106,7 +116,10 @@ export const PrincipalSsbdashboardView: React.FC = () => {
   };
 
   const selectedDeptData = useMemo(() => departmentData.find((d) => d.department === selectedDepartment) || null, [departmentData, selectedDepartment]);
-  const selectedDeptStudents = useMemo(() => (selectedDepartment ? filteredStudents.filter((s) => s.studentProfile?.department === selectedDepartment) : []), [filteredStudents, selectedDepartment]);
+  const selectedDeptStudents = useMemo(
+    () => (selectedDepartment ? filteredStudents.filter((s) => isSameDept(s.studentProfile?.department, selectedDepartment)) : []),
+    [filteredStudents, selectedDepartment]
+  );
 
   const chartData = useMemo(() => sortedData.map((d) => ({ name: d.department.replace(/ \(.*/, ''), ...d, totalCoins: d.totalCoins })), [sortedData]);
 

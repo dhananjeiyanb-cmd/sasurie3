@@ -1,5 +1,6 @@
 import { StudentSkillBankData } from '../types/skillBank';
 import { calculateDimension1, calculateDimension2, calculateDimension3, calculateDimension4, calculateDimension5 } from '../data/mockSkillBank';
+import { isSameDept } from './departmentUtils';
 
 export interface DepartmentSsbtotals {
   department: string;
@@ -19,10 +20,12 @@ export function computeDepartmentSsb(
   skillBankStudents: StudentSkillBankData[],
   departments?: string[]
 ): DepartmentSsbtotals[] {
-  const pool = departments && departments.length > 0 ? departments : Array.from(new Set((skillBankStudents || []).map((s) => s.studentProfile?.department).filter(Boolean)));
+  const pool = departments && departments.length > 0
+    ? departments
+    : Array.from(new Set((skillBankStudents || []).map((s) => s.studentProfile?.department).filter(Boolean)));
 
   return pool.map((dept) => {
-    const students = (skillBankStudents || []).filter((s) => s.studentProfile?.department === dept);
+    const students = (skillBankStudents || []).filter((s) => isSameDept(s.studentProfile?.department, dept));
 
     let dim1 = 0;
     let dim2 = 0;

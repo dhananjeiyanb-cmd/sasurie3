@@ -47,6 +47,8 @@ export function sanitizeDepartmentName(value?: string): string {
     'mech': 'Mechanical Engineering',
     'civil engineering': 'Civil Engineering',
     'civil': 'Civil Engineering',
+    'mba': 'MBA',
+    'master of business administration': 'MBA',
     'science and humanities': 'Science and Humanities',
     's & h': 'Science and Humanities',
     's&h': 'Science and Humanities',
@@ -84,6 +86,7 @@ export function normalizeDept(dept?: string): string {
   if (d.includes('electronics') || d.includes('ece')) return 'ece';
   if (d.includes('mechanical') || d.includes('mech')) return 'mech';
   if (d.includes('civil')) return 'civil';
+  if (d.includes('mba') || d.includes('master of business administration') || d.includes('m.b.a')) return 'mba';
   if (
     d.includes('science and humanities') ||
     d.includes('humanities') ||

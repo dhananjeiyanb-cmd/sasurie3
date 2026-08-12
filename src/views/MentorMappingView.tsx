@@ -2,7 +2,12 @@ import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { StudentSkillBankData, StudentProfile } from '../types/skillBank';
 import { stripSkillBankDates } from '../data/mockSkillBank';
-import { createDefaultStudentSkillBankRecord, isStudentInCohortYear } from '../utils/excelSkillBank';
+import {
+  createDefaultStudentSkillBankRecord,
+  isStudentInCohortYear,
+  normalizeStudentSkillBankRecord,
+  parseExcelStudentFile,
+} from '../utils/excelSkillBank';
 import { getScopedStudents, getScopedStaff } from '../utils/departmentUtils';
 import { syncDocToFirestore } from '../lib/firestoreSync';
 import {
@@ -280,13 +285,50 @@ export const MentorMappingView: React.FC = () => {
     showAllocationMessage(result.message, result.success ? 'success' : 'error');
   };
 
-  // Handle CSV File Selection
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle CSV / Excel File Selection
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setUploadFileName(file.name);
     setUploadError('');
+    setParsedPreviewStudents([]);
+
+    const defaultStaff = scopedStaff[0] || staffList[0];
+    const fileNameLower = file.name.toLowerCase();
+    const shouldUseXlsxParser = fileNameLower.endsWith('.xlsx') || fileNameLower.endsWith('.xls') || fileNameLower.endsWith('.csv');
+
+    if (shouldUseXlsxParser) {
+      try {
+        const parsed = await parseExcelStudentFile(file);
+        if (parsed.length > 0) {
+          const normalized = parsed
+            .map((st) => {
+              const mentorFaculty = st.studentProfile.mentorFaculty || defaultStaff?.facultyName || 'M. Kaviyarasu';
+              const mentorStaffId = st.studentProfile.mentorStaffId || defaultStaff?.id || 'STF001';
+              const department = st.studentProfile.department || fallbackDept;
+              return normalizeStudentSkillBankRecord({
+                ...st,
+                studentProfile: {
+                  ...st.studentProfile,
+                  mentorFaculty,
+                  mentorStaffId,
+                  department,
+                },
+              });
+            })
+            .filter((st) => st.studentProfile?.registerNumber && st.studentProfile.studentName);
+
+          if (normalized.length > 0) {
+            setParsedPreviewStudents(normalized);
+            return;
+          }
+          console.warn('Parsed file yielded no valid student rows. Falling back to plain text parser.');
+        }
+      } catch (parseError) {
+        console.warn('Excel/CSV parser failed, falling back to plain text parser.', parseError);
+      }
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -297,34 +339,28 @@ export const MentorMappingView: React.FC = () => {
           return;
         }
 
-        const lines = text.split(/\r\n|\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+        const lines = text.split(/\r\n|\n|\r/).map((l) => l.trim()).filter((l) => l.length > 0);
         if (lines.length <= 1) {
           setUploadError('File contains no student data rows.');
           return;
         }
 
-        // Parse CSV lines
         const parsed: StudentSkillBankData[] = [];
-        const defaultStaff = scopedStaff[0] || staffList[0];
-
-        // Skip header if present
         const hasHeader = lines[0].toLowerCase().includes('register') || lines[0].toLowerCase().includes('name');
         const dataLines = hasHeader ? lines.slice(1) : lines;
 
         dataLines.forEach((line, idx) => {
-          // split by comma or tab
           const cols = line.includes('\t') ? line.split('\t') : line.split(',');
-          const cleanCols = cols.map((c) => c.replace(/^["']|["']$/g, '').trim());
+          const cleanCols = cols.map((c) => c.replace(/^['\"]|['\"]$/g, '').trim());
 
           const regNo = cleanCols[0] || `73242210${String(idx + 100).padStart(4, '0')}`;
           const name = cleanCols[1] || `Student ${idx + 1}`;
           const dept = cleanCols[2] || fallbackDept;
-          const year = cleanCols[3] || '2nd Year';
+          const yearInput = cleanCols[3] || '2nd Year';
           const sec = cleanCols[4] || 'A';
           const email = cleanCols[5] || `${name.toLowerCase().replace(/\s+/g, '.')}@sasurie.ac.in`;
           const mobile = cleanCols[6] || '9876543210';
 
-          const yearInput = cleanCols[3] || '2nd Year';
           const yearStr = yearInput.toLowerCase();
           const is1stCsv = yearStr.includes('1st') || yearStr === '1';
           const is2ndCsv = yearStr.includes('2nd') || yearStr === '2';
@@ -335,26 +371,33 @@ export const MentorMappingView: React.FC = () => {
           const csvSem = is1stCsv ? 'Sem I & II' : is2ndCsv ? 'Sem III & IV' : is3rdCsv ? 'Sem V & VI' : is4thCsv ? 'Sem VII & VIII' : 'Sem III & IV';
           const csvYr = is1stCsv ? '1st Year' : is2ndCsv ? '2nd Year' : is3rdCsv ? '3rd Year' : is4thCsv ? '4th Year' : yearInput;
 
-          const fullStudent = createDefaultStudentSkillBankRecord({
-            registerNumber: regNo,
-            studentName: name,
-            skillBankAccountNo: `SSB-2026-AIDS-${regNo.slice(-3)}`,
-            degreeBranch: 'B.Tech. AI & DS',
-            department: dept,
-            batch: csvBatch,
-            academicYear: csvYr,
-            semester: csvSem,
-            section: sec,
-            admissionNumber: `ADM-${regNo.slice(-4)}`,
-            studentMobile: mobile,
-            studentEmail: email,
-            personalEmail: email,
-            mentorFaculty: defaultStaff?.facultyName || 'M. Kaviyarasu',
-            mentorStaffId: defaultStaff?.id || 'STF001',
-          });
+          const fullStudent = normalizeStudentSkillBankRecord(
+            createDefaultStudentSkillBankRecord({
+              registerNumber: regNo,
+              studentName: name,
+              skillBankAccountNo: `SSB-2026-AIDS-${regNo.slice(-3)}`,
+              degreeBranch: 'B.Tech. AI & DS',
+              department: dept,
+              batch: csvBatch,
+              academicYear: csvYr,
+              semester: csvSem,
+              section: sec,
+              admissionNumber: `ADM-${regNo.slice(-4)}`,
+              studentMobile: mobile,
+              studentEmail: email,
+              personalEmail: email,
+              mentorFaculty: defaultStaff?.facultyName || 'M. Kaviyarasu',
+              mentorStaffId: defaultStaff?.id || 'STF001',
+            })
+          );
 
           parsed.push(stripSkillBankDates(fullStudent));
         });
+
+        if (parsed.length === 0) {
+          setUploadError('Uploaded file contains no valid student rows.');
+          return;
+        }
 
         setParsedPreviewStudents(parsed);
       } catch (err: any) {
@@ -362,7 +405,11 @@ export const MentorMappingView: React.FC = () => {
       }
     };
 
+    reader.onerror = () => {
+      setUploadError('Unable to read uploaded file.');
+    };
     reader.readAsText(file);
+
   };
 
   // Save imported parsed students

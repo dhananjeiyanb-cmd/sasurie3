@@ -2762,17 +2762,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const importBulkSkillBankStudents = (newStudents: StudentSkillBankData[]) => {
+    const normalizedNewStudents = newStudents
+      .map(normalizeStudentSkillBankRecord)
+      .filter((st) => st.studentProfile?.registerNumber && sanitizeDepartmentName(st.studentProfile?.department));
+
+    if (normalizedNewStudents.length === 0) {
+      return;
+    }
+
     setSkillBankStudents((prev) => {
       const map = new Map<string, StudentSkillBankData>();
       prev.forEach((s) => {
-        if (s.studentProfile?.registerNumber) {
-          map.set(s.studentProfile.registerNumber, s);
-        }
+        const key = String(s.studentProfile?.registerNumber || '').trim().toLowerCase();
+        if (key) map.set(key, s);
       });
-      newStudents.forEach((ns) => {
-        if (ns.studentProfile?.registerNumber) {
-          map.set(ns.studentProfile.registerNumber, ns);
-        }
+      normalizedNewStudents.forEach((ns) => {
+        const key = String(ns.studentProfile?.registerNumber || '').trim().toLowerCase();
+        if (key) map.set(key, ns);
       });
       const merged = Array.from(map.values());
 

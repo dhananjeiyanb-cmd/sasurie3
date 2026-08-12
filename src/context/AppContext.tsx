@@ -63,6 +63,13 @@ const getStudentDocId = (st: StudentSkillBankData): string => {
 const recentlyDeletedStaffIds = new Set<string>();
 const isNotRecentlyDeleted = (s: Staff): boolean => !recentlyDeletedStaffIds.has(String(s?.id ?? '').trim().toUpperCase());
 
+// Student register numbers deleted during this session (case-insensitive).
+// The real-time Firestore snapshot is filtered against this so a just-deleted
+// student is not resurrected while the app is open.
+const recentlyDeletedStudentRegs = new Set<string>();
+const isNotRecentlyDeletedStudent = (st: StudentSkillBankData): boolean =>
+  !recentlyDeletedStudentRegs.has((st?.studentProfile?.registerNumber || '').trim().toLowerCase());
+
 const isKeepStaff = (s: Staff): boolean => {
   if (!s || !s.id) return false;
   return true;
@@ -574,26 +581,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(facultyKpis));
   }, [facultyKpis]);
 
-  // One-time auto-purge on boot to ensure database is completely cleared of any mock students
-  useEffect(() => {
-    const purgeKey = `${LOCAL_STORAGE_KEY_PREFIX}skill_bank_purged_v11`;
-    if (localStorage.getItem(purgeKey) !== 'true') {
-      const purgeFirestoreDocs = async () => {
-        try {
-          const snap = await getDocs(collection(db, 'skillBankStudents'));
-          snap.docs.forEach((d) => {
-            deleteDocFromFirestore('skillBankStudents', d.id);
-          });
-          localStorage.setItem(purgeKey, 'true');
-          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify([]));
-          setSkillBankStudents([]);
-        } catch (err) {
-          console.error('Error purging Firestore skillBankStudents on boot:', err);
-        }
-      };
-      purgeFirestoreDocs();
-    }
-  }, []);
+  // IMPORTANT: never delete stored skill-bank data automatically on boot.
+  // HOD/mentor data is user-owned and must be preserved unless the user explicitly
+  // triggers a clear action from the UI.
 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}google_sheets_config`, JSON.stringify(googleSheetsConfig));
@@ -875,6 +865,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch {}
 
+      // Filter out any students whose register numbers were intentionally deleted this session
+      localArr = localArr.filter(isNotRecentlyDeletedStudent);
+
       if (snapshot.empty) {
         if (localArr.length > 0) {
           setSkillBankStudents(localArr);
@@ -882,7 +875,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK);
         }
       } else {
-        const items = snapshot.docs.map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData));
+        const items = snapshot.docs
+          .map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData))
+          .filter(isNotRecentlyDeletedStudent);
         const map = new Map<string, StudentSkillBankData>();
         items.forEach((st) => {
           const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
@@ -1065,14 +1060,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Verify old password if provided (required for security)
     if (oldPass !== undefined) {
-      const currentHash = customPasswords[key] || 
+      let currentHash = customPasswords[key] || 
         (currentUser?.email ? customPasswords[currentUser.email.toLowerCase()] : undefined) ||
         (currentUser?.staffId ? customPasswords[currentUser.staffId.toLowerCase()] : undefined);
       
+      // Also check staff record if not found in customPasswords
+      if (!currentHash) {
+        const matchedStaff = staffList.find(
+          (s) => s.id?.toLowerCase() === key || (s.email && s.email.toLowerCase() === key)
+        );
+        if (matchedStaff?.password) {
+          currentHash = matchedStaff.password;
+        }
+      }
+      
       if (currentHash) {
-        const oldPassValid = await verifyPassword(oldPass, currentHash);
-        if (!oldPassValid) {
-          return { success: false, message: 'Current password is incorrect. Please try again.' };
+        // If it looks like a hash (64 hex chars), verify it
+        if (/^[a-f0-9]{64}$/i.test(currentHash)) {
+          const oldPassValid = await verifyPassword(oldPass, currentHash);
+          if (!oldPassValid) {
+            return { success: false, message: 'Current password is incorrect. Please try again.' };
+          }
+        } else {
+          // Legacy plaintext fallback (for backward compatibility during migration)
+          const oldNorm = oldPass.trim().toLowerCase();
+          if (oldNorm !== currentHash.toLowerCase()) {
+            return { success: false, message: 'Current password is incorrect. Please try again.' };
+          }
         }
       } else if (oldPass !== undefined && oldPass !== '') {
         // No custom password set yet, but old password was provided
@@ -1784,10 +1798,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Save custom password for instant login capability
     if (pass) {
+      const hashedPass = await hashPassword(pass);
       setCustomPasswords((prev) => ({
         ...prev,
-        [newId.toLowerCase()]: pass,
-        ...(newStaff.email ? { [newStaff.email.toLowerCase()]: pass } : {}),
+        [newId.toLowerCase()]: hashedPass,
+        ...(newStaff.email ? { [newStaff.email.toLowerCase()]: hashedPass } : {}),
       }));
     }
     
@@ -1840,7 +1855,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       if (staffToSave.password) {
-        const pass = staffToSave.password;
+        const pass = /^[a-f0-9]{64}$/i.test(staffToSave.password)
+          ? staffToSave.password
+          : await hashPassword(staffToSave.password);
         setCustomPasswords((prev) => ({
           ...prev,
           [targetId.toLowerCase()]: pass,
@@ -2489,6 +2506,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanReg = (registerNumber || '').trim().toLowerCase();
     if (!cleanReg) return;
 
+    // Track this register number so the Firestore listener does not resurrect it
+    recentlyDeletedStudentRegs.add(cleanReg);
+
     setSkillBankStudents((prev) => {
       const updated = prev.filter((s) => (s.studentProfile?.registerNumber || '').trim().toLowerCase() !== cleanReg);
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(updated));
@@ -2496,8 +2516,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const docId = (registerNumber || '').trim().replace(/\//g, '_');
-    if (docId) deleteDocFromFirestore('skillBankStudents', docId);
-    if (registerNumber) deleteDocFromFirestore('skillBankStudents', registerNumber.trim());
+    const deletePromises: Promise<unknown>[] = [];
+    if (docId) deletePromises.push(deleteDocFromFirestore('skillBankStudents', docId));
+    if (registerNumber) deletePromises.push(deleteDocFromFirestore('skillBankStudents', registerNumber.trim()));
 
     try {
       const snap = await getDocs(collection(db, 'skillBankStudents'));
@@ -2515,10 +2536,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           (cleanRegSanitized && docIdSanitized.includes(cleanRegSanitized)) ||
           (cleanRegSanitized && cleanRegSanitized.includes(docIdSanitized))
         ) {
-          deleteDocFromFirestore('skillBankStudents', d.id);
+          deletePromises.push(deleteDocFromFirestore('skillBankStudents', d.id));
         }
       });
     } catch (err) {
+      await Promise.all(deletePromises);
       console.error('Error deleting student from Firestore:', err);
     }
   };
@@ -2527,16 +2549,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanRegs = registerNumbers.map((r) => (r || '').trim().toLowerCase()).filter(Boolean);
     if (cleanRegs.length === 0) return;
 
+    // Track these register numbers so the Firestore listener does not resurrect them
+    cleanRegs.forEach((r) => recentlyDeletedStudentRegs.add(r));
+
     setSkillBankStudents((prev) => {
       const updated = prev.filter((s) => !cleanRegs.includes((s.studentProfile?.registerNumber || '').trim().toLowerCase()));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(updated));
       return updated;
     });
 
+    const deletePromises: Promise<unknown>[] = [];
     registerNumbers.forEach((r) => {
       const docId = (r || '').trim().replace(/\//g, '_');
-      if (docId) deleteDocFromFirestore('skillBankStudents', docId);
-      if (r) deleteDocFromFirestore('skillBankStudents', r.trim());
+      if (docId) deletePromises.push(deleteDocFromFirestore('skillBankStudents', docId));
+      if (r) deletePromises.push(deleteDocFromFirestore('skillBankStudents', r.trim()));
     });
 
     try {
@@ -2558,16 +2584,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         if (isMatch) {
-          deleteDocFromFirestore('skillBankStudents', d.id);
+          deletePromises.push(deleteDocFromFirestore('skillBankStudents', d.id));
         }
       });
     } catch (err) {
+      await Promise.all(deletePromises);
       console.error('Error deleting students from Firestore:', err);
     }
   };
 
   const clearDepartmentSkillBankStudents = async (departmentName: string) => {
     setSkillBankStudents((prev) => {
+      const removed = prev.filter((s) => isSameDept(s.studentProfile?.department || '', departmentName));
+      removed.forEach((s) => recentlyDeletedStudentRegs.add((s.studentProfile?.registerNumber || '').trim().toLowerCase()));
       const toKeep = prev.filter((s) => !isSameDept(s.studentProfile?.department || '', departmentName));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(toKeep));
       return toKeep;
@@ -2575,12 +2604,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const snap = await getDocs(collection(db, 'skillBankStudents'));
+      const deletePromises: Promise<unknown>[] = [];
       snap.docs.forEach((d) => {
         const data = d.data() as StudentSkillBankData;
         if (!departmentName || isSameDept(data.studentProfile?.department || '', departmentName)) {
-          deleteDocFromFirestore('skillBankStudents', d.id);
+          deletePromises.push(deleteDocFromFirestore('skillBankStudents', d.id));
         }
       });
+      await Promise.all(deletePromises);
     } catch (err) {
       console.error('Error clearing department students from Firestore:', err);
     }
@@ -2592,9 +2623,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const snap = await getDocs(collection(db, 'skillBankStudents'));
+      const deletePromises: Promise<unknown>[] = [];
       snap.docs.forEach((d) => {
-        deleteDocFromFirestore('skillBankStudents', d.id);
+        const data = d.data() as StudentSkillBankData;
+        const regNum = (data.studentProfile?.registerNumber || '').trim().toLowerCase();
+        if (regNum) recentlyDeletedStudentRegs.add(regNum);
+        deletePromises.push(deleteDocFromFirestore('skillBankStudents', d.id));
       });
+      await Promise.all(deletePromises);
     } catch (err) {
       console.error('Error clearing all skillBankStudents from Firestore:', err);
     }

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { computeDepartmentSsb, DepartmentSsbtotals } from '../utils/principalSsbutil';
+import { calculateStudentTotals } from '../data/mockSkillBank';
 import { isSameDept } from '../utils/departmentUtils';
 import {
   BarChart3,
@@ -44,6 +45,7 @@ const DEPARTMENT_RANKING_OPTIONS = [
   'Mechanical Engineering',
   'Civil Engineering',
   'MBA',
+  'ME-CSE',
 ] as const;
 
 const DIM_LABELS: Record<keyof Pick<DepartmentSsbtotals, 'dim1Total' | 'dim2Total' | 'dim3Total' | 'dim4Total' | 'dim5Total'>, string> = {
@@ -55,6 +57,41 @@ const DIM_LABELS: Record<keyof Pick<DepartmentSsbtotals, 'dim1Total' | 'dim2Tota
 };
 
 const DIM_SHORT = ['dim1Total', 'dim2Total', 'dim3Total', 'dim4Total', 'dim5Total'] as const;
+
+// Count distinct student achievement entries worth coins (used in the breakdown table)
+function countStudentAchievements(student: any): number {
+  if (!student) return 0;
+  const arrays = [
+    student.onlineCertBasic,
+    student.advancedCourses,
+    student.paperPresentations,
+    student.hackathons,
+    student.sportsLogs,
+    student.artsLogs,
+    student.clubLogs,
+    student.professionalMemberships,
+  ];
+  let count = 0;
+  arrays.forEach((arr) => {
+    if (Array.isArray(arr)) {
+      arr.forEach((item) => {
+        if (item && (item.coinsEarned || 0) > 0) count += 1;
+      });
+    }
+  });
+  // Recognised one-time milestones that earn coins
+  if (student.resume?.coinsEarned > 0) count += 1;
+  if (student.mockInterview?.coinsEarned > 0) count += 1;
+  if (student.linkedIn?.coinsEarned > 0) count += 1;
+  if (student.gitHub?.coinsEarned > 0) count += 1;
+  if (student.socialMedia?.coinsEarned > 0) count += 1;
+  if (student.internship?.coinsEarned > 0) count += 1;
+  if (student.workshop?.coinsEarned > 0) count += 1;
+  if (student.collegeEvent?.coinsEarned > 0) count += 1;
+  if (student.volunteering?.coinsEarned > 0) count += 1;
+  if (student.libraryChecklist?.coinsEarned > 0) count += 1;
+  return count;
+}
 
 export const PrincipalSsbdashboardView: React.FC = () => {
   const { currentUser, skillBankStudents } = useApp();
@@ -294,49 +331,64 @@ export const PrincipalSsbdashboardView: React.FC = () => {
                 <div className="text-base font-black text-amber-900 dark:text-amber-200">{selectedDeptData.achievementPct}%</div>
               </div>
             </div>
-            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Students ({selectedDeptStudents.length})</div>
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Students ({selectedDeptStudents.length}) — scroll vertically to view all
+            </div>
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400">
-                    <th className="p-2 font-semibold">#</th>
-                    <th className="p-2 font-semibold">Student</th>
-                    <th className="p-2 font-semibold">Register No</th>
-                    <th className="p-2 font-semibold">Year / Sem</th>
-                    <th className="p-2 font-semibold">DIM 1</th>
-                    <th className="p-2 font-semibold">DIM 2</th>
-                    <th className="p-2 font-semibold">DIM 3</th>
-                    <th className="p-2 font-semibold">DIM 4</th>
-                    <th className="p-2 font-semibold">DIM 5</th>
-                    <th className="p-2 font-semibold">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {selectedDeptStudents.slice(0, 20).map((s, idx) => {
-                    const prof = s.studentProfile;
-                    const d1 = (s as any).__dim1 || (s as any).__computed?.d1;
-                    const d2 = (s as any).__dim2 || (s as any).__computed?.d2;
-                    const d3 = (s as any).__dim3 || (s as any).__computed?.d3;
-                    const d4 = (s as any).__dim4 || (s as any).__computed?.d4;
-                    const d5 = (s as any).__dim5 || (s as any).__computed?.d5;
-                    const total = (d1 || 0) + (d2 || 0) + (d3 || 0) + (d4 || 0) + (d5 || 0);
-                    return (
-                      <tr key={prof.registerNumber} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
-                        <td className="p-2 text-slate-500">{idx + 1}</td>
-                        <td className="p-2 font-semibold text-slate-900 dark:text-white">{prof.studentName}</td>
-                        <td className="p-2 text-slate-600 dark:text-slate-300">{prof.registerNumber}</td>
-                        <td className="p-2 text-slate-600 dark:text-slate-300">{prof.academicYear || prof.batch} • {prof.semester}</td>
-                        <td className="p-2 text-blue-700 dark:text-blue-300">{(d1 || 0).toLocaleString()}</td>
-                        <td className="p-2 text-emerald-700 dark:text-emerald-300">{(d2 || 0).toLocaleString()}</td>
-                        <td className="p-2 text-amber-700 dark:text-amber-300">{(d3 || 0).toLocaleString()}</td>
-                        <td className="p-2 text-purple-700 dark:text-purple-300">{(d4 || 0).toLocaleString()}</td>
-                        <td className="p-2 text-pink-700 dark:text-pink-300">{(d5 || 0).toLocaleString()}</td>
-                        <td className="p-2 font-black text-slate-900 dark:text-white">{total.toLocaleString()}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="max-h-[460px] overflow-y-auto overscroll-contain">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">
+                      <th className="p-2 font-semibold">#</th>
+                      <th className="p-2 font-semibold">Student</th>
+                      <th className="p-2 font-semibold">Register No</th>
+                      <th className="p-2 font-semibold">Year / Sem</th>
+                      <th className="p-2 font-semibold">DIM 1</th>
+                      <th className="p-2 font-semibold">DIM 2</th>
+                      <th className="p-2 font-semibold">DIM 3</th>
+                      <th className="p-2 font-semibold">DIM 4</th>
+                      <th className="p-2 font-semibold">DIM 5</th>
+                      <th className="p-2 font-semibold">Total Score</th>
+                      <th className="p-2 font-semibold">Avg / Student</th>
+                      <th className="p-2 font-semibold">Achievements</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {selectedDeptStudents.map((s, idx) => {
+                      const prof = s.studentProfile;
+                      const t = calculateStudentTotals(s);
+                      const d1 = t.d1.cappedTotal;
+                      const d2 = t.d2.cappedTotal;
+                      const d3 = t.d3.cappedTotal;
+                      const d4 = t.d4.cappedTotal;
+                      const d5 = t.d5.cappedTotal;
+                      const total = d1 + d2 + d3 + d4 + d5;
+                      const avg = Math.round(total / 5);
+                      const achievements = countStudentAchievements(s);
+                      return (
+                        <tr key={prof.registerNumber} className="hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                          <td className="p-2 text-slate-500">{idx + 1}</td>
+                          <td className="p-2 font-semibold text-slate-900 dark:text-white">{prof.studentName}</td>
+                          <td className="p-2 text-slate-600 dark:text-slate-300">{prof.registerNumber}</td>
+                          <td className="p-2 text-slate-600 dark:text-slate-300">{prof.academicYear || prof.batch} • {prof.semester}</td>
+                          <td className="p-2 text-blue-700 dark:text-blue-300">{d1.toLocaleString()}</td>
+                          <td className="p-2 text-emerald-700 dark:text-emerald-300">{d2.toLocaleString()}</td>
+                          <td className="p-2 text-amber-700 dark:text-amber-300">{d3.toLocaleString()}</td>
+                          <td className="p-2 text-purple-700 dark:text-purple-300">{d4.toLocaleString()}</td>
+                          <td className="p-2 text-pink-700 dark:text-pink-300">{d5.toLocaleString()}</td>
+                          <td className="p-2 font-black text-slate-900 dark:text-white">{total.toLocaleString()}</td>
+                          <td className="p-2 font-bold text-slate-700 dark:text-slate-200">{avg.toLocaleString()}</td>
+                          <td className="p-2">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border ${achievements >= 10 ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700' : achievements > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-700' : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}>
+                              {achievements > 0 ? `✓ ${achievements}` : '—'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -362,9 +414,7 @@ export const PrincipalSsbdashboardView: React.FC = () => {
                   <th className="p-3 font-semibold text-right">DIM 3</th>
                   <th className="p-3 font-semibold text-right">DIM 4</th>
                   <th className="p-3 font-semibold text-right">DIM 5</th>
-                  <th className="p-3 font-semibold text-right">Total Score</th>
-                  <th className="p-3 font-semibold text-right">Avg / Student</th>
-                  <th className="p-3 font-semibold text-right">Achievement</th>
+                  <th className="p-3 font-semibold text-right">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -372,19 +422,13 @@ export const PrincipalSsbdashboardView: React.FC = () => {
                   <tr key={row.department} onClick={() => setSelectedDepartment(row.department)} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer transition-colors">
                     <td className="p-3">{getRankBadge(idx)}</td>
                     <td className="p-3 font-bold text-slate-900 dark:text-white">{row.department}</td>
-                    <td className="p-3 text-center text-slate-600 dark:text-slate-300">{row.studentCount}</td>
+                    <td className="p-3 text-center font-black text-slate-900 dark:text-white">{row.studentCount}</td>
                     <td className="p-3 text-right text-blue-700 dark:text-blue-300">{row.dim1Total.toLocaleString()}</td>
                     <td className="p-3 text-right text-emerald-700 dark:text-emerald-300">{row.dim2Total.toLocaleString()}</td>
                     <td className="p-3 text-right text-amber-700 dark:text-amber-300">{row.dim3Total.toLocaleString()}</td>
                     <td className="p-3 text-right text-purple-700 dark:text-purple-300">{row.dim4Total.toLocaleString()}</td>
                     <td className="p-3 text-right text-pink-700 dark:text-pink-300">{row.dim5Total.toLocaleString()}</td>
                     <td className="p-3 text-right font-black text-slate-900 dark:text-white">{row.totalCoins.toLocaleString()}</td>
-                    <td className="p-3 text-right text-slate-700 dark:text-slate-200">{row.avgCoinsPerStudent.toLocaleString()}</td>
-                    <td className="p-3 text-right">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${row.achievementPct >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-700' : row.achievementPct >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700' : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-700'}`}>
-                        {row.achievementPct}%
-                      </span>
-                    </td>
                   </tr>
                 ))}
               </tbody>

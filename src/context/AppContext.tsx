@@ -24,6 +24,7 @@ import {
   EventFeedbackResponse,
 } from '../types';
 import { StudentSkillBankData, GoogleSheetsConfig, MentorMenteeMapping } from '../types/skillBank';
+import { buildSkillBankMonitoringRows } from '../utils/excelSkillBank';
 import { FacultyKpiRecord, FacultyPillarClaim } from '../types/facultyKpi';
 import { CCMMeeting, CCMAgendaItem, CCMMeetingStatus } from '../types/ccm';
 import { INITIAL_CCM_MEETINGS, DEFAULT_CCM_AGENDA, buildDefaultAgenda } from '../data/ccmData';
@@ -2863,6 +2864,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateGoogleSheetsConfig({ status: 'Syncing', errorMessage: undefined });
 
     try {
+      // Flattened 5-Dimension monitoring matrix: one row per student with
+      // name, department, year-wise cohort and assigned mentor, plus all
+      // 5 Dimension coin totals — easy for the Google Sheet to consume/update.
+      const monitoringRows = buildSkillBankMonitoringRows(skillBankStudents);
+
       // Send POST request to Google Apps Script Web App Endpoint
       const response = await fetch(googleSheetsConfig.webAppUrl, {
         method: 'POST',
@@ -2873,6 +2879,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           action: 'syncSkillBank',
           academicYear: '2026-2027',
           timestamp: new Date().toISOString(),
+          // Primary payload: flattened matrix (recommended for the Sample Sheet columns)
+          monitoringRows,
+          // Legacy/full payload for deep sync of complete passbook records
           data: skillBankStudents,
         }),
       });

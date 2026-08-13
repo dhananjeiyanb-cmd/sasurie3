@@ -238,6 +238,8 @@ export const DEPARTMENTS = [
   'Electrical & Electronics Engineering',
   'Mechanical Engineering',
   'Civil Engineering',
+  'MBA',
+  'ME-CSE',
   'Science and Humanities',
 ] as const;
 

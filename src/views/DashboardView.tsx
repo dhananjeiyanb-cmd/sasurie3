@@ -92,28 +92,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const hodStaffIds = displayStaffList.map((s) => s.id);
 
   const displayTaskList = isStaff
-    ? taskList.filter(
-        (t) =>
-          t.assignedToStaffId === currentUser?.staffId ||
-          (t.assignedToName && currentUser?.name && t.assignedToName.toLowerCase() === currentUser.name.toLowerCase())
+    ? taskList.filter((t) =>
+        t.assignedToStaffId === currentUser?.staffId ||
+        (t.assignedToName && currentUser?.name && t.assignedToName.toLowerCase() === currentUser.name.toLowerCase())
       )
     : isHod
-    ? taskList.filter(
-        (t) =>
-          hodStaffIds.includes(t.assignedToStaffId) ||
-          displayStaffList.some((s) => s.facultyName && t.assignedToName && s.facultyName.toLowerCase() === t.assignedToName.toLowerCase()) ||
-          t.assignedToStaffId === 'GROUP_HODS' ||
-          t.groupName === 'HODs Group' ||
-          t.assignedToStaffId === currentUser?.staffId ||
-          (t.department && isSameDept(t.department, hodDepartment))
-      )
+    ? taskList.filter((t) => {
+        // Strict HOD visibility: show tasks assigned to staff within this HOD's department,
+        // tasks whose department explicitly matches the HOD's department, or tasks assigned
+        // directly to the HOD (their staffId). Avoid name-only matching to prevent cross-dept leaks.
+        const assignedId = t.assignedToStaffId || '';
+        const isAssignedToDeptStaff = assignedId && hodStaffIds.includes(assignedId);
+        const isAssignedToThisHod = assignedId === (currentUser?.staffId || '');
+        const taskDeptMatch = t.department ? isSameDept(t.department, hodDepartment) : false;
+        const isGroupHodsForThisDept = (assignedId === 'GROUP_HODS' || t.groupName === 'HODs Group') && taskDeptMatch;
+        return Boolean(isAssignedToDeptStaff || isAssignedToThisHod || taskDeptMatch || isGroupHodsForThisDept);
+      })
     : taskList.filter((t) => {
         if (selectedDept === 'all' || selectedDept === 'All Departments') return true;
-        const staffMatch = displayStaffList.some(
-          (s) => s.id === t.assignedToStaffId || (s.facultyName && t.assignedToName && s.facultyName.toLowerCase() === t.assignedToName.toLowerCase())
-        );
+        const staffMatch = displayStaffList.some((s) => s.id === t.assignedToStaffId);
         const taskDeptMatch = t.department ? isDeptMatch(t.department, selectedDept) : false;
-        return staffMatch || taskDeptMatch || t.assignedToStaffId === 'GROUP_HODS' || t.groupName === 'HODs Group';
+        const isGroupHods = t.assignedToStaffId === 'GROUP_HODS' || t.groupName === 'HODs Group';
+        return staffMatch || taskDeptMatch || isGroupHods;
       });
 
   const totalStaff = displayStaffList.length;

@@ -12,6 +12,8 @@ export const CCM_DEPARTMENTS = [
   'EEE',
   'Mechanical',
   'Civil',
+  'MBA',
+  'ME-CSE',
 ];
 export const CCM_SECTIONS = ['A', 'B', 'C'];
 

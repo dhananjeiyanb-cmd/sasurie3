@@ -294,6 +294,8 @@ export const LibrarianPortalView: React.FC = () => {
               <option value="Electrical & Electronics Engineering">EEE</option>
               <option value="Mechanical Engineering">MECH</option>
               <option value="Civil Engineering">CIVIL</option>
+              <option value="MBA">MBA</option>
+              <option value="ME-CSE">ME-CSE</option>
             </select>
           </div>
 

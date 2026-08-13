@@ -121,7 +121,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       id: 'skill_bank',
       label: 'Skill Bank (SSB) Grade Coins',
       icon: Coins,
-      roles: [...executiveRoles, 'staff', 'librarian', 'incucula'],
+      // NOTE: principal excluded by request — SSB (Grade Coin System) is hidden for principal login only.
+      roles: ['secretary', 'principal_pa', 'secretary_pa', 'admin', 'staff', 'librarian', 'incucula'],
       badge: currentUser?.coordinatorRole === 'CDC Coordinator' ? 'CDC Coordinator' : currentUser?.coordinatorRole === 'Placement Coordinator' ? 'Placement Coord' : 'AY 2026-27',
       badgeColor: currentUser?.coordinatorRole === 'CDC Coordinator' || currentUser?.coordinatorRole === 'Placement Coordinator' ? 'bg-indigo-600 text-white font-bold' : 'bg-amber-500 text-slate-950 font-bold',
     },
@@ -137,7 +138,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       id: 'faculty_kpi',
       label: 'My KPI Dashboard',
       icon: Award,
-      roles: [...executiveRoles, 'staff', 'incucula'],
+      // NOTE: principal excluded by request — My KPI (Faculty Performance Dashboard) is hidden for principal login only.
+      roles: ['secretary', 'principal_pa', 'secretary_pa', 'admin', 'staff', 'incucula'],
       badge: 'Auto 60%',
       badgeColor: 'bg-blue-600 text-white font-bold',
     },

@@ -16,6 +16,8 @@ import {
   parseExcelStudentFile,
   createDefaultStudentSkillBankRecord,
   isStudentInCohortYear,
+  downloadSkillBankMonitoringSampleSheet,
+  parseSkillBankMonitoringSheet,
 } from '../utils/excelSkillBank';
 import {
   validateSkillBankRecord,
@@ -153,6 +155,13 @@ export const SkillBankView: React.FC = () => {
   const [selectedDefaultMentorForExcel, setSelectedDefaultMentorForExcel] = useState<string>(
     'M. Kaviyarasu (Asst. Prof / III Year Mentor)'
   );
+
+  // 5-Dimension Monitoring Sheet Upload State
+  const [isMonitoringUploadModalOpen, setIsMonitoringUploadModalOpen] = useState(false);
+  const [monitoringPreviewUpdated, setMonitoringPreviewUpdated] = useState<StudentSkillBankData[]>([]);
+  const [monitoringPreviewCreated, setMonitoringPreviewCreated] = useState<StudentSkillBankData[]>([]);
+  const [isImportingMonitoring, setIsImportingMonitoring] = useState(false);
+  const [monitoringImportStatus, setMonitoringImportStatus] = useState<string | null>(null);
 
   // Print Passbook State
   const [isPrintingPassbook, setIsPrintingPassbook] = useState(false);
@@ -377,6 +386,51 @@ export const SkillBankView: React.FC = () => {
     await syncSkillBankToGoogleSheets();
   };
 
+  // 5-Dimension Monitoring Sheet Upload Handler
+  const handleMonitoringFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    setIsImportingMonitoring(true);
+    setMonitoringImportStatus(null);
+    setMonitoringPreviewUpdated([]);
+    setMonitoringPreviewCreated([]);
+    try {
+      const { updated, created } = await parseSkillBankMonitoringSheet(file, scopedStudents);
+      setMonitoringPreviewUpdated(updated);
+      setMonitoringPreviewCreated(created);
+      setMonitoringImportStatus(
+        `Parsed "${file.name}": ${updated.length} student record(s) will be UPDATED, ${created.length} new student account(s) will be CREATED.`
+      );
+    } catch (err) {
+      console.error('Error reading 5D monitoring sheet:', err);
+      setMonitoringImportStatus('Failed to parse monitoring sheet. Please use the downloaded 5D Sample Workbook (all 5 Dimension columns must match).');
+    } finally {
+      setIsImportingMonitoring(false);
+    }
+  };
+
+  const handleDownload5DSampleSheet = () => {
+    downloadSkillBankMonitoringSampleSheet(scopedStudents.length ? scopedStudents : skillBankStudents);
+  };
+
+  const handleConfirmMonitoringImport = () => {
+    if (monitoringPreviewUpdated.length === 0 && monitoringPreviewCreated.length === 0) return;
+    monitoringPreviewUpdated.forEach((st) => {
+      updateSkillBankStudent(st.studentProfile.registerNumber, st);
+    });
+    monitoringPreviewCreated.forEach((st) => {
+      addSkillBankStudent(st);
+    });
+    const firstReg = monitoringPreviewUpdated[0]?.studentProfile.registerNumber || monitoringPreviewCreated[0]?.studentProfile.registerNumber;
+    if (firstReg) setSelectedRegisterNo(firstReg);
+    setMonitoringPreviewUpdated([]);
+    setMonitoringPreviewCreated([]);
+    setIsMonitoringUploadModalOpen(false);
+    setMonitoringImportStatus(null);
+    alert(`✅ SSB 5D Monitoring updated: ${monitoringPreviewUpdated.length} updated, ${monitoringPreviewCreated.length} created. Re-open "Google Sheets Sync" to push the fresh matrix into Google Sheets.`);
+  };
+
   // Quick Print Function for Skill Bank Passbook
   const handlePrintPassbook = () => {
     setIsPrintingPassbook(true);
@@ -493,6 +547,33 @@ export const SkillBankView: React.FC = () => {
               >
                 <Upload className="w-4 h-4 text-emerald-100" />
                 <span>Upload Excel Sheet (HOD)</span>
+              </button>
+            )}
+
+            {isHodOrPrincipal && (
+              <button
+                onClick={handleDownload5DSampleSheet}
+                className="px-3.5 py-2 bg-blue-800/90 hover:bg-blue-700 text-blue-100 rounded-xl text-xs font-bold border border-blue-700/80 shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                title="Download the 5-Dimension Skill Bank Monitoring sample workbook (name, department, year-wise, mentor + all 5 Dimension coin columns)"
+              >
+                <Download className="w-4 h-4 text-blue-300" />
+                <span>Download 5D Sample Sheet</span>
+              </button>
+            )}
+
+            {isHodOrPrincipal && (
+              <button
+                onClick={() => {
+                  setMonitoringImportStatus(null);
+                  setMonitoringPreviewUpdated([]);
+                  setMonitoringPreviewCreated([]);
+                  setIsMonitoringUploadModalOpen(true);
+                }}
+                className="px-3.5 py-2 bg-teal-700/90 hover:bg-teal-600 text-teal-100 rounded-xl text-xs font-bold border border-teal-700/80 shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                title="Upload the filled 5-Dimension monitoring workbook to update all students"
+              >
+                <FileUp className="w-4 h-4 text-teal-300" />
+                <span>Upload 5D Monitoring Sheet</span>
               </button>
             )}
 
@@ -6178,8 +6259,16 @@ export const SkillBankView: React.FC = () => {
 
             <div className="space-y-3 text-xs">
               <p className="text-slate-500 leading-relaxed">
-                Enter your deployed <strong>Google Apps Script Web App URL</strong> to sync student Grade Coins directly into your 15-sheet Google Spreadsheet workbook.
+                Enter your deployed <strong>Google Apps Script Web App URL</strong> to sync student Grade Coins directly into your Google Spreadsheet workbook. Each sync pushes one row per student containing <strong>Name, Department, Year-wise cohort, Mentor</strong> and all <strong>5 Dimension coin totals</strong> (D1–D5) so HODs can monitor &amp; update the matrix easily.
               </p>
+              <button
+                type="button"
+                onClick={handleDownload5DSampleSheet}
+                className="w-full px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download 5D Sample Sheet (.xlsx)</span>
+              </button>
               <div>
                 <label className="font-bold text-slate-700 dark:text-slate-300">Web App Executable URL:</label>
                 <input
@@ -6476,6 +6565,151 @@ export const SkillBankView: React.FC = () => {
               >
                 <FileCheck className="w-4 h-4" />
                 <span>Confirm & Import {excelPreviewStudents.length} Students</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* HOD 5-Dimension Monitoring Sheet Upload Modal */}
+      {isMonitoringUploadModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5 my-8">
+            <div className="flex items-start justify-between border-b dark:border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-teal-500/10 rounded-xl text-teal-600 dark:text-teal-400 border border-teal-500/20">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                    HOD 5-Dimension Skill Bank Monitoring Upload
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Upload the filled Sample Workbook (name, department, year-wise, mentor + all 5 Dimension coin columns) to update every student record instantly.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsMonitoringUploadModalOpen(false);
+                  setMonitoringPreviewUpdated([]);
+                  setMonitoringPreviewCreated([]);
+                  setMonitoringImportStatus(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Template Download & Instructions */}
+            <div className="bg-teal-50 dark:bg-slate-800/80 p-4 rounded-xl border border-teal-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-bold text-teal-900 dark:text-teal-300 block">
+                  Step 1 — Download the 5D Sample Workbook
+                </span>
+                <span className="text-slate-600 dark:text-slate-400 text-[11px]">
+                  Contains the 5D_Monitoring_Matrix, HOD_Upload_Template (identity pre-filled), Instructions_HOD & Dimension_Matrix sheets.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownload5DSampleSheet}
+                className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-2 shrink-0 cursor-pointer shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download 5D Sample Workbook (.xlsx)</span>
+              </button>
+            </div>
+
+            <div className="bg-blue-50 dark:bg-slate-800/80 p-4 rounded-xl border border-blue-200 dark:border-slate-700 text-xs">
+              <span className="font-bold text-blue-900 dark:text-blue-300 block">Step 2 — Fill & Upload the Filled Workbook</span>
+              <span className="text-slate-600 dark:text-slate-400 text-[11px]">
+                Enter the Grade Coins per category (D1_Attendance … D5_Clubs). Leave 0 where nothing was earned. Register Number is the unique key — existing students are updated, new register numbers get a fresh SSB account.
+              </span>
+            </div>
+
+            <input
+              type="file"
+              accept=".xlsx, .xls, .csv"
+              onChange={handleMonitoringFileChange}
+              className="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-teal-600 file:text-white hover:file:bg-teal-700 cursor-pointer border border-slate-300 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 p-1"
+            />
+
+            {isImportingMonitoring && <p className="text-xs text-slate-500">⏳ Parsing monitoring workbook…</p>}
+            {monitoringImportStatus && (
+              <p className={`text-xs font-bold ${monitoringImportStatus.startsWith('Failed') ? 'text-rose-600' : 'text-emerald-600'}`}>
+                {monitoringImportStatus}
+              </p>
+            )}
+{(monitoringPreviewUpdated.length > 0 || monitoringPreviewCreated.length > 0) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <span>
+                    Monitoring Preview — {monitoringPreviewUpdated.length} to Update · {monitoringPreviewCreated.length} to Create
+                  </span>
+                  <span className="text-[11px] text-teal-600 dark:text-teal-400 font-normal">
+                    Totals are re-computed by the system with hard caps (D1 40k · D2–D5 15k each · Target 1,00,000)
+                  </span>
+                </div>
+                <div className="max-h-56 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 sticky top-0 font-bold border-b dark:border-slate-700">
+                      <tr>
+                        <th className="p-2.5">Status</th>
+                        <th className="p-2.5">Reg No</th>
+                        <th className="p-2.5">Student Name</th>
+                        <th className="p-2.5">Dept / Year</th>
+                        <th className="p-2.5">Mentor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-slate-600 dark:text-slate-300">
+                      {monitoringPreviewUpdated.map((st, idx) => (
+                        <tr key={`upd-${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="p-2.5"><span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold">UPDATE</span></td>
+                          <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">{st.studentProfile.registerNumber}</td>
+                          <td className="p-2.5 font-semibold text-slate-900 dark:text-white">{st.studentProfile.studentName}</td>
+                          <td className="p-2.5">{st.studentProfile.department} · {st.studentProfile.academicYear}</td>
+                          <td className="p-2.5 font-medium text-amber-700 dark:text-amber-400">{st.studentProfile.mentorFaculty}</td>
+                        </tr>
+                      ))}
+                      {monitoringPreviewCreated.map((st, idx) => (
+                        <tr key={`new-${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="p-2.5"><span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">NEW</span></td>
+                          <td className="p-2.5 font-mono font-bold text-blue-600 dark:text-blue-400">{st.studentProfile.registerNumber}</td>
+                          <td className="p-2.5 font-semibold text-slate-900 dark:text-white">{st.studentProfile.studentName}</td>
+                          <td className="p-2.5">{st.studentProfile.department} · {st.studentProfile.academicYear}</td>
+                          <td className="p-2.5 font-medium text-amber-700 dark:text-amber-400">{st.studentProfile.mentorFaculty}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-3 border-t dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMonitoringUploadModalOpen(false);
+                  setMonitoringPreviewUpdated([]);
+                  setMonitoringPreviewCreated([]);
+                  setMonitoringImportStatus(null);
+                }}
+                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmMonitoringImport}
+                disabled={monitoringPreviewUpdated.length === 0 && monitoringPreviewCreated.length === 0}
+                className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-lg shadow-teal-600/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <FileCheck className="w-4 h-4" />
+                <span>Confirm & Update {monitoringPreviewUpdated.length + monitoringPreviewCreated.length} Records</span>
               </button>
             </div>
           </div>

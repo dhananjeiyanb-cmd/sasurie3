@@ -49,6 +49,13 @@ export function sanitizeDepartmentName(value?: string): string {
     'civil': 'Civil Engineering',
     'mba': 'MBA',
     'master of business administration': 'MBA',
+    'me-cse': 'ME-CSE',
+    'me cse': 'ME-CSE',
+    'me.cse': 'ME-CSE',
+    'me c.s.e': 'ME-CSE',
+    'm.e-cse': 'ME-CSE',
+    'm.e.-cse': 'ME-CSE',
+    'mecse': 'ME-CSE',
     'science and humanities': 'Science and Humanities',
     's & h': 'Science and Humanities',
     's&h': 'Science and Humanities',
@@ -74,6 +81,11 @@ export function normalizeDept(dept?: string): string {
   if (!safeDept) return '';
 
   const d = safeDept.trim().toLowerCase();
+  // ME-CSE must be matched before the generic CSE / computer-science rule below,
+  // because "me-cse" also contains the substring "cse".
+  if (d.includes('me-cse') || d.includes('me cse') || d.includes('me.cse') || d.includes('me.c.s.e') || d.includes('me c.s.e') || d.includes('mecse') || d.includes('m.e-cse') || d.includes('m.e.-cse')) {
+    return 'me-cse';
+  }
   if (d.includes('artificial intelligence') || d.includes('ai & ds') || d.includes('ai&ds') || d.includes('aids') || d.includes('ai and ds')) {
     return 'ai & ds';
   }
@@ -315,12 +327,14 @@ export function getDeptTag(department?: string): string {
   if (!department) return 'AI & DS';
   const norm = normalizeDept(department);
   if (norm.includes('cyber')) return 'CYBER';
+  if (norm === 'me-cse' || norm.includes('me-cse') || norm.includes('me.cse') || norm.includes('mecse')) return 'ME-CSE';
   if (norm.includes('computer science') || norm.includes('cse')) return 'CSE';
   if (norm.includes('electronics') || norm.includes('ece')) return 'ECE';
   if (norm.includes('electrical') || norm.includes('eee')) return 'EEE';
   if (norm.includes('information technology') || norm.includes('it')) return 'IT';
   if (norm.includes('mechanical') || norm.includes('mech')) return 'MECH';
   if (norm.includes('civil')) return 'CIVIL';
+  if (norm.includes('mba')) return 'MBA';
   if (norm.includes('science')) return 'S&H';
   return 'AI & DS';
 }

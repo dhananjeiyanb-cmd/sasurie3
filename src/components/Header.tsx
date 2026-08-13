@@ -16,7 +16,6 @@ import {
   User,
   Menu,
   X,
-  RotateCcw,
   PlusCircle,
   FileText,
   Settings,
@@ -47,7 +46,6 @@ export const Header: React.FC<HeaderProps> = ({
     clearAllNotifications,
     filterState,
     setFilterState,
-    resetToDefaultData,
     setActiveTab,
     dailyReport,
     updateDailyReport,
@@ -367,18 +365,6 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <UserCheck className="w-3.5 h-3.5" />
                     Profile & Password Settings
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      resetToDefaultData();
-                      setShowProfileMenu(false);
-                      alert('System state reset to default data.');
-                    }}
-                    className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-left font-medium transition-colors"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Reset Seed Data
                   </button>
                 </div>
 

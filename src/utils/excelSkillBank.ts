@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
-import { StudentSkillBankData } from '../types/skillBank';
+import { StudentSkillBankData, StudentProfile, MonthKey, MONTH_LIST } from '../types/skillBank';
+import { calculateStudentTotals } from '../data/mockSkillBank';
 import { sanitizeDepartmentName } from './departmentUtils';
 
 // Function to check if a student matches a target cohort year (e.g. 'I Year', 'II Year', 'III Year', 'IV Year')
@@ -480,6 +481,413 @@ export async function parseExcelStudentFile(file: File): Promise<StudentSkillBan
       }
     };
 
+    reader.onerror = (err) => reject(err);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ============================================================================
+// SSB GRADE COIN SYSTEM — 5-DIMENSION SKILL BANK MONITORING
+// Google-Sheet-ready matrix containing student identity (name, department,
+// year-wise, mentor) plus all 5 Dimension coin sub-categories. HODs download
+// this sample workbook, fill the coin cells, re-upload it, and the system + the
+// synced Google Sheet are updated in one go.
+// ============================================================================
+
+// Derived grade letter from % of the 1,00,000 semester target
+export function deriveSkillBankGrade(pct: number): string {
+  if (pct >= 75) return 'O (Outstanding)';
+  if (pct >= 60) return 'A+ (Excellent)';
+  if (pct >= 50) return 'A (Very Good)';
+  if (pct >= 40) return 'B+ (Good)';
+  if (pct >= 33) return 'B (Average)';
+  return 'C (Needs Improvement)';
+}
+
+// Identity columns that always travel with the monitoring matrix
+export const MONITORING_IDENTITY_COLUMNS = [
+  'Register Number',
+  'SSB Account No',
+  'Student Name',
+  'Department',
+  'Academic Year',
+  'Batch',
+  'Semester',
+  'Section',
+  'Mentor Faculty',
+] as const;
+
+// All 5-Dimension coin sub-columns (the values HODs fill / HOD-generated upload)
+export const MONITORING_COIN_COLUMNS = [
+  // Dimension 1 — Academic Excellence (cap 40,000)
+  'D1_Attendance',
+  'D1_Library',
+  'D1_Library_Utilisation',
+  'D1_Fee_Payment',
+  'D1_Mini_Project',
+  'D1_ICT_Tools',
+  'D1_Exam_CIAT',
+  'D1_Learner_Category',
+  'D1_End_Sem',
+  'D1_Sub_Total',
+  // Dimension 2 — Skill Development (cap 15,000)
+  'D2_NPTEL',
+  'D2_LeetCode',
+  'D2_Online_Certificates',
+  'D2_Advanced_Courses',
+  'D2_Paper_Presentations',
+  'D2_Sub_Total',
+  // Dimension 3 — Career Readiness (cap 15,000)
+  'D3_Aptitude',
+  'D3_Resume',
+  'D3_Mock_Interview',
+  'D3_LinkedIn',
+  'D3_GitHub',
+  'D3_Social_Media',
+  'D3_Hackathon',
+  'D3_Internship',
+  'D3_Sub_Total',
+  // Dimension 4 — Co-Curricular (cap 15,000)
+  'D4_Workshop',
+  'D4_College_Event',
+  'D4_Volunteering',
+  'D4_Memberships',
+  'D4_Sub_Total',
+  // Dimension 5 — Extra-Curricular (cap 15,000)
+  'D5_Sports',
+  'D5_Arts',
+  'D5_Clubs',
+  'D5_Sub_Total',
+  // Grand totals
+  'Gross_Total',
+  'Deductions',
+  'Net_Coins',
+  'Pct_Of_Target',
+  'Final_Grade',
+];
+
+export type SkillBankMonitoringRow = Record<string, string | number>;
+
+// Build a single flattened monitoring row for one student
+export function buildSkillBankMonitoringRow(student: StudentSkillBankData): SkillBankMonitoringRow {
+  const p = student?.studentProfile || ({} as StudentProfile);
+  const t = student ? calculateStudentTotals(student) : null;
+
+  return {
+    'Register Number': p.registerNumber || '',
+    'SSB Account No': p.skillBankAccountNo || '',
+    'Student Name': p.studentName || '',
+    'Department': p.department || '',
+    'Academic Year': p.academicYear || '',
+    'Batch': p.batch || '',
+    'Semester': p.semester || '',
+    'Section': p.section || '',
+    'Mentor Faculty': p.mentorFaculty || '',
+    // D1
+    'D1_Attendance': t?.d1.attendanceCoins ?? 0,
+    'D1_Library': t?.d1.libraryCoins ?? 0,
+    'D1_Library_Utilisation': t?.d1.libraryUtilCoins ?? 0,
+    'D1_Fee_Payment': t?.d1.feeCoins ?? 0,
+    'D1_Mini_Project': t?.d1.miniProjectCoins ?? 0,
+    'D1_ICT_Tools': t?.d1.ictToolsCoins ?? 0,
+    'D1_Exam_CIAT': t?.d1.examCoins ?? 0,
+    'D1_Learner_Category': t?.d1.learnerCatCoins ?? 0,
+    'D1_End_Sem': t?.d1.endSemCoins ?? 0,
+    'D1_Sub_Total': t?.d1.cappedTotal ?? 0,
+    // D2
+    'D2_NPTEL': t?.d2.nptelCoins ?? 0,
+    'D2_LeetCode': t?.d2.leetCodeCoins ?? 0,
+    'D2_Online_Certificates': t?.d2.onlineBasicCoins ?? 0,
+    'D2_Advanced_Courses': t?.d2.advancedCourseCoins ?? 0,
+    'D2_Paper_Presentations': t?.d2.paperCoins ?? 0,
+    'D2_Sub_Total': t?.d2.cappedTotal ?? 0,
+    // D3
+    'D3_Aptitude': t?.d3.aptitudeCoins ?? 0,
+    'D3_Resume': t?.d3.resumeCoins ?? 0,
+    'D3_Mock_Interview': t?.d3.mockInterviewCoins ?? 0,
+    'D3_LinkedIn': t?.d3.linkedInCoins ?? 0,
+    'D3_GitHub': t?.d3.gitHubCoins ?? 0,
+    'D3_Social_Media': t?.d3.socialMediaCoins ?? 0,
+    'D3_Hackathon': t?.d3.hackathonCoins ?? 0,
+    'D3_Internship': t?.d3.internshipCoins ?? 0,
+    'D3_Sub_Total': t?.d3.cappedTotal ?? 0,
+    // D4
+    'D4_Workshop': t?.d4.workshopCoins ?? 0,
+    'D4_College_Event': t?.d4.eventCoins ?? 0,
+    'D4_Volunteering': t?.d4.volunteeringCoins ?? 0,
+    'D4_Memberships': t?.d4.membershipCoins ?? 0,
+    'D4_Sub_Total': t?.d4.cappedTotal ?? 0,
+    // D5
+    'D5_Sports': t?.d5.sportsCoins ?? 0,
+    'D5_Arts': t?.d5.artsCoins ?? 0,
+    'D5_Clubs': t?.d5.clubCoins ?? 0,
+    'D5_Sub_Total': t?.d5.cappedTotal ?? 0,
+    // Grand totals
+    'Gross_Total': t?.totalGrossEarned ?? 0,
+    'Deductions': t?.totalDeductions ?? 0,
+    'Net_Coins': t?.grandTotalNetCoins ?? 0,
+    'Pct_Of_Target': t ? `${t.percentageOfTarget}%` : '0%',
+    'Final_Grade': t ? deriveSkillBankGrade(t.percentageOfTarget) : '',
+  };
+}
+// Build monitoring rows for a list of students (used by Google Sheets sync too)
+export function buildSkillBankMonitoringRows(students: StudentSkillBankData[]): SkillBankMonitoringRow[] {
+  return (students || []).map((s) => buildSkillBankMonitoringRow(s));
+}
+
+// Turn a monitoring row into a blank HOD-editable template row (identity kept, coins zeroed)
+export function toBlankMonitoringTemplateRow(row: SkillBankMonitoringRow): SkillBankMonitoringRow {
+  const blank: SkillBankMonitoringRow = {};
+  MONITORING_IDENTITY_COLUMNS.forEach((c) => {
+    blank[c] = row[c] ?? '';
+  });
+  MONITORING_COIN_COLUMNS.forEach((c) => {
+    blank[c] = 0;
+  });
+  return blank;
+}
+
+function setColumnWidths(ws: XLSX.WorkSheet, widths: number[]) {
+  ws['!cols'] = widths.map((wch) => ({ wch }));
+}
+
+const IDENTITY_WIDTHS = [16, 14, 22, 26, 12, 12, 20, 10, 34];
+
+// Download the sample 5-Dimension Skill Bank Monitoring workbook for HODs
+export function downloadSkillBankMonitoringSampleSheet(students: StudentSkillBankData[]) {
+  const liveRows = students && students.length ? buildSkillBankMonitoringRows(students) : [];
+  const sampleIdentity: SkillBankMonitoringRow = {
+    'Register Number': '732422104001',
+    'Student Name': 'Sample Student',
+    'Department': 'Computer Science & Engineering',
+    'Academic Year': 'III Year',
+    'Batch': '2023-2027',
+    'Semester': 'Odd Semester (Sem V)',
+    'Section': 'A',
+    'Mentor Faculty': 'M. Kaviyarasu (Asst. Prof / III Year Mentor)',
+  };
+  const templateRows = liveRows.length
+    ? liveRows.map(toBlankMonitoringTemplateRow)
+    : [toBlankMonitoringTemplateRow(sampleIdentity)];
+
+  const allCols = [...MONITORING_IDENTITY_COLUMNS, ...MONITORING_COIN_COLUMNS];
+  const coinWidths = MONITORING_COIN_COLUMNS.map((c) => Math.max(12, c.length + 2));
+
+  // Sheet 1 — Live 5-Dimension monitoring matrix (what gets synced to Google Sheets)
+  const wsMatrix = XLSX.utils.json_to_sheet(liveRows);
+  setColumnWidths(wsMatrix, [...IDENTITY_WIDTHS, ...coinWidths]);
+
+  // Sheet 2 — HOD upload template (identity pre-filled, coin cells zeroed)
+  const wsTemplate = XLSX.utils.json_to_sheet(templateRows);
+  setColumnWidths(wsTemplate, [...IDENTITY_WIDTHS, ...coinWidths]);
+
+  // Sheet 3 — Instructions for HODs
+  const instructionRows = [
+    { Step: '1', What_To_Do: 'Download this workbook and open the "HOD_Upload_Template" sheet.', Reference: 'Student Name, Department, Academic Year & Mentor are pre-filled for you.' },
+    { Step: '2', What_To_Do: 'Enter the Grade Coins earned by each student under the 5 Dimension columns (D1 Attendance, D1 Library, D2 NPTEL, D3 Aptitude, D5 Sports, etc.).', Reference: 'Leave a cell 0 if the student earned nothing in that category.' },
+    { Step: '3', What_To_Do: 'Do NOT edit the Sub_Total / Gross_Total / Net_Coins / Pct_Of_Target columns — the system re-computes them automatically with hard caps.', Reference: 'D1 cap 40,000 · D2 cap 15,000 · D3 cap 15,000 · D4 cap 15,000 · D5 cap 15,000 · Semester target 1,00,000 coins.' },
+    { Step: '4', What_To_Do: 'Save the file and re-upload it using "Upload 5D Monitoring Sheet" so every student record is updated.', Reference: 'Register Number is the unique key for matching students.' },
+    { Step: '5', What_To_Do: 'Use "Google Sheets Sync" to push the fully updated 5-Dimension matrix (name, department, year-wise, mentor) into your live Google Spreadsheet workbook.', Reference: 'Sync sends one row per student with all 5 Dimension totals.' },
+  ];
+  const wsInstructions = XLSX.utils.json_to_sheet(instructionRows);
+  setColumnWidths(wsInstructions, [8, 80, 60]);
+
+  // Sheet 4 — Dimension coin matrix reference
+  const dimMatrixRows = [
+    { Dimension: 'Dimension 1', Name: 'Academic Excellence', Cap: 40000, Sub_Categories: 'Attendance · Library · Library Utilisation · Fee Payment · Mini Project · ICT Tools · Exam (CIAT) · Learner Category · End Sem' },
+    { Dimension: 'Dimension 2', Name: 'Skill Development', Cap: 15000, Sub_Categories: 'NPTEL · LeetCode · Online Certificates · Advanced Courses · Paper Presentations' },
+    { Dimension: 'Dimension 3', Name: 'Career Readiness', Cap: 15000, Sub_Categories: 'Aptitude · Resume · Mock Interview · LinkedIn · GitHub · Social Media · Hackathon · Internship' },
+    { Dimension: 'Dimension 4', Name: 'Co-Curricular Performance', Cap: 15000, Sub_Categories: 'Workshop · College Event · Volunteering · Professional Memberships' },
+    { Dimension: 'Dimension 5', Name: 'Extra-Curricular & Talent', Cap: 15000, Sub_Categories: 'Sports · Arts · Clubs' },
+    { Dimension: 'Total', Name: 'Semester Grade Coin Target', Cap: 100000, Sub_Categories: 'Gross minus Deductions (Code of Conduct retraction) = Net Coins' },
+  ];
+  const wsDim = XLSX.utils.json_to_sheet(dimMatrixRows);
+  setColumnWidths(wsDim, [14, 30, 12, 90]);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsMatrix, '5D_Monitoring_Matrix');
+  XLSX.utils.book_append_sheet(wb, wsTemplate, 'HOD_Upload_Template');
+  XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions_HOD');
+  XLSX.utils.book_append_sheet(wb, wsDim, 'Dimension_Matrix');
+
+  XLSX.writeFile(wb, 'Sasurie_SSB_5D_SkillBank_Monitoring.xlsx');
+}
+// ------------------------- HOD 5D SHEET UPLOAD / PARSE -------------------------
+
+function toNum(v: unknown): number {
+  if (v === undefined || v === null || v === '') return 0;
+  const n = Number(String(v).replace(/,/g, '').replace('%', ''));
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+// Distribute a single coin total across the 6 months (Jul–Dec) for per-month records
+function distributeMonthCoins<K>(
+  months: Record<MonthKey, K>,
+  value: number
+): Record<MonthKey, K> {
+  const next = { ...months };
+  const per = Math.floor(value / MONTH_LIST.length);
+  let rem = value - per * MONTH_LIST.length;
+  MONTH_LIST.forEach((m) => {
+    const cur = next[m] || ({} as K);
+    let c = per;
+    if (rem > 0) {
+      c += 1;
+      rem -= 1;
+    }
+    next[m] = { ...cur, coinsEarned: c } as K;
+  });
+  return next;
+}
+
+// Apply a parsed monitoring row back onto a student record (updates coin sub-fields)
+export function applyMonitoringRowToRecord(
+  record: StudentSkillBankData,
+  row: SkillBankMonitoringRow
+): StudentSkillBankData {
+  const r: StudentSkillBankData = { ...record };
+
+  // Dimension 1 — Attendance (distributed across months, coin-sum path)
+  const attendance = toNum(row['D1_Attendance']);
+  const months = { ...r.attendanceMonths };
+  MONTH_LIST.forEach((m) => {
+    months[m] = { ...months[m], totalDays: 0, daysAttended: 0, attendancePct: 0, additionalRemedialDays: 0, coinsEarned: 0 };
+  });
+  const per = Math.floor(attendance / MONTH_LIST.length);
+  let rem = attendance - per * MONTH_LIST.length;
+  MONTH_LIST.forEach((m) => {
+    let c = per;
+    if (rem > 0) {
+      c += 1;
+      rem -= 1;
+    }
+    months[m] = { ...months[m], coinsEarned: c };
+  });
+  r.attendanceMonths = months;
+
+  r.libraryChecklist = {
+    ...(r.libraryChecklist || { min5BooksBorrowed: false, onTimeReturnVerified: false, referenceAndJournalsBorrowed: false, digitalLibraryAccess: false, bookReviewSubmitted: false }),
+    coinsEarned: Math.min(3000, toNum(row['D1_Library'])),
+  };
+
+  const libUtil = Math.min(500, toNum(row['D1_Library_Utilisation']));
+  const visitsNeeded = Math.floor(libUtil / 20);
+  r.libraryVisits = Array.from({ length: Math.min(25, visitsNeeded) }, (_, i) => ({
+    id: `LIB-VISIT-IMPORT-${i + 1}`,
+    month: MONTH_LIST[i % MONTH_LIST.length],
+    date: '',
+    inTime: '',
+    outTime: '',
+    verified: true,
+  }));
+
+  r.feePayment = { ...r.feePayment, coinsEarned: Math.min(5000, toNum(row['D1_Fee_Payment'])) };
+  r.miniProjectChecklist = { ...r.miniProjectChecklist, coinsEarned: Math.min(2500, toNum(row['D1_Mini_Project'])) };
+  r.ictToolsChecklist = { ...r.ictToolsChecklist, coinsEarned: Math.min(2500, toNum(row['D1_ICT_Tools'])) };
+  r.examPerformance = { ...r.examPerformance, coinsEarned: Math.min(12000, toNum(row['D1_Exam_CIAT'])) };
+  r.learnerCategory = { ...r.learnerCategory, coinsEarned: toNum(row['D1_Learner_Category']) };
+  r.endSemResults = { ...r.endSemResults, coinsEarned: toNum(row['D1_End_Sem']) };
+
+  // Dimension 2
+  r.nptelMonths = distributeMonthCoins(r.nptelMonths, Math.min(3000, toNum(row['D2_NPTEL'])));
+  r.leetCodeMonths = distributeMonthCoins(r.leetCodeMonths, Math.min(2000, toNum(row['D2_LeetCode'])));
+  const onlineBasic = Math.min(1000, toNum(row['D2_Online_Certificates']));
+  r.onlineCertBasic = onlineBasic > 0 ? [{ id: `CERT-${Date.now()}`, month: 'Jul', platform: 'Infosys Springboard', courseName: 'HOD Bulk Import Certificate', durationHrs: 12, proofAttached: true, coinsEarned: onlineBasic }] : [];
+  const advanced = Math.min(2000, toNum(row['D2_Advanced_Courses']));
+  r.advancedCourses = advanced > 0 ? [{ id: `ADV-${Date.now()}`, month: 'Jul', platform: 'AWS Academy', courseName: 'HOD Bulk Import Advanced Course', durationHrs: 30, verifiedProof: true, remarks: 'Bulk imported', coinsEarned: advanced }] : [];
+  const paper = Math.min(2000, toNum(row['D2_Paper_Presentations']));
+  r.paperPresentations = paper > 0 ? [{ id: `PAP-${Date.now()}`, month: 'Jul', level: 'National', symposiumName: 'Bulk Import', title: 'HOD Bulk Import Paper', venue: '', date: '', prizeWon: '', hasCertificate: true, coinsEarned: paper, remarks: '' }] : [];
+  // Dimension 3
+  r.aptitudeMonths = distributeMonthCoins(r.aptitudeMonths, Math.min(3000, toNum(row['D3_Aptitude'])));
+  r.resume = { ...r.resume, coinsEarned: Math.min(2000, toNum(row['D3_Resume'])) };
+  r.mockInterview = { ...r.mockInterview, coinsEarned: Math.min(2000, toNum(row['D3_Mock_Interview'])) };
+  r.linkedIn = { ...r.linkedIn, coinsEarned: Math.min(2000, toNum(row['D3_LinkedIn'])) };
+  r.gitHub = { ...r.gitHub, coinsEarned: Math.min(1000, toNum(row['D3_GitHub'])) };
+  r.socialMedia = { ...r.socialMedia, coinsEarned: toNum(row['D3_Social_Media']) };
+  const hack = Math.min(2000, toNum(row['D3_Hackathon']));
+  r.hackathons = hack > 0 ? [{ id: `HACK-${Date.now()}`, month: 'Jul', eventName: 'Hackathon', participated: true, prizeWon: false, verifiedByEDC: true, coinsEarned: hack }] : [];
+  r.internship = { ...r.internship, coinsEarned: Math.min(1000, toNum(row['D3_Internship'])) };
+
+  // Dimension 4
+  r.workshop = { ...r.workshop, coinsEarned: Math.min(4000, toNum(row['D4_Workshop'])) };
+  r.collegeEvent = { ...r.collegeEvent, coinsEarned: Math.min(4000, toNum(row['D4_College_Event'])) };
+  r.volunteering = { ...r.volunteering, coinsEarned: Math.min(4000, toNum(row['D4_Volunteering'])) };
+  const membership = Math.min(3000, toNum(row['D4_Memberships']));
+  r.professionalMemberships = membership > 0 ? [{ id: `MEM-${Date.now()}`, bodyName: 'IEEE', membershipType: 'Annual', dateOfIssue: '', validity: '', coinsEarned: membership }] : [];
+
+  // Dimension 5
+  const sports = Math.min(5000, toNum(row['D5_Sports']));
+  r.sportsLogs = sports > 0 ? [{ id: `SPORT-${Date.now()}`, gameSport: 'Sports', participationLevel: 'Intra-college', venue: '', date: '', resultPosition: '', verifiedByPhysicalDirector: true, coinsEarned: sports }] : [];
+  const arts = Math.min(5000, toNum(row['D5_Arts']));
+  r.artsLogs = arts > 0 ? [{ id: `ARTS-${Date.now()}`, culturalCategory: 'Music', participationLevel: 'Cultural Participation', date: '', position: '', coinsEarned: arts }] : [];
+  const club = Math.min(5000, toNum(row['D5_Clubs']));
+  r.clubLogs = club > 0 ? [{ id: `CLUB-${Date.now()}`, clubName: 'Rotaract', role: 'Member', activityDetails: 'Bulk imported', date: '', coinsEarned: club }] : [];
+
+  // Deductions (Code of Conduct retraction)
+  const deductions = toNum(row['Deductions']);
+  const existingViolations = Array.isArray(r.violations) ? r.violations : [];
+  const nonImportedViolations = existingViolations.filter((v) => !(v.remarks || '').includes('HOD 5D Import'));
+  r.violations = deductions > 0
+    ? [...nonImportedViolations, { id: `VIOL-${Date.now()}`, date: '', type: 'Minor/Behavioral', category: 'Other', occurrenceNo: 1, deductionPct: 0, coinsDeducted: deductions, recordedBy: 'HOD', remarks: 'HOD 5D Import' }]
+    : nonImportedViolations;
+
+  return r;
+}
+// Parse the uploaded HOD 5-Dimension monitoring workbook and return updated records
+export async function parseSkillBankMonitoringSheet(
+  file: File,
+  existingStudents: StudentSkillBankData[]
+): Promise<{ updated: StudentSkillBankData[]; created: StudentSkillBankData[] }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target?.result;
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const rawJson: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+        const byRegNo = new Map<string, StudentSkillBankData>();
+        (existingStudents || []).forEach((s) => {
+          const key = (s.studentProfile?.registerNumber || '').trim().toLowerCase();
+          if (key) byRegNo.set(key, s);
+        });
+
+        const updated: StudentSkillBankData[] = [];
+        const created: StudentSkillBankData[] = [];
+
+        rawJson.forEach((row) => {
+          const regNo = String(
+            row['Register Number'] || row['Reg No'] || row['regNo'] || row['RegisterNumber'] || ''
+          ).trim();
+          const name = String(row['Student Name'] || row['Name'] || '').trim();
+
+          if (!regNo && !name) return;
+
+          const existing = regNo ? byRegNo.get(regNo.toLowerCase()) : undefined;
+          if (existing) {
+            updated.push(applyMonitoringRowToRecord(existing, row));
+          } else if (regNo || name) {
+            const newRecord = createDefaultStudentSkillBankRecord({
+              registerNumber: regNo || `7324${Math.floor(10000000 + Math.random() * 90000000)}`,
+              studentName: name || 'Uploaded Student',
+              department: String(row['Department'] || row['Dept'] || 'Computer Science & Engineering'),
+              academicYear: String(row['Academic Year'] || 'III Year'),
+              batch: String(row['Batch'] || '2023-2027'),
+              semester: String(row['Semester'] || 'Odd Semester (Sem V)'),
+              section: String(row['Section'] || 'A'),
+              mentorFaculty: String(row['Mentor Faculty'] || row['Mentor'] || 'M. Kaviyarasu (Asst. Prof / III Year Mentor)'),
+            });
+            created.push(applyMonitoringRowToRecord(newRecord, row));
+          }
+        });
+
+        resolve({ updated, created });
+      } catch (err) {
+        reject(err);
+      }
+    };
     reader.onerror = (err) => reject(err);
     reader.readAsArrayBuffer(file);
   });

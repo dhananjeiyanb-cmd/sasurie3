@@ -50,7 +50,7 @@ const MainContent: React.FC = () => {
     const isStaffUser = currentUser.role === 'staff';
     const isLibrarianUser = currentUser.role === 'librarian';
     
-    if (currentUser.role === 'principal' && ['events', 'classes', 'mentor_mapping'].includes(activeTab)) {
+    if (currentUser.role === 'principal' && ['events', 'classes', 'mentor_mapping', 'skill_bank', 'faculty_kpi'].includes(activeTab)) {
       setActiveTab('dashboard');
       return;
     }

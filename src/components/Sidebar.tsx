@@ -229,7 +229,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           )}
           <div className="min-w-0">
             <span className="font-bold tracking-tight uppercase text-sm text-white block truncate">
-              HOD Monitor
+              Skill Bank
             </span>
             <span className="text-[10px] text-blue-100 font-medium block truncate opacity-90">
               {dailyReport?.collegeName || 'Sasurie College of Engineering'}

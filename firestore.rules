@@ -1,4 +1,4 @@
-rules_version = '2';
+Qrules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -39,6 +39,10 @@ service cloud.firestore {
     }
 
     match /hodReports/{docId} {
+      allow read, write: if true;
+    }
+
+    match /hodFacultyAttendance/{docId} {
       allow read, write: if true;
     }
 

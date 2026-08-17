@@ -3222,6 +3222,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     monitoringList.forEach((m) => syncDocToFirestore('monitoring', m.id, m));
     lessonPlanList.forEach((lp) => syncDocToFirestore('lessonPlans', lp.id, lp));
     attendanceRecords.forEach((a) => syncDocToFirestore('attendance', a.id, a));
+    hodAttendanceRecords.forEach((r) => syncDocToFirestore('hodFacultyAttendance', r.id, r));
     skillBankStudents.forEach((st) => {
       const docId = getStudentDocId(st);
       if (docId) syncDocToFirestore('skillBankStudents', docId, st);
@@ -3230,7 +3231,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     notifications.forEach((n) => syncDocToFirestore('notifications', n.id, n));
     eventsList.forEach((ev) => syncDocToFirestore('events', ev.id, ev));
     ccmMeetings.forEach((m) => syncDocToFirestore('ccmMeetings', m.id, m));
+    mentorMappings.forEach((m) => syncDocToFirestore('mentorMappings', m.mentorStaffId, m));
+    facultyKpis.forEach((k) => syncDocToFirestore('facultyKpis', String(k.staffId).toLowerCase(), k));
   };
+
+  // One-time boot backup: push the full local dataset into Firebase Firestore so
+  // every record (staff, classes, tasks, observations, monitoring, attendance,
+  // lesson plans, HOD attendance, skill bank, mentor mappings, KPIs, events,
+  // CCM meetings, notifications, settings) is present in the database — even if
+  // an individual write previously failed or was made while offline.
+  const bootFullSyncRanRef = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (bootFullSyncRanRef.current) return;
+      bootFullSyncRanRef.current = true;
+      try {
+        syncAllDataToFirestore();
+        console.log('[Boot Sync] Full dataset pushed to Firebase Firestore.');
+      } catch (err) {
+        console.warn('[Boot Sync] Full dataset push failed:', err);
+      }
+    }, 2500);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Reset to seed data
   const resetToDefaultData = () => {

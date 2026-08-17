@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Task, TaskStatus, TaskPriority, User as UserType } from '../types';
 import { TaskStatusBadge, PriorityBadge } from '../components/StatusBadge';
 import { GoogleWorkspaceModal } from '../components/GoogleWorkspaceModal';
+import { StaffTaskScreen } from './StaffTaskScreen';
 import { isSameDept, getUserCollege, isStaffInCollege } from '../utils/departmentUtils';
 import {
   CheckSquare,
@@ -408,6 +409,30 @@ export const TaskManagementView: React.FC<TaskManagementViewProps> = ({
 
   const tasksPrincipal = filteredTasks.filter((t) => t.assignedByRole === 'principal');
   const tasksHod = filteredTasks.filter((t) => t.assignedByRole === 'hod');
+
+  // Staff users get the redesigned, viewport-friendly screen
+  if (isStaffUser) {
+    return (
+      <>
+        <StaffTaskScreen
+          tasks={filteredTasks}
+          currentUser={currentUser}
+          onUpdateStatus={(id, status, remarks, attachmentUrl, attachmentName) =>
+            updateTaskStatus(id, status, remarks, attachmentUrl, attachmentName)
+          }
+          onSyncWorkspace={(task) => {
+            setWorkspaceModalTask(task);
+            setShowWorkspaceModal(true);
+          }}
+        />
+        <GoogleWorkspaceModal
+          isOpen={showWorkspaceModal}
+          onClose={() => setShowWorkspaceModal(false)}
+          selectedTask={workspaceModalTask}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="space-y-6">

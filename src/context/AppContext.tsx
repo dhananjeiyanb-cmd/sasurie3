@@ -630,14 +630,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(staffToInit));
           localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
         }
-      } else {
+            } else {
         const items = snapshot.docs.map((d) => d.data() as Staff);
         const kept = items.filter(isKeepStaff).filter(isNotRecentlyDeleted);
 
         const map = new Map<string, Staff>();
-        // First populate from Firestore
+
+        // First, load custom passwords from localStorage so we can preserve
+        // password changes that were made locally but not yet synced to Firestore
+        let savedCustomPasswords: Record<string, string> = {};
+        try {
+          const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}custom_passwords`);
+          if (saved) savedCustomPasswords = JSON.parse(saved);
+        } catch {}
+
+        // First populate from Firestore, applying any locally-stored custom passwords
         kept.forEach((s) => {
           if (s && s.id) {
+            // Preserve custom passwords over Firestore data
+            const passKey = s.id.toLowerCase();
+            const emailKey = s.email?.toLowerCase();
+            const localHash = savedCustomPasswords[passKey] || (emailKey ? savedCustomPasswords[emailKey] : undefined);
+            if (localHash) {
+              s = { ...s, password: localHash };
+            }
+
             if (s.id === 'HOD001' && (s.facultyName.includes('DHANANJEIYAN') || (s.email && s.email.includes('dhananjeiyan')))) {
               const fixedHOD: Staff = {
                 ...s,
@@ -653,10 +670,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
 
+        // Merge in local staff that are NOT in Firestore (local additions not yet synced)
+        localStaffArr.forEach((s) => {
+          if (s && s.id) {
+            const upperId = s.id.toUpperCase();
+            if (!map.has(upperId)) {
+              // This staff member exists locally but not in Firestore yet — keep it
+              map.set(upperId, s);
+            }
+          }
+        });
+
         const finalStaff = Array.from(map.values());
         setStaffList(finalStaff);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(finalStaff));
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
+
+        // Also sync any local-only staff to Firestore so they are not lost on next load
+        localStaffArr.forEach((s) => {
+          const upperId = s.id.toUpperCase();
+          if (!kept.some((fs) => fs.id && fs.id.toUpperCase() === upperId)) {
+            syncDocToFirestore('staff', upperId, s);
+          }
+        });
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'staff'));
 
@@ -1783,6 +1819,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nextIdNum = staffList.length + 1;
     const newId = customId || `FAC${String(nextIdNum).padStart(3, '0')}`;
     const pass = staffData.password || 'sasurie';
+
+    // Hash the password for secure storage
+    const hashedPass = await hashPassword(pass);
+
     const newStaff: Staff = {
       ...staffData,
       id: newId,
@@ -1792,7 +1832,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       institution: staffData.institution || dailyReport?.collegeName || 'Sasurie College of Engineering',
       mobile: staffData.mobile || '',
       email: staffData.email || '',
-      password: pass,
+      password: hashedPass,
       role: staffData.role || 'staff',
       coordinatorRole: staffData.coordinatorRole || 'General Faculty',
       status: staffData.status || 'Active',
@@ -1805,16 +1845,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
 
-    // Save custom password for instant login capability
+      // Save hashed password in customPasswords for instant login capability
     if (pass) {
-      const hashedPass = await hashPassword(pass);
       setCustomPasswords((prev) => ({
         ...prev,
         [newId.toLowerCase()]: hashedPass,
         ...(newStaff.email ? { [newStaff.email.toLowerCase()]: hashedPass } : {}),
       }));
     }
-    
+
     await syncDocToFirestore('staff', newStaff.id, newStaff);
 
     // Also add to daily monitoring
@@ -1857,6 +1896,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (fullUpdatedStaff) {
+      // Hash password before saving to Firestore if it's plaintext
+      if (fullUpdatedStaff.password && !/^[a-f0-9]{64}$/i.test(fullUpdatedStaff.password)) {
+        const hashedPass = await hashPassword(fullUpdatedStaff.password);
+        fullUpdatedStaff = { ...fullUpdatedStaff, password: hashedPass };
+      }
+
       const staffToSave: Staff = fullUpdatedStaff;
       await syncDocToFirestore('staff', targetId, staffToSave);
       if (id !== targetId) {

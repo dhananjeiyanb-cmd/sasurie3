@@ -21,6 +21,8 @@ import {
   Lock,
   ChevronRight,
   RefreshCw,
+  Coins,
+  ClipboardList,
 } from 'lucide-react';
 
 export const LibrarianPortalView: React.FC = () => {
@@ -120,6 +122,107 @@ export const LibrarianPortalView: React.FC = () => {
   // Calculate Dim 4.3 Coins from current visits log count
   const calcDim43Coins = (visits: LibraryVisitLog[]) => {
     return Math.min(500, visits.length * 20);
+  };
+
+  // ------------------------------------------------------------------
+  // Bulk selection: check / uncheck coins (DIM 4.2 checklist) for
+  // multiple selected students at once.
+  // ------------------------------------------------------------------
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
+  const [bulkChecklist, setBulkChecklist] = useState({
+    min5BooksBorrowed: false,
+    onTimeReturnVerified: false,
+    referenceAndJournalsBorrowed: false,
+    digitalLibraryAccess: false,
+    bookReviewSubmitted: false,
+  });
+
+  const allSelected =
+    filteredStudents.length > 0 && selectedStudents.size === filteredStudents.length;
+  const someSelected =
+    selectedStudents.size > 0 && selectedStudents.size < filteredStudents.length;
+
+  // DIM 4.2 coin checklist items shown in the bulk action bar
+  const DIM42_ITEMS = [
+    { key: 'min5BooksBorrowed', label: 'Min 5 Books Borrowed (+1,000 Coins)', coins: 1000 },
+    { key: 'onTimeReturnVerified', label: 'On-Time Return Verified (+500 Coins)', coins: 500 },
+    { key: 'referenceAndJournalsBorrowed', label: 'Reference Books & Journals (+500 Coins)', coins: 500 },
+    { key: 'digitalLibraryAccess', label: 'Digital Library Access (+500 Coins)', coins: 500 },
+    { key: 'bookReviewSubmitted', label: 'Book Review Submitted (+500 Coins)', coins: 500 },
+  ];
+
+  const handleSelectStudent = (regNo: string) => {
+    setSelectedStudents((prev) => {
+      const next = new Set(prev);
+      if (next.has(regNo)) next.delete(regNo);
+      else next.add(regNo);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedStudents(new Set());
+    } else {
+      setSelectedStudents(
+        new Set(filteredStudents.map((s) => s.studentProfile.registerNumber))
+      );
+    }
+  };
+
+  const handleBulkToggleItem = (key: string) => {
+    setBulkChecklist((prev) => ({ ...prev, [key]: !prev[key as keyof typeof prev] }));
+  };
+
+  const handleBulkClearSelection = () => setSelectedStudents(new Set());
+
+  const handleBulkApplyCoins = () => {
+    if (selectedStudents.size === 0) return;
+    const coins = calcDim42Coins(bulkChecklist);
+    const now = new Date().toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+
+    selectedStudents.forEach((regNo) => {
+      const student = skillBankStudents.find(
+        (s) => s.studentProfile.registerNumber === regNo
+      );
+      if (!student) return;
+      const existing = student.libraryChecklist;
+      const updatedChecklist = {
+        ...(existing || {
+          min5BooksBorrowed: false,
+          onTimeReturnVerified: false,
+          referenceAndJournalsBorrowed: false,
+          digitalLibraryAccess: false,
+          bookReviewSubmitted: false,
+        }),
+        min5BooksBorrowed: bulkChecklist.min5BooksBorrowed,
+        onTimeReturnVerified: bulkChecklist.onTimeReturnVerified,
+        referenceAndJournalsBorrowed: bulkChecklist.referenceAndJournalsBorrowed,
+        digitalLibraryAccess: bulkChecklist.digitalLibraryAccess,
+        bookReviewSubmitted: bulkChecklist.bookReviewSubmitted,
+        coinsEarned: coins,
+        updatedByLibrarian: true,
+        librarianLastUpdatedDate: now,
+        librarianNotes: existing?.librarianNotes || '',
+      };
+      updateSkillBankStudent(regNo, { libraryChecklist: updatedChecklist });
+    });
+
+    showToast(
+      `✓ DIM 4.2 coins (${coins.toLocaleString()} Coins) applied to ${selectedStudents.size} selected student(s).`
+    );
+    setSelectedStudents(new Set());
+    setBulkChecklist({
+      min5BooksBorrowed: false,
+      onTimeReturnVerified: false,
+      referenceAndJournalsBorrowed: false,
+      digitalLibraryAccess: false,
+      bookReviewSubmitted: false,
+    });
   };
 
   // Add Book Handler
@@ -329,6 +432,83 @@ export const LibrarianPortalView: React.FC = () => {
         </div>
       </div>
 
+            {/* Bulk Selection Action Bar: check/uncheck coins for selected students */}
+      {(someSelected || allSelected) && (
+        <div className="bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-slate-900 dark:to-slate-900/80 rounded-2xl border border-teal-200 dark:border-slate-800 shadow-sm p-4 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(el: HTMLInputElement | null) => {
+                  if (el) el.indeterminate = !allSelected && someSelected;
+                }}
+                onChange={handleSelectAll}
+                className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+              />
+              <span className="text-xs font-black text-slate-800 dark:text-slate-200">
+                {selectedStudents.size} student(s) selected
+              </span>
+            </div>
+            <span className="text-xs font-black text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg">
+              +{calcDim42Coins(bulkChecklist)} Coins per student
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 items-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-teal-600" />
+              Check / Uncheck Coins (DIM 4.2) for selected students
+            </span>
+            {DIM42_ITEMS.map((item) => (
+              <label
+                key={item.key}
+                className="flex items-center gap-2.5 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/60 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
+              >
+                <input
+                  type="checkbox"
+                  checked={bulkChecklist[item.key as keyof typeof bulkChecklist]}
+                  onChange={() => handleBulkToggleItem(item.key)}
+                  className="w-4 h-4 mt-0.5 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                />
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex-1">
+                  {item.label}
+                </span>
+                <span className="text-[10px] font-black text-amber-500 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded">
+                  +{item.coins}
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-teal-200 dark:border-slate-800">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+              <Coins className="w-4 h-4 text-amber-500" />
+              <span>
+                Updates the Library Checklist (DIM 4.2) for all selected students and syncs immediately to SSB.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleBulkClearSelection}
+                className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 font-bold rounded-xl text-xs transition-all cursor-pointer"
+              >
+                Clear Selection
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkApplyCoins}
+                className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-black rounded-xl text-xs inline-flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <Coins className="w-3.5 h-3.5" />
+                <span>Apply to {selectedStudents.size} students</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Student List Table */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -345,6 +525,19 @@ export const LibrarianPortalView: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/80 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-800 font-black">
+                <th className="p-3.5 w-12 text-center">
+                  <div className="flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el: HTMLInputElement | null) => {
+                        if (el) el.indeterminate = !allSelected && someSelected;
+                      }}
+                      onChange={handleSelectAll}
+                      className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </div>
+                </th>
                 <th className="p-3.5">Student Info</th>
                 <th className="p-3.5">Dept &amp; Year</th>
                 <th className="p-3.5">Assigned Mentor</th>
@@ -368,6 +561,14 @@ export const LibrarianPortalView: React.FC = () => {
                       key={prof.registerNumber}
                       className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                     >
+                      <td className="p-3.5 w-12 text-center align-middle">
+                        <input
+                          type="checkbox"
+                          checked={selectedStudents.has(prof.registerNumber)}
+                          onChange={() => handleSelectStudent(prof.registerNumber)}
+                          className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="p-3.5">
                         <div className="font-bold text-slate-900 dark:text-white text-xs">
                           {prof.studentName}
@@ -435,7 +636,7 @@ export const LibrarianPortalView: React.FC = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={8} className="p-8 text-center text-slate-500 text-xs">
                     No students found matching your filters. Try selecting a different department or year.
                   </td>
                 </tr>

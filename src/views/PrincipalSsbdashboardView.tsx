@@ -18,6 +18,9 @@ import {
   Sparkles,
   ArrowUpDown,
   Download,
+  Database,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -94,7 +97,7 @@ function countStudentAchievements(student: any): number {
 }
 
 export const PrincipalSsbdashboardView: React.FC = () => {
-  const { currentUser, skillBankStudents } = useApp();
+  const { currentUser, skillBankStudents, syncAllDataToFirestore } = useApp();
 
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [yearFilter, setYearFilter] = useState<string>('all');
@@ -103,6 +106,8 @@ export const PrincipalSsbdashboardView: React.FC = () => {
   const [sortKey, setSortKey] = useState<keyof DepartmentSsbtotals>('totalCoins');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
+  const [dbSyncing, setDbSyncing] = useState(false);
+  const [dbSyncedSuccess, setDbSyncedSuccess] = useState(false);
 
   const filteredStudents = useMemo(() => {
     return (skillBankStudents || []).filter((s) => {
@@ -191,6 +196,36 @@ export const PrincipalSsbdashboardView: React.FC = () => {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => {
+                  setDbSyncing(true);
+                  try {
+                    syncAllDataToFirestore();
+                    setDbSyncedSuccess(true);
+                    setTimeout(() => setDbSyncedSuccess(false), 3000);
+                  } catch (err) {
+                    console.error('Failed to sync SSB Grade Coin data to database:', err);
+                  } finally {
+                    setDbSyncing(false);
+                  }
+                }}
+                disabled={dbSyncing}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                  dbSyncedSuccess
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-slate-900 dark:bg-slate-800 text-white border-slate-700 hover:bg-slate-800 dark:hover:bg-slate-700'
+                }`}
+                title="Save all SSB Grade Coin data to the Firebase Firestore database"
+              >
+                {dbSyncing ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : dbSyncedSuccess ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Database className="w-4 h-4" />
+                )}
+                {dbSyncing ? 'Saving...' : dbSyncedSuccess ? 'Saved to DB!' : 'Save to Database'}
+              </button>
               <div className="px-3 py-1.5 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold border border-blue-200 dark:border-blue-800">
                 {departmentData.length} Departments
               </div>

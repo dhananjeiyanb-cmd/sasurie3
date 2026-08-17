@@ -2816,21 +2816,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
-    setSkillBankStudents((prev) => {
-      const map = new Map<string, StudentSkillBankData>();
-      prev.forEach((s) => {
-        const key = String(s.studentProfile?.registerNumber || '').trim().toLowerCase();
-        if (key) map.set(key, s);
-      });
-      normalizedNewStudents.forEach((ns) => {
-        const key = String(ns.studentProfile?.registerNumber || '').trim().toLowerCase();
-        if (key) map.set(key, ns);
-      });
-      const merged = Array.from(map.values());
+    const map = new Map<string, StudentSkillBankData>();
+    skillBankStudents.forEach((s) => {
+      const key = String(s.studentProfile?.registerNumber || '').trim().toLowerCase();
+      if (key) map.set(key, s);
+    });
+    normalizedNewStudents.forEach((ns) => {
+      const key = String(ns.studentProfile?.registerNumber || '').trim().toLowerCase();
+      if (key) map.set(key, ns);
+    });
+    const merged = Array.from(map.values());
 
-      // Persist to Firestore in background and alert on failures
-      (async () => {
-        const failures: string[] = [];
+    setSkillBankStudents(merged);
+
+    // Persist skillBankStudents + the derived mentorMappings collection to
+    // Firestore in the background so CSV/Excel mentor–mentee updates are ALWAYS
+    // saved to the database, and alert on any failure.
+    (async () => {
+      const failures: string[] = [];
+      try {
         await Promise.all(
           merged.map(async (st) => {
             try {
@@ -2843,15 +2847,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
           })
         );
-        if (failures.length > 0) {
-          alert(
-            `Failed to persist ${failures.length} imported student(s) to the database. Please check network/Firestore configuration. Failed Reg Nos: ${failures.join(', ')}`
-          );
-        }
-      })();
+      } catch (err) {
+        console.error('Failed persisting imported students to Firestore:', err);
+      }
 
-      return merged;
-    });
+      // Rebuild the dedicated Mentor → Mentee mapping collection (one doc per
+      // mentor) and save it to the database so the allocation survives reloads.
+      try {
+        const derived = buildMentorMappingsFromStudents(merged, staffList);
+        const derivedWithTime = derived.map((m) => ({
+          ...m,
+          updatedAt: new Date().toISOString(),
+        }));
+        setMentorMappings(derivedWithTime);
+        derivedMentorMappingsRef.current = derivedWithTime;
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}mentor_mappings_v1`, JSON.stringify(derivedWithTime));
+
+        await Promise.all(
+          derivedWithTime.map(async (m) => {
+            try {
+              await syncDocToFirestore('mentorMappings', m.mentorStaffId, m);
+            } catch (err) {
+              console.error('Failed saving mentor mapping document for', m.mentorStaffId, err);
+              failures.push(m.mentorStaffId);
+            }
+          })
+        );
+      } catch (err) {
+        console.error('Failed rebuilding mentor mappings on import:', err);
+      }
+
+      if (failures.length > 0) {
+        alert(
+          `Failed to persist ${failures.length} imported record(s) to the database. Please check network/Firestore configuration. Failed: ${failures
+            .slice(0, 5)
+            .join(', ')}${failures.length > 5 ? '…' : ''}`
+        );
+      }
+    })();
   };
 
   const upsertFacultyKpiClaim = (staffId: string, claim: FacultyPillarClaim) => {

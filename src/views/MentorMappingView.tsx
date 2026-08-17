@@ -44,6 +44,7 @@ export const MentorMappingView: React.FC = () => {
     clearDepartmentSkillBankStudents,
     clearAllSkillBankStudents,
     addSkillBankStudent,
+    mentorMappings,
     filterState,
   } = useApp();
 
@@ -86,10 +87,24 @@ export const MentorMappingView: React.FC = () => {
   const handleSyncAllToFirestore = async () => {
     setDbSyncing(true);
     try {
+      // 1) Push every scoped student (mentor-mentee data lives on the student too)
       for (const student of scopedStudents) {
         const docId = student.studentProfile.registerNumber.replace(/\//g, '_');
         await syncDocToFirestore('skillBankStudents', docId, student);
       }
+
+      // 2) Push the dedicated Mentor → Mentee mapping docs for this department
+      const scopedMentorIds = new Set(scopedStaff.map((s) => String(s.id).trim().toLowerCase()));
+      const mappingsToSave = mentorMappings.filter((m) =>
+        scopedMentorIds.has(String(m.mentorStaffId).trim().toLowerCase())
+      );
+      for (const m of mappingsToSave) {
+        await syncDocToFirestore('mentorMappings', m.mentorStaffId, {
+          ...m,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
       setDbSyncedSuccess(true);
       setTimeout(() => setDbSyncedSuccess(false), 4000);
     } catch (err) {

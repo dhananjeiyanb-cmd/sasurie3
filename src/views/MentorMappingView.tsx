@@ -1058,7 +1058,7 @@ export const MentorMappingView: React.FC = () => {
 
                       <td className="p-3.5">
                         <div className="font-bold text-slate-900 dark:text-white text-sm">{prof.studentName}</div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">{prof.degreeBranch}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">{prof.department || prof.degreeBranch}</div>
                       </td>
 
                       <td className="p-3.5">

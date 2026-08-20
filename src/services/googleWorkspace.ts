@@ -1,9 +1,27 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigFile from '../../firebase-applet-config.json';
 import { Task } from '../types';
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+// Prefer Vite env vars (VITE_FIREBASE_*) when present
+const env = (import.meta as any).env as Record<string, string | undefined>;
+const envConfig = {
+  apiKey: env.VITE_FIREBASE_API_KEY,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: env.VITE_FIREBASE_APP_ID,
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID,
+  firestoreDatabaseId: env.VITE_FIREBASE_FIRESTORE_DB_ID,
+};
+
+function hasEnvConfig(cfg: typeof envConfig) {
+  return !!(cfg.apiKey && cfg.projectId);
+}
+
+const firebaseConfig = hasEnvConfig(envConfig) ? envConfig : (firebaseConfigFile as any);
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig as any);
 export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();

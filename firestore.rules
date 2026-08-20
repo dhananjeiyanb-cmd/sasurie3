@@ -1,4 +1,4 @@
-Qrules_version = '2';
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -7,6 +7,10 @@ service cloud.firestore {
     }
 
     match /system/connection_test {
+      allow read, write: if true;
+    }
+
+    match /ccmMeetings/{docId} {
       allow read, write: if true;
     }
 

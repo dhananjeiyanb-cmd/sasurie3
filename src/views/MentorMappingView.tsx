@@ -430,19 +430,25 @@ export const MentorMappingView: React.FC = () => {
   // Save imported parsed students
   const handleConfirmImport = () => {
     if (parsedPreviewStudents.length === 0) return;
-    const staff = staffList.find((s) => s.id === importMentorStaffId);
+    const staff = staffList.find((s) => s.id === importMentorStaffId) || scopedStaff[0] || staffList[0];
     const mentorName = staff?.facultyName || 'Staff Mentor';
 
-    const updatedWithMentor = parsedPreviewStudents.map((s) => ({
-      ...s,
-      studentProfile: {
-        ...s.studentProfile,
-        mentorFaculty: mentorName,
-        mentorStaffId: importMentorStaffId,
-      },
-    }));
+    const updatedWithMentor = parsedPreviewStudents.map((s) => {
+      const existingMentor = s.studentProfile.mentorFaculty;
+      const isDefaultMentor = !existingMentor || existingMentor.includes('M. Kaviyarasu') || existingMentor === 'Staff Mentor' || existingMentor === 'Unassigned';
+      return {
+        ...s,
+        studentProfile: {
+          ...s.studentProfile,
+          mentorFaculty: isDefaultMentor ? mentorName : existingMentor,
+          mentorStaffId: isDefaultMentor ? (staff?.id || importMentorStaffId) : s.studentProfile.mentorStaffId,
+          department: s.studentProfile.department || fallbackDept,
+        },
+      };
+    });
 
     importBulkSkillBankStudents(updatedWithMentor);
+    showAllocationMessage(`Successfully saved ${updatedWithMentor.length} student records into database & mapped to mentor!`, 'success');
     setShowUploadModal(false);
     setParsedPreviewStudents([]);
     setUploadFileName('');

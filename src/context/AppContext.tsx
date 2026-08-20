@@ -910,35 +910,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (snapshot.empty) {
         const cleanedLocal = localArr
           .map(normalizeStudentSkillBankRecord)
-          .filter((st) => sanitizeDepartmentName(st.studentProfile?.department) && isNotRecentlyDeletedStudent(st));
+          .filter(isNotRecentlyDeletedStudent);
         if (cleanedLocal.length > 0) {
           setSkillBankStudents(cleanedLocal);
         } else {
-          setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK.filter((st) => sanitizeDepartmentName(st.studentProfile?.department)));
+          setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK.filter(isNotRecentlyDeletedStudent));
         }
       } else {
         const items = snapshot.docs
           .map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData))
-          .filter((st) => sanitizeDepartmentName(st.studentProfile?.department) && isNotRecentlyDeletedStudent(st));
+          .filter(isNotRecentlyDeletedStudent);
         const map = new Map<string, StudentSkillBankData>();
-        items.forEach((st) => {
-          const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
-          if (key) map.set(key, st);
-        });
+
+        // Local state loaded from localStorage takes precedence for local additions / edits
         localArr
           .map(normalizeStudentSkillBankRecord)
-          .filter((st) => sanitizeDepartmentName(st.studentProfile?.department) && isNotRecentlyDeletedStudent(st))
+          .filter(isNotRecentlyDeletedStudent)
           .forEach((st) => {
             const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
-            if (key && !map.has(key)) {
-              map.set(key, st);
-            }
+            if (key) map.set(key, st);
           });
+
+        // Overlay remote items from Firestore snapshot
+        items.forEach((st) => {
+          const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
+          if (key) {
+            map.set(key, st);
+          }
+        });
+
         const finalStudents = Array.from(map.values());
         setSkillBankStudents(finalStudents);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(finalStudents));
       }
-        }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
 
     // Faculty KPI Listeners — persisted self/HOD claims per staff.
     const unsubKpi = onSnapshot(collection(db, 'facultyKpis'), (snapshot) => {
@@ -2544,16 +2549,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addSkillBankStudent = (student: StudentSkillBankData) => {
-    const docId = getStudentDocId(student);
+    const normalized = normalizeStudentSkillBankRecord(student);
+    const docId = getStudentDocId(normalized);
     setSkillBankStudents((prev) => {
-      const regNum = student.studentProfile?.registerNumber;
+      const regNum = normalized.studentProfile?.registerNumber;
       const exists = prev.some((s) => s.studentProfile?.registerNumber === regNum);
-      if (exists) {
-        return prev.map((s) => (s.studentProfile?.registerNumber === regNum ? student : s));
-      }
-      return [student, ...prev];
+      const updated = exists
+        ? prev.map((s) => (s.studentProfile?.registerNumber === regNum ? normalized : s))
+        : [normalized, ...prev];
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(updated));
+      return updated;
     });
-    if (docId) syncDocToFirestore('skillBankStudents', docId, student);
+    if (docId) syncDocToFirestore('skillBankStudents', docId, normalized);
   };
 
   const deleteSkillBankStudent = async (registerNumber: string) => {
@@ -2810,7 +2817,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importBulkSkillBankStudents = (newStudents: StudentSkillBankData[]) => {
     const normalizedNewStudents = newStudents
       .map(normalizeStudentSkillBankRecord)
-      .filter((st) => st.studentProfile?.registerNumber && sanitizeDepartmentName(st.studentProfile?.department));
+      .filter((st) => Boolean(st?.studentProfile?.registerNumber));
 
     if (normalizedNewStudents.length === 0) {
       return;
@@ -2828,6 +2835,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const merged = Array.from(map.values());
 
     setSkillBankStudents(merged);
+    localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v11`, JSON.stringify(merged));
 
     // Persist skillBankStudents + the derived mentorMappings collection to
     // Firestore in the background so CSV/Excel mentor–mentee updates are ALWAYS

@@ -447,6 +447,55 @@ export async function parseExcelStudentFile(file: File): Promise<StudentSkillBan
 
             if (!regNo && !studentName) return null;
 
+            const yearInput =
+              String(
+                row['Academic Year'] ||
+                row['Year'] ||
+                row['AcademicYear'] ||
+                row['academicYear'] ||
+                row['YEAR'] ||
+                row['year'] ||
+                ''
+              ).trim();
+
+            const secInput =
+              String(
+                row['Section'] ||
+                row['Sec'] ||
+                row['section'] ||
+                row['SECTION'] ||
+                'A'
+              ).trim();
+
+            const deptInput =
+              String(
+                row['Department'] ||
+                row['Dept'] ||
+                row['department'] ||
+                row['DEPARTMENT'] ||
+                ''
+              ).trim();
+
+            const emailInput =
+              String(
+                row['Student Email'] ||
+                row['Email'] ||
+                row['studentEmail'] ||
+                row['EMAIL'] ||
+                row['email'] ||
+                ''
+              ).trim();
+
+            const mobileInput =
+              String(
+                row['Student Mobile'] ||
+                row['Mobile'] ||
+                row['studentMobile'] ||
+                row['MOBILE'] ||
+                row['mobile'] ||
+                '9876543210'
+              ).trim();
+
             const mentor =
               String(
                 row['Mentor Faculty Name'] ||
@@ -459,14 +508,15 @@ export async function parseExcelStudentFile(file: File): Promise<StudentSkillBan
             return createDefaultStudentSkillBankRecord({
               registerNumber: regNo || `73242210${Math.floor(1000 + Math.random() * 9000)}`,
               studentName: studentName || 'Uploaded Student',
+              academicYear: yearInput || '2nd Year',
+              section: secInput || 'A',
+              department: deptInput,
               degreeBranch: String(row['Degree & Branch'] || row['Branch'] || 'B.E. Computer Science & Engineering'),
-              department: String(row['Department'] || row['Dept'] || 'Computer Science & Engineering'),
-              batch: String(row['Batch'] || '2023-2027'),
-              semester: String(row['Semester'] || 'Odd Semester (Sem V)'),
-              section: String(row['Section'] || 'A'),
+              batch: String(row['Batch'] || ''),
+              semester: String(row['Semester'] || ''),
               mentorFaculty: mentor,
-              studentMobile: String(row['Student Mobile'] || row['Mobile'] || '9876543210'),
-              studentEmail: String(row['Student Email'] || row['Email'] || ''),
+              studentMobile: mobileInput,
+              studentEmail: emailInput,
               fatherName: String(row['Father Name'] || ''),
               fatherMobile: String(row['Father Mobile'] || ''),
               dreamCompany: String(row['Dream Company'] || 'Zoho Corp'),

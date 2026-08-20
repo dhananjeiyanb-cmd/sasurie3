@@ -10,8 +10,6 @@ import {
 } from '../utils/excelSkillBank';
 import { getScopedStudents, getScopedStaff } from '../utils/departmentUtils';
 import { syncDocToFirestore } from '../lib/firestoreSync';
-import { migrateAllToSupabase } from '../lib/supabase';
-import { seedAllFirebaseDataToSupabase } from '../lib/supabaseSeeder';
 import {
   Users,
   Upload,
@@ -573,55 +571,6 @@ export const MentorMappingView: React.FC = () => {
               <Database className="w-4 h-4 text-emerald-400" />
             )}
             <span>{dbSyncing ? 'Storing...' : dbSyncedSuccess ? 'Stored in DB!' : 'Store in DB'}</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              setDbSyncing(true);
-              try {
-                const res = await migrateAllToSupabase(scopedStudents, mentorMappings);
-                if (res.success) {
-                  showAllocationMessage(`Synced ${res.syncedStudents} students & ${res.syncedMappings} mappings to Supabase!`, 'success');
-                } else {
-                  showAllocationMessage(res.error || 'Configure VITE_SUPABASE_URL in Vercel to sync to Supabase.', 'error');
-                }
-              } catch (err: any) {
-                showAllocationMessage(`Supabase error: ${err.message}`, 'error');
-              } finally {
-                setDbSyncing(false);
-              }
-            }}
-            className="px-3.5 py-2 bg-sky-950/80 hover:bg-sky-900 text-sky-200 border border-sky-700/60 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-            title="Sync all data to Supabase PostgreSQL Database"
-          >
-            <Database className="w-4 h-4 text-sky-400" />
-            <span>Sync Supabase</span>
-          </button>
-
-          <button
-            onClick={async () => {
-              setDbSyncing(true);
-              showAllocationMessage('Seeding all Firebase data to Supabase...', 'info');
-              try {
-                const res = await seedAllFirebaseDataToSupabase((msg) => {
-                  showAllocationMessage(msg, 'info');
-                });
-                if (res.success) {
-                  showAllocationMessage(`Successfully seeded ${res.totalSynced} records from Firebase to Supabase!`, 'success');
-                } else {
-                  showAllocationMessage(res.error || 'Failed to seed data to Supabase.', 'error');
-                }
-              } catch (err: any) {
-                showAllocationMessage(`Seeding error: ${err.message}`, 'error');
-              } finally {
-                setDbSyncing(false);
-              }
-            }}
-            className="px-3.5 py-2 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-200 border border-indigo-700/60 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-            title="Seed all collections from Firebase Firestore into Supabase PostgreSQL Database"
-          >
-            <RefreshCw className="w-4 h-4 text-indigo-400" />
-            <span>Seed All Firebase → Supabase</span>
           </button>
 
           <button

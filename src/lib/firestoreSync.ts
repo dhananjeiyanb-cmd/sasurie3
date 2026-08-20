@@ -1,5 +1,6 @@
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
+import { syncDocToSupabase, deleteDocFromSupabase, isSupabaseConfigured } from './supabase';
 
 /**
  * Converts JS values (including `undefined`) into Firestore-safe values.
@@ -155,6 +156,13 @@ export async function syncDocToFirestore(collectionName: string, docId: string |
   const cleanId = String(docId).trim().replace(/\//g, '_');
   if (!cleanId) return;
   const path = `${collectionName}/${cleanId}`;
+
+  // Dual-sync to Supabase if configured
+  if (isSupabaseConfigured()) {
+    const supabaseTable = collectionName === 'skillBankStudents' ? 'skill_bank_students' : (collectionName === 'mentorMappings' ? 'mentor_mappings' : collectionName);
+    void syncDocToSupabase(supabaseTable, cleanId, data);
+  }
+
   try {
     const sanitized = sanitizeForFirestore(data);
     await setDoc(doc(db, collectionName, cleanId), sanitized, { merge: true });
@@ -176,6 +184,13 @@ export async function deleteDocFromFirestore(collectionName: string, docId: stri
   const cleanId = String(docId).trim().replace(/\//g, '_');
   if (!cleanId) return;
   const path = `${collectionName}/${cleanId}`;
+
+  // Dual-sync deletion to Supabase if configured
+  if (isSupabaseConfigured()) {
+    const supabaseTable = collectionName === 'skillBankStudents' ? 'skill_bank_students' : (collectionName === 'mentorMappings' ? 'mentor_mappings' : collectionName);
+    void deleteDocFromSupabase(supabaseTable, cleanId);
+  }
+
   try {
     await deleteDoc(doc(db, collectionName, cleanId));
   } catch (error: any) {

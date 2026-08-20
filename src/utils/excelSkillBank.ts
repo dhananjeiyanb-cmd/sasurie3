@@ -54,11 +54,30 @@ export function isStudentInCohortYear(
   return false;
 }
 
-// Function to normalize student profile year, batch, and semester consistency
+// Function to normalize student profile year, batch, and semester consistency & guarantee safe non-null structure
 export function normalizeStudentSkillBankRecord(record: StudentSkillBankData): StudentSkillBankData {
-  if (!record || !record.studentProfile) return record;
+  const defaults = createDefaultStudentSkillBankRecord({});
+  if (!record) return defaults;
 
-  const prof = { ...record.studentProfile };
+  const rawProf = record.studentProfile || ({} as StudentProfile);
+  const prof: StudentProfile = {
+    ...defaults.studentProfile,
+    ...rawProf,
+    studentName: rawProf.studentName || defaults.studentProfile.studentName || 'Student',
+    registerNumber: String(rawProf.registerNumber || defaults.studentProfile.registerNumber || '732422100000').trim(),
+    department: rawProf.department || defaults.studentProfile.department || 'Artificial Intelligence & Data Science (AI & DS)',
+    academicYear: rawProf.academicYear || defaults.studentProfile.academicYear || '2nd Year',
+    section: rawProf.section || defaults.studentProfile.section || 'A',
+    batch: rawProf.batch || defaults.studentProfile.batch || '2024-2028',
+    semester: rawProf.semester || defaults.studentProfile.semester || 'Sem III & IV',
+    degreeBranch: rawProf.degreeBranch || defaults.studentProfile.degreeBranch || 'B.E. Computer Science & Engineering',
+    mentorFaculty: rawProf.mentorFaculty || defaults.studentProfile.mentorFaculty || 'Unassigned',
+    mentorStaffId: rawProf.mentorStaffId || defaults.studentProfile.mentorStaffId || '',
+    studentEmail: rawProf.studentEmail || defaults.studentProfile.studentEmail || '',
+    studentMobile: rawProf.studentMobile || defaults.studentProfile.studentMobile || '',
+    skillBankAccountNo: rawProf.skillBankAccountNo || defaults.studentProfile.skillBankAccountNo || '',
+  };
+
   const cleanedDepartment = sanitizeDepartmentName(prof.department);
   if (cleanedDepartment) {
     prof.department = cleanedDepartment;
@@ -73,45 +92,62 @@ export function normalizeStudentSkillBankRecord(record: StudentSkillBankData): S
   const is2nd = !is4th && !is3rd && (pYear.includes('2nd') || pYear.includes('ii') || pYear === '2' || pSem.includes('sem iii') || pSem.includes('sem iv') || pBatch.includes('2024'));
   const is1st = !is4th && !is3rd && !is2nd && (pYear.includes('1st') || pYear === '1' || pYear.includes('i year') || pSem.includes('sem i') || pSem.includes('sem ii') || pBatch.includes('2025'));
 
-  let targetAcademicYear = prof.academicYear;
-  let targetBatch = prof.batch;
-  let targetSem = prof.semester;
-
   if (is4th) {
-    targetAcademicYear = '4th Year';
-    targetBatch = '2022-2026';
-    targetSem = 'Sem VII & VIII';
+    prof.academicYear = '4th Year';
+    prof.batch = '2022-2026';
+    prof.semester = 'Sem VII & VIII';
   } else if (is3rd) {
-    targetAcademicYear = '3rd Year';
-    targetBatch = '2023-2027';
-    targetSem = 'Sem V & VI';
+    prof.academicYear = '3rd Year';
+    prof.batch = '2023-2027';
+    prof.semester = 'Sem V & VI';
   } else if (is2nd) {
-    targetAcademicYear = '2nd Year';
-    targetBatch = '2024-2028';
-    targetSem = 'Sem III & IV';
+    prof.academicYear = '2nd Year';
+    prof.batch = '2024-2028';
+    prof.semester = 'Sem III & IV';
   } else if (is1st) {
-    targetAcademicYear = '1st Year';
-    targetBatch = '2025-2029';
-    targetSem = 'Sem I & II';
+    prof.academicYear = '1st Year';
+    prof.batch = '2025-2029';
+    prof.semester = 'Sem I & II';
   }
 
-  if (
-    prof.academicYear !== targetAcademicYear ||
-    prof.batch !== targetBatch ||
-    prof.semester !== targetSem
-  ) {
-    return {
-      ...record,
-      studentProfile: {
-        ...prof,
-        academicYear: targetAcademicYear,
-        batch: targetBatch,
-        semester: targetSem,
-      },
-    };
-  }
-
-  return record;
+  return {
+    ...defaults,
+    ...record,
+    studentProfile: prof,
+    attendanceMonths: { ...defaults.attendanceMonths, ...(record.attendanceMonths || {}) },
+    nptelMonths: { ...defaults.nptelMonths, ...(record.nptelMonths || {}) },
+    leetCodeMonths: { ...defaults.leetCodeMonths, ...(record.leetCodeMonths || {}) },
+    aptitudeMonths: { ...defaults.aptitudeMonths, ...(record.aptitudeMonths || {}) },
+    feePayment: { ...defaults.feePayment, ...(record.feePayment || {}) },
+    miniProjectChecklist: { ...defaults.miniProjectChecklist, ...(record.miniProjectChecklist || {}) },
+    miniProjectDetails: record.miniProjectDetails || defaults.miniProjectDetails,
+    ictToolsChecklist: { ...defaults.ictToolsChecklist, ...(record.ictToolsChecklist || {}) },
+    examPerformance: { ...defaults.examPerformance, ...(record.examPerformance || {}) },
+    subjectMarkDetails: record.subjectMarkDetails || defaults.subjectMarkDetails,
+    learnerCategory: { ...defaults.learnerCategory, ...(record.learnerCategory || {}) },
+    endSemResults: { ...defaults.endSemResults, ...(record.endSemResults || {}) },
+    onlineCertBasic: record.onlineCertBasic || defaults.onlineCertBasic,
+    advancedCourses: record.advancedCourses || defaults.advancedCourses,
+    paperPresentations: record.paperPresentations || defaults.paperPresentations,
+    resume: { ...defaults.resume, ...(record.resume || {}) },
+    mockInterview: { ...defaults.mockInterview, ...(record.mockInterview || {}) },
+    linkedIn: { ...defaults.linkedIn, ...(record.linkedIn || {}) },
+    gitHub: { ...defaults.gitHub, ...(record.gitHub || {}) },
+    socialMedia: { ...defaults.socialMedia, ...(record.socialMedia || {}) },
+    hackathons: record.hackathons || defaults.hackathons,
+    internship: { ...defaults.internship, ...(record.internship || {}) },
+    workshop: { ...defaults.workshop, ...(record.workshop || {}) },
+    collegeEvent: { ...defaults.collegeEvent, ...(record.collegeEvent || {}) },
+    volunteering: { ...defaults.volunteering, ...(record.volunteering || {}) },
+    professionalMemberships: record.professionalMemberships || defaults.professionalMemberships,
+    sportsLogs: record.sportsLogs || defaults.sportsLogs,
+    artsLogs: record.artsLogs || defaults.artsLogs,
+    clubLogs: record.clubLogs || defaults.clubLogs,
+    violations: record.violations || defaults.violations,
+    counsellingLogs: record.counsellingLogs || defaults.counsellingLogs,
+    parentMeetingLogs: record.parentMeetingLogs || defaults.parentMeetingLogs,
+    transformationJourney: { ...defaults.transformationJourney, ...(record.transformationJourney || {}) },
+  };
 }
 
 // Function to construct a default empty StudentSkillBankData record for new students imported via Excel

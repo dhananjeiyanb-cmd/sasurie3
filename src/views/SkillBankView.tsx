@@ -1466,12 +1466,9 @@ export const SkillBankView: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {scopedStudents
                     .filter((s) => {
+                      if (!s || !s.studentProfile) return false;
                       if (hodYearFilterTab === 'all') return true;
-                      if (hodYearFilterTab === 'I Year') return s.studentProfile.batch === '2025-2029' || s.studentProfile.semester.includes('Sem I') || s.studentProfile.semester.includes('Sem II');
-                      if (hodYearFilterTab === 'II Year') return s.studentProfile.batch === '2024-2028' || s.studentProfile.semester.includes('Sem III') || s.studentProfile.semester.includes('Sem IV');
-                      if (hodYearFilterTab === 'III Year') return s.studentProfile.batch === '2023-2027' || s.studentProfile.semester.includes('Sem V') || s.studentProfile.semester.includes('Sem VI');
-                      if (hodYearFilterTab === 'IV Year') return s.studentProfile.batch === '2022-2026' || s.studentProfile.semester.includes('Sem VII') || s.studentProfile.semester.includes('Sem VIII');
-                      return true;
+                      return isStudentInCohortYear(s.studentProfile, hodYearFilterTab);
                     })
                     .map((st) => {
                       const stTotals = calculateStudentTotals(st);

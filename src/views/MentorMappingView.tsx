@@ -223,6 +223,7 @@ export const MentorMappingView: React.FC = () => {
 
   // Filter Students
   const filteredStudents = scopedStudents.filter((s) => {
+    if (!s || !s.studentProfile) return false;
     const profile = s.studentProfile;
     // Year filter (e.g. 2nd Year / II YEAR)
     let matchesYear = true;
@@ -260,7 +261,7 @@ export const MentorMappingView: React.FC = () => {
   // Calculate Stats
   const totalStudentsCount = scopedStudents.length;
   const mappedCount = scopedStudents.filter(
-    (s) => s.studentProfile.mentorFaculty && s.studentProfile.mentorFaculty !== 'Unassigned' && s.studentProfile.mentorFaculty !== ''
+    (s) => s?.studentProfile?.mentorFaculty && s.studentProfile.mentorFaculty !== 'Unassigned' && s.studentProfile.mentorFaculty !== ''
   ).length;
   const unassignedCount = totalStudentsCount - mappedCount;
   const totalMentorsCount = scopedStaff.length;

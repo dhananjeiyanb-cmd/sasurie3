@@ -168,6 +168,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       roles: [...executiveRoles, 'staff'],
     },
     {
+      id: 'logs',
+      label: 'Activity Logs',
+      icon: ClipboardList,
+      roles: executiveRoles,
+    },
+    {
       id: 'my_mentees',
       label: 'My Mentees',
       icon: UserCheck,

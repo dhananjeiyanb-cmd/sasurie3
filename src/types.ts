@@ -524,3 +524,14 @@ export type QuestionCategory =
 
 export type DifficultyLevel = 'Easy' | 'Medium' | 'Hard';
 
+export interface SystemLog {
+  id: string;
+  timestamp: string; // ISO string
+  userId: string; // email or username or staffId
+  userName: string; // name
+  userRole: string; // role
+  actionType: 'login' | 'logoff' | 'create' | 'update' | 'delete' | 'other';
+  details: string; // description of what happened
+}
+
+

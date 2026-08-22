@@ -22,6 +22,7 @@ import {
   EventParticipant,
   EventDocument,
   EventFeedbackResponse,
+  SystemLog,
 } from '../types';
 import { StudentSkillBankData, GoogleSheetsConfig, MentorMenteeMapping } from '../types/skillBank';
 import { buildSkillBankMonitoringRows } from '../utils/excelSkillBank';
@@ -205,6 +206,9 @@ interface AppContextType {
   ) => void;
   updateCCMMeeting: (id: string, updates: Partial<CCMMeeting>) => void;
   deleteCCMMeeting: (id: string) => void;
+
+  systemLogs: SystemLog[];
+  addSystemLog: (actionType: 'login' | 'logoff' | 'create' | 'update' | 'delete' | 'other', details: string, actorOverride?: User) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -489,6 +493,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return INITIAL_CCM_MEETINGS;
   });
+
+  const [systemLogs, setSystemLogs] = useState<SystemLog[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}system_logs_v1`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return [];
+  });
+
+  const addSystemLog = (
+    actionType: 'login' | 'logoff' | 'create' | 'update' | 'delete' | 'other',
+    details: string,
+    actorOverride?: User
+  ) => {
+    const actor = actorOverride || currentUser;
+    const newLog: SystemLog = {
+      id: `LOG-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+      userId: actor?.username || actor?.email || 'Anonymous',
+      userName: actor?.name || 'Anonymous',
+      userRole: actor?.role || 'Guest',
+      actionType,
+      details,
+    };
+
+    setSystemLogs((prev) => {
+      const next = [newLog, ...prev];
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}system_logs_v1`, JSON.stringify(next));
+      return next;
+    });
+
+    syncDocToFirestore('systemLogs', newLog.id, newLog);
+  };
 
   // Sync state to local storage
   useEffect(() => {
@@ -1019,6 +1059,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'hodFacultyAttendance'));
 
+    // System Logs Listener
+    const unsubLogs = onSnapshot(collection(db, 'systemLogs'), (snapshot) => {
+      let localArr: SystemLog[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}system_logs_v1`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localArr = parsed;
+        }
+      } catch {}
+
+      if (snapshot.empty) {
+        setSystemLogs(localArr);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}system_logs_v1`, JSON.stringify(localArr));
+      } else {
+        const map = new Map<string, SystemLog>();
+        localArr.forEach((l) => {
+          if (l && l.id) map.set(l.id, l);
+        });
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as SystemLog;
+          const key = data?.id || d.id;
+          if (key) map.set(key, data);
+        });
+        const finalLogs = Array.from(map.values()).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+        setSystemLogs(finalLogs);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}system_logs_v1`, JSON.stringify(finalLogs));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'systemLogs'));
+
     return () => {
       unsubStaff();
       unsubClasses();
@@ -1029,10 +1101,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubLp();
       unsubNotif();
       unsubEvents();
-            unsubSkill();
+      unsubSkill();
       unsubKpi();
       unsubReport();
       unsubHodAtt();
+      unsubLogs();
     };
   }, []);
 
@@ -1403,6 +1476,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'admin'),
       };
       setCurrentUser(superAdminUser);
+      addSystemLog('login', 'Logged in as System Super Administrator', superAdminUser);
       return { success: true };
     }
 
@@ -1424,6 +1498,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal'),
       };
       setCurrentUser(principalUser);
+      addSystemLog('login', `Logged in as Principal: ${principalUser.name}`, principalUser);
       return { success: true };
     }
 
@@ -1442,6 +1517,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'secretary'),
       };
       setCurrentUser(secUser);
+      addSystemLog('login', `Logged in as Secretary Subburaj`, secUser);
       return { success: true };
     }
 
@@ -1463,6 +1539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal_pa'),
       };
       setCurrentUser(priPaUser);
+      addSystemLog('login', `Logged in as Principal PA Ramesh`, priPaUser);
       return { success: true };
     }
 
@@ -1481,6 +1558,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'secretary_pa'),
       };
       setCurrentUser(secPaUser);
+      addSystemLog('login', `Logged in as Secretary PA Suresh`, secPaUser);
       return { success: true };
     }
 
@@ -1508,6 +1586,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'librarian'),
       };
       setCurrentUser(librarianUser);
+      addSystemLog('login', `Logged in as Central Librarian`, librarianUser);
       return { success: true };
     }
 
@@ -1533,6 +1612,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'incucula'),
       };
       setCurrentUser(incuculaUser);
+      addSystemLog('login', `Logged in as Incucula Head`, incuculaUser);
       return { success: true };
     }
 
@@ -1541,6 +1621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (s) => (s.id && s.id.toLowerCase() === lowUser) || (s.email && s.email.toLowerCase() === lowUser)
     );
 
+    const isClientUser = foundStaff && foundStaff.role;
     const isHodUser =
       (foundStaff && foundStaff.role === 'admin') ||
       lowUser === 'hodcs@sasurie.com' ||
@@ -1565,6 +1646,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'admin'),
       };
       setCurrentUser(adminUser);
+      addSystemLog('login', `Logged in as HOD ${adminUser.name} (${adminUser.department})`, adminUser);
       return { success: true };
     }
 
@@ -1585,6 +1667,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(foundStaff.email, foundStaff.facultyName, userRole),
       };
       setCurrentUser(staffUser);
+      addSystemLog('login', `Logged in as Staff: ${staffUser.name} (${staffUser.department})`, staffUser);
       return { success: true };
     }
 
@@ -1673,14 +1756,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setCurrentUser(googleUser);
+    addSystemLog('login', `Logged in via Google as ${googleUser.name} (${googleUser.role})`, googleUser);
     return { success: true };
   };
 
   const loginAsDemo = (role: Role, staffId?: string) => {
+    let demoUser: User;
     if (role === 'principal') {
       const email = 'principal@sasurie.com';
       const name = 'Prof. Dr. Kiruba Shankar R (Principal)';
-      setCurrentUser({
+      demoUser = {
         username: 'PRI001',
         role: 'principal',
         staffId: 'PRI001',
@@ -1690,11 +1775,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal'),
-      });
+      };
     } else if (role === 'secretary') {
       const email = 'secretary@sasurie.com';
       const name = 'Thiru. S. Subburaj (College Secretary)';
-      setCurrentUser({
+      demoUser = {
         username: 'SEC001',
         role: 'secretary',
         staffId: 'SEC001',
@@ -1703,11 +1788,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'secretary'),
-      });
+      };
     } else if (role === 'principal_pa') {
       const email = 'principal.pa@sasurie.com';
       const name = 'Er. R. Ramesh (Principal PA)';
-      setCurrentUser({
+      demoUser = {
         username: 'PRIPA001',
         role: 'principal_pa',
         staffId: 'PRIPA001',
@@ -1716,11 +1801,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal_pa'),
-      });
+      };
     } else if (role === 'secretary_pa') {
       const email = 'secretary.pa@sasurie.com';
       const name = 'Er. K. Suresh (Secretary PA)';
-      setCurrentUser({
+      demoUser = {
         username: 'SECPA001',
         role: 'secretary_pa',
         staffId: 'SECPA001',
@@ -1729,11 +1814,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'secretary_pa'),
-      });
+      };
     } else if (role === 'librarian') {
       const email = 'librarian@sasurie.com';
       const name = 'Dr. S. Library Officer (Central Librarian)';
-      setCurrentUser({
+      demoUser = {
         username: 'LIB001',
         role: 'librarian',
         staffId: 'LIB001',
@@ -1742,11 +1827,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'librarian'),
-      });
+      };
     } else if (role === 'incucula') {
       const email = 'incucula@sasurie.com';
       const name = 'Dr. M. Innovation Officer (Incucula Head)';
-      setCurrentUser({
+      demoUser = {
         username: 'INC001',
         role: 'incucula',
         staffId: 'INC001',
@@ -1755,7 +1840,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'incucula'),
-      });
+      };
     } else if (role === 'admin') {
       const targetStaff = staffId
         ? staffList.find((s) => s.id === staffId)
@@ -1765,7 +1850,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const name = targetStaff?.facultyName || dailyReport.hodName || 'Dr. C. HOD (AI & DS)';
       const department = targetStaff?.department || 'Artificial Intelligence & Data Science (AI & DS)';
 
-      const newUser: User = {
+      demoUser = {
         username: targetStaff?.id || 'HOD001',
         role: 'admin',
         coordinatorRole: targetStaff?.coordinatorRole,
@@ -1776,7 +1861,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'admin'),
       };
-      setCurrentUser(newUser);
       updateDailyReport({
         hodName: name,
         hodEmail: email,
@@ -1787,7 +1871,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const userRole = targetStaff?.role || 'staff';
       const email = targetStaff?.email || 'kaviyarasu.aids@gmail.com';
       const name = targetStaff?.facultyName || 'M. Kaviyarasu (Faculty)';
-      setCurrentUser({
+      demoUser = {
         username: targetStaff?.id || 'STF001',
         role: userRole,
         coordinatorRole: targetStaff?.coordinatorRole,
@@ -1797,11 +1881,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         email,
         googleConnected: true,
         avatarUrl: getGoogleAvatarUrl(email, name, 'staff'),
-      });
+      };
     }
+    setCurrentUser(demoUser);
+    addSystemLog('login', `Logged in as Demo ${demoUser.name} (${demoUser.role})`, demoUser);
   };
 
   const logout = () => {
+    if (currentUser) {
+      addSystemLog('logoff', `Logged out: ${currentUser.name}`);
+    }
     try {
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students`, JSON.stringify(skillBankStudents));
       localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(staffList));
@@ -1882,6 +1971,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
     await syncDocToFirestore('monitoring', newMon.id, newMon);
+    addSystemLog('create', `Added new staff: ${newStaff.facultyName} (${newStaff.id})`);
   };
 
   const updateStaff = async (id: string, updates: Partial<Staff>) => {
@@ -1939,6 +2029,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : null
         );
       }
+      addSystemLog('update', `Updated staff details: ${staffToSave.facultyName} (${targetId})`);
     }
 
     // Sync name and staffId in tasks & monitoring if name or id changed
@@ -2047,6 +2138,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           await deleteDoc(doc(db, 'staff', d.id));
         }
       }
+      addSystemLog('delete', `Deleted staff ID: ${id} (${targetStaff?.facultyName || 'Unknown Faculty'}) and cascaded tasks/observations`);
     } catch (err) {
       console.error('Error deleting staff from Firestore:', err);
     }
@@ -2066,6 +2158,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       for (const docSnap of snap.docs) {
         await deleteDoc(doc(db, 'staff', docSnap.id));
       }
+      addSystemLog('delete', `Cleared all staff members from database`);
     } catch (e) {
       console.error('Error clearing staff from Firestore:', e);
     }
@@ -2083,6 +2176,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     for (const s of INITIAL_STAFF) {
       await syncDocToFirestore('staff', s.id, s);
     }
+    addSystemLog('create', `Restored demo staff records`);
   };
 
   // CRUD Classes
@@ -2122,6 +2216,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       updateDailyReport({ studentAttendanceSummaries: [...summaries, newSummary] });
     }
+    addSystemLog('create', `Added class: ${newClass.year} ${newClass.department} Section ${newClass.section} (${newClass.id})`);
   };
 
   const updateClass = (id: string, updates: Partial<ClassRoom>) => {
@@ -2147,6 +2242,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return s;
       });
       updateDailyReport({ studentAttendanceSummaries: updatedSummaries });
+      addSystemLog('update', `Updated class ${id} details`);
     }
   };
 
@@ -2158,6 +2254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const summaries = dailyReport.studentAttendanceSummaries || [];
     const filteredSummaries = summaries.filter((s) => s.classId !== id);
     updateDailyReport({ studentAttendanceSummaries: filteredSummaries });
+    addSystemLog('delete', `Deleted class ID: ${id}`);
   };
 
   // CRUD Tasks
@@ -2198,6 +2295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setNotifications((prev) => [newNotif, ...prev]);
     syncDocToFirestore('notifications', newNotif.id, newNotif);
+    addSystemLog('create', `Assigned task: "${newTask.title}" to ${newTask.assignedToName} (${newTask.id})`);
   };
 
   // Reassign a task from HOD to a specific staff member
@@ -2244,6 +2342,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setNotifications((prev) => [newNotif, ...prev]);
     syncDocToFirestore('notifications', newNotif.id, newNotif);
+    addSystemLog('create', `Delegated task "${newTask.title}" to ${staffName} (${newTask.id})`);
   };
 
   const updateTask = (id: string, updates: Partial<Task>) => {
@@ -2251,12 +2350,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existing = taskList.find((t) => t.id === id);
     if (existing) {
       syncDocToFirestore('tasks', id, { ...existing, ...updates });
+      addSystemLog('update', `Updated task details for task ID: ${id}`);
     }
   };
 
   const deleteTask = (id: string) => {
     setTaskList((prev) => prev.filter((t) => t.id !== id));
     deleteDocFromFirestore('tasks', id);
+    addSystemLog('delete', `Deleted task ID: ${id}`);
   };
 
   const updateTaskStatus = (
@@ -2298,6 +2399,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (updatedTaskObj) {
       syncDocToFirestore('tasks', id, updatedTaskObj);
+      addSystemLog('update', `Updated task status of "${updatedTaskObj.title}" (${id}) to "${status}"`);
     }
 
     // Add notifications
@@ -2363,6 +2465,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existing = monitoringList.find((m) => m.id === id);
     if (existing) {
       syncDocToFirestore('monitoring', id, { ...existing, ...updates });
+      addSystemLog('update', `Updated faculty daily monitoring details for: ${existing.facultyName}`);
     }
   };
 
@@ -2561,6 +2664,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return updated;
     });
     if (docId) syncDocToFirestore('skillBankStudents', docId, normalized);
+    addSystemLog('create', `Added student to Skill Bank: ${normalized.studentProfile?.studentName} (${normalized.studentProfile?.registerNumber})`);
   };
 
   const deleteSkillBankStudent = async (registerNumber: string) => {
@@ -2600,6 +2704,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           deletePromises.push(deleteDocFromFirestore('skillBankStudents', d.id));
         }
       });
+      addSystemLog('delete', `Deleted student from Skill Bank: Register Number ${registerNumber}`);
     } catch (err) {
       await Promise.all(deletePromises);
       console.error('Error deleting student from Firestore:', err);
@@ -2692,6 +2797,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deletePromises.push(deleteDocFromFirestore('skillBankStudents', d.id));
       });
       await Promise.all(deletePromises);
+      addSystemLog('delete', `Cleared all students from Skill Bank (reset to zero)`);
     } catch (err) {
       console.error('Error clearing all skillBankStudents from Firestore:', err);
     }
@@ -2803,6 +2909,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    addSystemLog('update', `Assigned ${cleanRegs.length} mentees to mentor: ${assignedMentorName} (${assignedMentorId || 'Unassigned'})`);
     return { success: true, message: 'Mentor–Mentee allocation updated successfully.' };
   };
 
@@ -2892,6 +2999,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             .join(', ')}${failures.length > 5 ? '…' : ''}`
         );
       }
+      addSystemLog('create', `Bulk imported ${normalizedNewStudents.length} students into Skill Bank`);
     })();
   };
 
@@ -3465,10 +3573,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         importFullDatabase,
         syncAllDataToFirestore,
         resetToDefaultData,
-    ccmMeetings,
-    addCCMMeeting,
-    updateCCMMeeting,
-    deleteCCMMeeting,
+        ccmMeetings,
+        addCCMMeeting,
+        updateCCMMeeting,
+        deleteCCMMeeting,
+        systemLogs,
+        addSystemLog,
       }}
     >
       {children}

@@ -23,6 +23,7 @@ import {
   EventDocument,
   EventFeedbackResponse,
   SystemLog,
+  PdtEntry,
 } from '../types';
 import { StudentSkillBankData, GoogleSheetsConfig, MentorMenteeMapping } from '../types/skillBank';
 import { buildSkillBankMonitoringRows } from '../utils/excelSkillBank';
@@ -209,6 +210,11 @@ interface AppContextType {
 
   systemLogs: SystemLog[];
   addSystemLog: (actionType: 'login' | 'logoff' | 'create' | 'update' | 'delete' | 'other', details: string, actorOverride?: User) => void;
+
+  pdtEntries: PdtEntry[];
+  addPdtEntry: (entry: Omit<PdtEntry, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  updatePdtEntry: (id: string, updates: Partial<PdtEntry>) => void;
+  deletePdtEntry: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -496,6 +502,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}system_logs_v1`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return [];
+  });
+
+  const [pdtEntries, setPdtEntries] = useState<PdtEntry[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -1091,6 +1108,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'systemLogs'));
 
+    // PDT Entries Listener
+    const unsubPdt = onSnapshot(collection(db, 'pdtEntries'), (snapshot) => {
+      let localArr: PdtEntry[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) localArr = parsed;
+        }
+      } catch {}
+
+      if (snapshot.empty) {
+        setPdtEntries(localArr);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`, JSON.stringify(localArr));
+      } else {
+        const map = new Map<string, PdtEntry>();
+        localArr.forEach((p) => {
+          if (p && p.id) map.set(p.id, p);
+        });
+        snapshot.docs.forEach((d) => {
+          const data = d.data() as PdtEntry;
+          const key = data?.id || d.id;
+          if (key) map.set(key, data);
+        });
+        const finalPdt = Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setPdtEntries(finalPdt);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`, JSON.stringify(finalPdt));
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'pdtEntries'));
+
     return () => {
       unsubStaff();
       unsubClasses();
@@ -1106,6 +1155,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubReport();
       unsubHodAtt();
       unsubLogs();
+      unsubPdt();
     };
   }, []);
 
@@ -3489,6 +3539,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteDocFromFirestore('ccmMeetings', id);
   };
 
+  // ==== PDT Entries CRUD ====
+  const addPdtEntry = (entry: Omit<PdtEntry, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const newId = `PDT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const newEntry: PdtEntry = {
+      id: newId,
+      ...entry,
+      createdAt: new Date().toISOString(),
+    };
+    setPdtEntries((prev) => {
+      const next = [newEntry, ...prev];
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`, JSON.stringify(next));
+      return next;
+    });
+    syncDocToFirestore('pdtEntries', newEntry.id, newEntry);
+    addSystemLog('create', `Principal added PDT ${entry.type.toLowerCase()}: "${entry.title}"`);
+  };
+
+  const updatePdtEntry = (id: string, updates: Partial<PdtEntry>) => {
+    const nowStr = new Date().toISOString();
+    setPdtEntries((prev) => {
+      const next = prev.map((entry) => (entry.id === id ? { ...entry, ...updates, updatedAt: nowStr } : entry));
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`, JSON.stringify(next));
+      return next;
+    });
+    const existing = pdtEntries.find((entry) => entry.id === id);
+    if (existing) {
+      const merged = { ...existing, ...updates, updatedAt: nowStr };
+      syncDocToFirestore('pdtEntries', id, merged);
+      addSystemLog('update', `Principal updated PDT ${existing.type.toLowerCase()}: "${existing.title}" (${updates.status || 'details'})`);
+    }
+  };
+
+  const deletePdtEntry = (id: string) => {
+    const existing = pdtEntries.find((entry) => entry.id === id);
+    setPdtEntries((prev) => {
+      const next = prev.filter((entry) => entry.id !== id);
+      localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`, JSON.stringify(next));
+      return next;
+    });
+    deleteDocFromFirestore('pdtEntries', id);
+    if (existing) {
+      addSystemLog('delete', `Principal deleted PDT ${existing.type.toLowerCase()}: "${existing.title}"`);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -3579,6 +3674,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteCCMMeeting,
         systemLogs,
         addSystemLog,
+        pdtEntries,
+        addPdtEntry,
+        updatePdtEntry,
+        deletePdtEntry,
       }}
     >
       {children}

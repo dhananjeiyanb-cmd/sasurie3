@@ -26,6 +26,7 @@ import {
   ClipboardList,
   Rocket,
   BarChart3,
+  CalendarClock,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -172,6 +173,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       label: 'Activity Logs',
       icon: ClipboardList,
       roles: executiveRoles,
+    },
+    {
+      id: 'pdt',
+      label: 'PDT (Principal Tracker)',
+      icon: CalendarClock,
+      roles: ['principal', 'principal_pa', 'admin'],
     },
     {
       id: 'my_mentees',

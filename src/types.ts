@@ -534,4 +534,18 @@ export interface SystemLog {
   details: string; // description of what happened
 }
 
+export interface PdtEntry {
+  id: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM (24-hour style)
+  type: 'Task' | 'Meeting';
+  title: string;
+  description: string;
+  status: 'Scheduled' | 'In Progress' | 'Completed' | 'Postponed' | 'Cancelled';
+  remarks?: string;
+  createdAt: string; // ISO string
+  updatedAt?: string; // ISO string
+}
+
+
 

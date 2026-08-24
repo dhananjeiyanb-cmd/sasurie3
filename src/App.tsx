@@ -19,6 +19,7 @@ import { MentorMappingView } from './views/MentorMappingView';
 import { MentorMenteeView } from './views/MentorMenteeView';
 import { PrincipalSsbdashboardView } from './views/PrincipalSsbdashboardView';
 import { LogsView } from './views/LogsView';
+import { PdtView } from './views/PdtView';
 import { LibrarianPortalView } from './views/LibrarianPortalView';
 import { EventsView } from './views/EventsView';
 import { CCMView } from './views/CCMView';
@@ -193,6 +194,8 @@ const MainContent: React.FC = () => {
           {activeTab === 'reports' && <ReportsView />}
 
           {activeTab === 'logs' && <LogsView />}
+
+          {activeTab === 'pdt' && <PdtView />}
 
           {activeTab === 'iqac_ccm' && <CCMView />}
 

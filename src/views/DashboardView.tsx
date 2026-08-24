@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { TaskStatusBadge, PriorityBadge } from '../components/StatusBadge';
 import { FacultyAttendanceModal } from '../components/FacultyAttendanceModal';
-import { DEPARTMENTS } from '../types';
+import { DEPARTMENTS, SASURIE_COLLEGES, PdtEntry } from '../types';
 import { getGoogleAvatarUrl } from '../utils/avatarUtils';
 import { isSameDept, getUserCollege, isStaffInCollege, getStudentsAssignedToMentor } from '../utils/departmentUtils';
 import {
@@ -54,9 +54,84 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     hodAttendanceRecords,
     skillBankStudents,
     mentorMappings,
+    pdtEntries,
   } = useApp();
 
   const [isFacultyAttendanceModalOpen, setIsFacultyAttendanceModalOpen] = useState(false);
+
+  const [selectedCollege, setSelectedCollege] = useState<string>('all');
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [secListTab, setSecListTab] = useState<'staff' | 'tasks'>('staff');
+  const [secSearchQuery, setSecSearchQuery] = useState('');
+
+  const secFilteredStaff = useMemo(() => {
+    let list = selectedCollege === 'all'
+      ? staffList
+      : staffList.filter((s) => isStaffInCollege(s, selectedCollege));
+
+    if (secSearchQuery && secListTab === 'staff') {
+      const q = secSearchQuery.toLowerCase();
+      list = list.filter((s) =>
+        (s.facultyName || '').toLowerCase().includes(q) ||
+        (s.email || '').toLowerCase().includes(q) ||
+        (s.department || '').toLowerCase().includes(q) ||
+        (s.designation || '').toLowerCase().includes(q) ||
+        (s.id || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [staffList, selectedCollege, secSearchQuery, secListTab]);
+
+  const secFilteredTasks = useMemo(() => {
+    let list = selectedCollege === 'all'
+      ? taskList
+      : taskList.filter((t) => {
+          if (t.institution) return t.institution === selectedCollege;
+          const assignedStaff = staffList.find((s) => s.id === t.assignedToStaffId);
+          return assignedStaff && isStaffInCollege(assignedStaff, selectedCollege);
+        });
+
+    if (secSearchQuery && secListTab === 'tasks') {
+      const q = secSearchQuery.toLowerCase();
+      list = list.filter((t) =>
+        (t.title || '').toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q) ||
+        (t.assignedToName || '').toLowerCase().includes(q) ||
+        (t.department || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [taskList, staffList, selectedCollege, secSearchQuery, secListTab]);
+
+  const secFilteredPdt = useMemo(() => {
+    return pdtEntries.filter((e) => {
+      const matchesDate = e.date === selectedDate;
+      const matchesCollege = selectedCollege === 'all' || e.institution === selectedCollege;
+      return matchesDate && matchesCollege;
+    });
+  }, [pdtEntries, selectedDate, selectedCollege]);
+
+  const secStats = useMemo(() => {
+    const totalStaffCount = secFilteredStaff.length;
+    const totalTasksCount = secFilteredTasks.length;
+    const completedTasksCount = secFilteredTasks.filter((t) => t.status === 'Completed').length;
+    const pendingTasksCount = secFilteredTasks.filter((t) => t.status === 'Pending').length;
+    const inProgressTasksCount = secFilteredTasks.filter((t) => t.status === 'In Progress').length;
+    const overdueTasksCount = secFilteredTasks.filter((t) => t.status === 'Overdue').length;
+    const completionRate = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+    const activePdtCount = secFilteredPdt.length;
+    
+    return {
+      totalStaffCount,
+      totalTasksCount,
+      completedTasksCount,
+      pendingTasksCount,
+      inProgressTasksCount,
+      overdueTasksCount,
+      completionRate,
+      activePdtCount
+    };
+  }, [secFilteredStaff, secFilteredTasks, secFilteredPdt]);
 
   const isStaff = currentUser?.role === 'staff';
   const isHod = currentUser?.role === 'admin';
@@ -185,6 +260,328 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     facultyAttendancePct = hasFacEntry && computedFacTotal > 0
       ? Math.min(100, Number(((effectiveFacPresent / computedFacTotal) * 100).toFixed(1)))
       : (totalStaff > 0 ? Math.round((activeFacultyCount / totalStaff) * 100) : 100);
+  }
+
+  if (isSecretary) {
+    return (
+      <div className="space-y-6">
+        {/* Banner */}
+        <div className="bg-gradient-to-r from-teal-700 via-emerald-700 to-indigo-900 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold backdrop-blur-xs mb-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              College Secretary Central Administration
+            </div>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
+              Welcome back, {currentUser?.name}!
+            </h2>
+            <p className="text-xs sm:text-sm text-teal-100/90 mt-1">
+              Unified oversight of total staff, tasks compliance, and daily Principal trackers across all Sasurie campuses.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <span className="bg-white/20 text-white border border-white/25 px-4 py-2 rounded-xl text-xs font-bold shadow-sm">
+              Role: Management Secretariat
+            </span>
+          </div>
+        </div>
+
+        {/* Campus Filter Tab Bar */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-sm space-y-2">
+          <label className="text-xs font-black text-slate-405 uppercase tracking-widest block">
+            Select Sasurie Campus / Institution
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setSelectedCollege('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all border ${
+                selectedCollege === 'all'
+                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-655 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+            >
+              🏢 All Colleges ({staffList.length} Staff)
+            </button>
+            {SASURIE_COLLEGES.map((col) => {
+              const staffCount = staffList.filter((s) => isStaffInCollege(s, col)).length;
+              return (
+                <button
+                  key={col}
+                  onClick={() => setSelectedCollege(col)}
+                  className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all border ${
+                    selectedCollege === col
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-655 dark:text-slate-350 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  🎓 {col.replace('Sasurie College of ', '').replace('Sasurie ', '')} ({staffCount})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-slate-450 uppercase tracking-wider">Total Campus Staff</p>
+              <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">
+                {secStats.totalStaffCount}
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <Users className="w-5.5 h-5.5" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-slate-450 uppercase tracking-wider">Total Active Tasks</p>
+              <p className="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1">
+                {secStats.totalTasksCount}
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+              <CheckSquare className="w-5.5 h-5.5" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-slate-450 uppercase tracking-wider">Task Compliance</p>
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                  {secStats.completionRate}%
+                </p>
+                <p className="text-xs text-slate-455 font-semibold">
+                  ({secStats.completedTasksCount} / {secStats.totalTasksCount})
+                </p>
+              </div>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+              <CheckCircle2 className="w-5.5 h-5.5" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-slate-450 uppercase tracking-wider">PDT Activities</p>
+              <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1">
+                {secStats.activePdtCount}
+              </p>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+              <Calendar className="w-5.5 h-5.5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Interactive Layout splits */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Principal Trackers Daily Timeline (2/3 width) */}
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-slate-50/50 dark:bg-slate-800/20">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Activity className="w-5.5 h-5.5 text-indigo-500" />
+                  PDT Daily Reports (Principal Trackers)
+                </h3>
+                <p className="text-xs text-slate-450 mt-0.5">
+                  Principal diaries & meetings recorded date-wise
+                </p>
+              </div>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="p-6 flex-1 overflow-y-auto max-h-[500px] space-y-6">
+              {secFilteredPdt.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm">No Principal schedules found</h4>
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    There are no tasks or meetings logged by Principals for this date.
+                  </p>
+                </div>
+              ) : (
+                (() => {
+                  // Group PDT by college if "all" is selected
+                  const grouped: Record<string, PdtEntry[]> = {};
+                  if (selectedCollege === 'all') {
+                    secFilteredPdt.forEach((e) => {
+                      const college = e.institution || 'Sasurie College of Engineering';
+                      if (!grouped[college]) grouped[college] = [];
+                      grouped[college].push(e);
+                    });
+                  } else {
+                    grouped[selectedCollege] = secFilteredPdt;
+                  }
+
+                  return Object.entries(grouped).map(([college, entries]) => (
+                    <div key={college} className="space-y-3">
+                      <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
+                        <h4 className="font-bold text-xs uppercase tracking-wider text-slate-450">
+                          {college} ({entries.length} items)
+                        </h4>
+                      </div>
+
+                      <div className="space-y-3 pl-4">
+                        {entries.map((e) => (
+                          <div key={e.id} className="flex gap-4 items-start border-l border-slate-200 dark:border-slate-700 pl-4 relative py-1">
+                            <span className="absolute -left-[4.5px] top-3.5 w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                            
+                            <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-md min-w-[50px] text-center">
+                              {e.time}
+                            </span>
+                            
+                            <div className="flex-1 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.25 rounded-md ${
+                                  e.type === 'Meeting' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400' : 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400'
+                                }`}>
+                                  {e.type}
+                                </span>
+                                <h5 className="font-bold text-sm text-slate-800 dark:text-white leading-tight">
+                                  {e.title}
+                                </h5>
+                                <span className={`text-[10px] font-bold px-2 py-0.25 rounded-md ${
+                                  e.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' :
+                                  e.status === 'In Progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400'
+                                }`}>
+                                  {e.status}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-605 dark:text-slate-300">{e.description}</p>
+                              {e.remarks && (
+                                <p className="text-[11px] text-slate-450 italic">
+                                  <strong className="text-slate-600 dark:text-slate-350">Remarks:</strong> {e.remarks}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()
+              )}
+            </div>
+          </div>
+
+          {/* Directory Explorer (1/3 width) */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+              <div className="flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 rounded-xl p-1 bg-white dark:bg-slate-900">
+                <button
+                  onClick={() => { setSecListTab('staff'); setSecSearchQuery(''); }}
+                  className={`flex-1 py-1.5 text-center text-xs font-bold rounded-lg transition-colors ${
+                    secListTab === 'staff'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  Staff ({secFilteredStaff.length})
+                </button>
+                <button
+                  onClick={() => { setSecListTab('tasks'); setSecSearchQuery(''); }}
+                  className={`flex-1 py-1.5 text-center text-xs font-bold rounded-lg transition-colors ${
+                    secListTab === 'tasks'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  Tasks ({secFilteredTasks.length})
+                </button>
+              </div>
+
+              <div className="mt-3 relative">
+                <input
+                  type="text"
+                  placeholder={secListTab === 'staff' ? "Search staff by name..." : "Search tasks by title..."}
+                  value={secSearchQuery}
+                  onChange={(e) => setSecSearchQuery(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                />
+                {secSearchQuery && (
+                  <button
+                    onClick={() => setSecSearchQuery('')}
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto max-h-[400px] p-3 space-y-2 divide-y divide-slate-50 dark:divide-slate-800/45">
+              {secListTab === 'staff' ? (
+                secFilteredStaff.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-400">No staff found matching criteria.</div>
+                ) : (
+                  secFilteredStaff.map((s) => (
+                    <div key={s.id} className="pt-2 first:pt-0 flex items-center justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <h4 className="font-bold text-xs text-slate-800 dark:text-white leading-tight">
+                          {s.facultyName}
+                        </h4>
+                        <p className="text-[10px] text-slate-450 leading-none">
+                          {s.id} | {s.designation}
+                        </p>
+                        <p className="text-[10px] text-indigo-550 dark:text-indigo-400 font-semibold leading-none">
+                          {s.department}
+                        </p>
+                      </div>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.25 rounded-md ${
+                        s.status === 'Active' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-450'
+                      }`}>
+                        {s.status}
+                      </span>
+                    </div>
+                  ))
+                )
+              ) : (
+                secFilteredTasks.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-400">No tasks found matching criteria.</div>
+                ) : (
+                  secFilteredTasks.map((t) => (
+                    <div key={t.id} className="pt-2 first:pt-0 space-y-1">
+                      <div className="flex justify-between items-start gap-2">
+                        <h4 className="font-bold text-xs text-slate-805 dark:text-white leading-tight flex-1">
+                          {t.title}
+                        </h4>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.25 rounded-md ${
+                          t.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400' :
+                          t.status === 'In Progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400' :
+                          t.status === 'Pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-450'
+                        }`}>
+                          {t.status}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-405 leading-none">
+                        Assignee: <span className="font-semibold text-slate-500">{t.assignedToName}</span>
+                      </p>
+                      <p className="text-[9px] text-indigo-550 dark:text-indigo-400 font-semibold leading-none">
+                        Dept: {t.department || 'All'}
+                      </p>
+                    </div>
+                  ))
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

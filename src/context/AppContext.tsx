@@ -3546,6 +3546,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: newId,
       ...entry,
       createdAt: new Date().toISOString(),
+      institution: currentUser?.institution || dailyReport.collegeName || 'Sasurie College of Engineering',
     };
     setPdtEntries((prev) => {
       const next = [newEntry, ...prev];

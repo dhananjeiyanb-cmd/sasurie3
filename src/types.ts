@@ -545,6 +545,7 @@ export interface PdtEntry {
   remarks?: string;
   createdAt: string; // ISO string
   updatedAt?: string; // ISO string
+  institution?: string; // e.g. 'Sasurie College of Engineering'
 }
 
 

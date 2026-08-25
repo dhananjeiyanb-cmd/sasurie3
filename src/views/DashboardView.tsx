@@ -25,6 +25,8 @@ import {
   Hourglass,
   UserCheck,
   Building2,
+  Activity,
+  X,
 } from 'lucide-react';
 
 interface DashboardViewProps {

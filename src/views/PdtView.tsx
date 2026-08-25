@@ -77,12 +77,12 @@ export const PdtView: React.FC = () => {
 
         const matchesSearch =
           !searchQuery ||
-          entry.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          entry.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (entry.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (entry.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
           (entry.remarks || '').toLowerCase().includes(searchQuery.toLowerCase());
         return matchesDate && matchesInstitution && matchesSearch;
       })
-      .sort((a, b) => a.time.localeCompare(b.time)); // Chronological order
+      .sort((a, b) => (a.time || '').localeCompare(b.time || '')); // Chronological order
   }, [pdtEntries, selectedDate, searchQuery, currentUser]);
 
   // Aggregate values

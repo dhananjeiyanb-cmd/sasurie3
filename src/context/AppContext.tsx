@@ -688,9 +688,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const emailKey = s.email?.toLowerCase();
             const localHash = savedCustomPasswords[passKey] || (emailKey ? savedCustomPasswords[emailKey] : undefined);
             if (localHash) {
+              s = { ...s, password: localHash };
             }
 
-            if (s.id === 'HOD001' && (s.facultyName.includes('DHANANJEIYAN') || (s.email && s.email.includes('dhananjeiyan')))) {
+            if (s.id === 'HOD001' && ((s.facultyName || '').includes('DHANANJEIYAN') || (s.email && s.email.includes('dhananjeiyan')))) {
               const fixedHOD: Staff = {
                 ...s,
                 facultyName: 'Dr. C. HOD (AI & DS)',

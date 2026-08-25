@@ -664,18 +664,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Staff Listener
     const unsubStaff = onSnapshot(collection(db, 'staff'), (snapshot) => {
-      // Read local staff from storage to ensure local additions are not lost
-      let localStaffArr: Staff[] = [];
-      try {
-        const savedLocal = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
-        if (savedLocal) {
-          const parsed = JSON.parse(savedLocal);
-          if (Array.isArray(parsed)) localStaffArr = parsed.filter(isKeepStaff).filter(isNotRecentlyDeleted);
-        }
-      } catch {}
-
-      const isInitialized = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`) === 'true';
-
       if (snapshot.empty) {
         setStaffList([]);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
@@ -686,15 +674,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const map = new Map<string, Staff>();
 
-        // First, load custom passwords from localStorage so we can preserve
-        // password changes that were made locally but not yet synced to Firestore
+        // Load custom passwords from localStorage
         let savedCustomPasswords: Record<string, string> = {};
         try {
           const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}custom_passwords`);
           if (saved) savedCustomPasswords = JSON.parse(saved);
         } catch {}
 
-        // First populate from Firestore, applying any locally-stored custom passwords
         kept.forEach((s) => {
           if (s && s.id) {
             // Preserve custom passwords over Firestore data
@@ -720,29 +706,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
 
-        // Merge in local staff that are NOT in Firestore (local additions not yet synced)
-        localStaffArr.forEach((s) => {
-          if (s && s.id) {
-            const upperId = s.id.toUpperCase();
-            if (!map.has(upperId)) {
-              // This staff member exists locally but not in Firestore yet — keep it
-              map.set(upperId, s);
-            }
-          }
-        });
-
         const finalStaff = Array.from(map.values());
         setStaffList(finalStaff);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(finalStaff));
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
-
-        // Also sync any local-only staff to Firestore so they are not lost on next load
-        localStaffArr.forEach((s) => {
-          const upperId = s.id.toUpperCase();
-          if (!kept.some((fs) => fs.id && fs.id.toUpperCase() === upperId)) {
-            syncDocToFirestore('staff', upperId, s);
-          }
-        });
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'staff'));
 

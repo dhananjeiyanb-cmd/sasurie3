@@ -178,7 +178,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       id: 'pdt',
       label: 'PDT (Principal Tracker)',
       icon: CalendarClock,
-      roles: ['principal', 'principal_pa', 'admin'],
+      roles: ['principal', 'principal_pa', 'admin', 'secretary', 'secretary_pa'],
     },
     {
       id: 'my_mentees',

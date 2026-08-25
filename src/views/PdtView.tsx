@@ -23,6 +23,8 @@ import {
 export const PdtView: React.FC = () => {
   const { pdtEntries, addPdtEntry, updatePdtEntry, deletePdtEntry, currentUser } = useApp();
 
+  const canEdit = currentUser?.role !== 'secretary' && currentUser?.role !== 'secretary_pa';
+
   // Date selection (default to today)
   const todayStr = new Date().toISOString().split('T')[0];
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -47,15 +49,20 @@ export const PdtView: React.FC = () => {
     return pdtEntries
       .filter((entry) => {
         const matchesDate = entry.date === selectedDate;
+        
+        // Filter by institution if the user is a Principal or Principal PA
+        const isPrincipalUser = currentUser?.role === 'principal' || currentUser?.role === 'principal_pa';
+        const matchesInstitution = !isPrincipalUser || !entry.institution || !currentUser?.institution || entry.institution === currentUser.institution;
+
         const matchesSearch =
           !searchQuery ||
           entry.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
           entry.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (entry.remarks || '').toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesDate && matchesSearch;
+        return matchesDate && matchesInstitution && matchesSearch;
       })
       .sort((a, b) => a.time.localeCompare(b.time)); // Chronological order
-  }, [pdtEntries, selectedDate, searchQuery]);
+  }, [pdtEntries, selectedDate, searchQuery, currentUser]);
 
   // Aggregate values
   const stats = useMemo(() => {
@@ -182,13 +189,15 @@ export const PdtView: React.FC = () => {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleOpenAddModal}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-semibold shadow-sm transition-colors text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            Add Entry
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleOpenAddModal}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-semibold shadow-sm transition-colors text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add Entry
+            </button>
+          )}
           <button
             onClick={() => window.print()}
             className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-4 py-2.5 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-sm"
@@ -352,22 +361,24 @@ export const PdtView: React.FC = () => {
                 </div>
 
                 {/* Edit / Delete actions */}
-                <div className="flex items-center gap-1.5 self-end md:self-start">
-                  <button
-                    onClick={() => handleOpenEditModal(entry)}
-                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg transition-colors"
-                    title="Edit entry"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(entry.id)}
-                    className="p-2 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-slate-400 hover:text-rose-600 dark:hover:text-rose-450 rounded-lg transition-colors"
-                    title="Delete entry"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1.5 self-end md:self-start">
+                    <button
+                      onClick={() => handleOpenEditModal(entry)}
+                      className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg transition-colors"
+                      title="Edit entry"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(entry.id)}
+                      className="p-2 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-slate-400 hover:text-rose-600 dark:hover:text-rose-450 rounded-lg transition-colors"
+                      title="Delete entry"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

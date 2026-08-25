@@ -97,5 +97,9 @@ service cloud.firestore {
     match /systemLogs/{docId} {
       allow read, write: if true;
     }
+
+    match /pdtEntries/{docId} {
+      allow read, write: if true;
+    }
   }
 }

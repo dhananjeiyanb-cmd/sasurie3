@@ -21,6 +21,7 @@ export const LogsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  const [customDate, setCustomDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Available filter options
   const filterOptions = [
@@ -143,6 +144,8 @@ export const LogsView: React.FC = () => {
         const oneWeekAgo = new Date();
         oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
         matchesDate = new Date(log.timestamp) >= oneWeekAgo;
+      } else if (dateFilter === 'custom') {
+        matchesDate = logDate === customDate;
       }
 
       return matchesSearch && matchesAction && matchesDate;
@@ -166,7 +169,7 @@ export const LogsView: React.FC = () => {
       formattedDate: formatDateLabel(date),
       logs: groups[date],
     }));
-  }, [systemLogs, searchQuery, actionFilter, dateFilter]);
+  }, [systemLogs, searchQuery, actionFilter, dateFilter, customDate]);
 
   const totalLogsCount = useMemo(() => {
     return filteredAndGroupedLogs.reduce((sum, g) => sum + g.logs.length, 0);
@@ -193,9 +196,9 @@ export const LogsView: React.FC = () => {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-900/60 border border-slate-800 p-4 rounded-xl mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 bg-slate-900/60 border border-slate-800 p-4 rounded-xl mb-6">
         {/* Search Input */}
-        <div className="relative md:col-span-2">
+        <div className={`relative ${dateFilter === 'custom' ? 'md:col-span-5' : 'md:col-span-6'}`}>
           <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
           <input
             type="text"
@@ -207,7 +210,7 @@ export const LogsView: React.FC = () => {
         </div>
 
         {/* Action Type Dropdown */}
-        <div className="relative">
+        <div className={`relative ${dateFilter === 'custom' ? 'md:col-span-2' : 'md:col-span-3'}`}>
           <Filter className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
           <select
             value={actionFilter}
@@ -224,7 +227,7 @@ export const LogsView: React.FC = () => {
         </div>
 
         {/* Date Filter Dropdown */}
-        <div className="relative">
+        <div className={`relative ${dateFilter === 'custom' ? 'md:col-span-2' : 'md:col-span-3'}`}>
           <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
           <select
             value={dateFilter}
@@ -235,9 +238,23 @@ export const LogsView: React.FC = () => {
             <option value="today">Today Only</option>
             <option value="yesterday">Yesterday Only</option>
             <option value="week">Past 7 Days</option>
+            <option value="custom">Specific Date...</option>
           </select>
           <div className="pointer-events-none absolute right-3 top-3 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-400 w-0 h-0" />
         </div>
+
+        {/* Custom Date Input */}
+        {dateFilter === 'custom' && (
+          <div className="relative md:col-span-3">
+            <Calendar className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <input
+              type="date"
+              value={customDate}
+              onChange={(e) => setCustomDate(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-semibold"
+            />
+          </div>
+        )}
       </div>
 
       {/* Logs Display List */}

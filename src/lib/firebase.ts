@@ -21,7 +21,18 @@ function hasEnvConfig(cfg: typeof envConfig) {
   return !!(cfg.apiKey && cfg.projectId);
 }
 
-const firebaseConfig = hasEnvConfig(envConfig) ? envConfig : (firebaseConfigFile as any);
+const firebaseConfig = hasEnvConfig(envConfig)
+  ? {
+      apiKey: envConfig.apiKey || (firebaseConfigFile as any).apiKey,
+      authDomain: envConfig.authDomain || (firebaseConfigFile as any).authDomain,
+      projectId: envConfig.projectId || (firebaseConfigFile as any).projectId,
+      storageBucket: envConfig.storageBucket || (firebaseConfigFile as any).storageBucket,
+      messagingSenderId: envConfig.messagingSenderId || (firebaseConfigFile as any).messagingSenderId,
+      appId: envConfig.appId || (firebaseConfigFile as any).appId,
+      measurementId: envConfig.measurementId || (firebaseConfigFile as any).measurementId,
+      firestoreDatabaseId: envConfig.firestoreDatabaseId || (firebaseConfigFile as any).firestoreDatabaseId,
+    }
+  : (firebaseConfigFile as any);
 
 const app = initializeApp(firebaseConfig as any);
 export const db = (firebaseConfig as any).firestoreDatabaseId ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId) : getFirestore(app);

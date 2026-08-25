@@ -331,7 +331,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       } catch {}
     }
-    return INITIAL_STAFF;
+    return [];
   });
 
   const [classList, setClassList] = useState<ClassRoom[]>(() => {
@@ -677,17 +677,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isInitialized = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`) === 'true';
 
       if (snapshot.empty) {
-        if (isInitialized || (localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`) && JSON.parse(localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`) || '[]').length === 0)) {
-          setStaffList([]);
-          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
-        } else {
-          const staffToInit = (localStaffArr.length > 0 ? localStaffArr : INITIAL_STAFF).filter(isNotRecentlyDeleted);
-          staffToInit.forEach((s) => syncDocToFirestore('staff', s.id, s));
-          setStaffList(staffToInit);
-          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(staffToInit));
-          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
-        }
-            } else {
+        setStaffList([]);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
+      } else {
         const items = snapshot.docs.map((d) => d.data() as Staff);
         const kept = items.filter(isKeepStaff).filter(isNotRecentlyDeleted);
 
@@ -1555,7 +1548,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Secretary Login
     if (isSecretaryUser && await checkPasswordValid(lowUser, lowPass)) {
       const email = 'secretary@sasurie.com';
-      const name = 'Thiru. S. Subburaj (College Secretary)';
+      const name = 'Smt. K. Savitha Moganraj (College Secretary)';
       const secUser: User = {
         username: email,
         role: 'secretary',
@@ -1567,7 +1560,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'secretary'),
       };
       setCurrentUser(secUser);
-      addSystemLog('login', `Logged in as Secretary Subburaj`, secUser);
+      addSystemLog('login', `Logged in as Secretary Smt. K. Savitha Moganraj`, secUser);
       return { success: true };
     }
 
@@ -1755,7 +1748,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       staffId = matchedStaff.id;
     } else if (lowEmail.includes('secretary') && !lowEmail.includes('pa')) {
       role = 'secretary';
-      name = customName || 'Thiru. S. Subburaj (College Secretary)';
+      name = customName || 'Smt. K. Savitha Moganraj (College Secretary)';
       department = 'Management Secretariat';
       staffId = 'SEC001';
     } else if (lowEmail.includes('principal.pa') || lowEmail.includes('principal_pa')) {
@@ -1828,7 +1821,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     } else if (role === 'secretary') {
       const email = 'secretary@sasurie.com';
-      const name = 'Thiru. S. Subburaj (College Secretary)';
+      const name = 'Smt. K. Savitha Moganraj (College Secretary)';
       demoUser = {
         username: 'SEC001',
         role: 'secretary',

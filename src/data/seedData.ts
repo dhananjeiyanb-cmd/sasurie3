@@ -21,7 +21,7 @@ export const INITIAL_STAFF: Staff[] = [
   },
   {
     id: 'SEC001',
-    facultyName: 'Thiru. S. Subburaj',
+    facultyName: 'Smt. K. Savitha Moganraj',
     designation: 'Secretary',
     department: 'Management Secretariat',
     email: 'secretary@sasurie.com',

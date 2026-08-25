@@ -21,12 +21,33 @@ import {
 } from 'lucide-react';
 
 export const PdtView: React.FC = () => {
-  const { pdtEntries, addPdtEntry, updatePdtEntry, deletePdtEntry, currentUser } = useApp();
+  const { pdtEntries, addPdtEntry, updatePdtEntry, deletePdtEntry, currentUser, addTask, staffList } = useApp();
 
   const canEdit = currentUser?.role !== 'secretary' && currentUser?.role !== 'secretary_pa';
 
   // Date selection (default to today)
   const todayStr = new Date().toISOString().split('T')[0];
+
+  // Follow Up state
+  const [isFollowUpModalOpen, setIsFollowUpModalOpen] = useState(false);
+  const [parentMeeting, setParentMeeting] = useState<PdtEntry | null>(null);
+  const [followUpTitle, setFollowUpTitle] = useState('');
+  const [followUpDescription, setFollowUpDescription] = useState('');
+  const [followUpTargetDate, setFollowUpTargetDate] = useState(todayStr);
+  const [followUpPriority, setFollowUpPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
+  const [followUpAssignee, setFollowUpAssignee] = useState('all_hods');
+
+  const hods = useMemo(() => {
+    return staffList.filter(
+      (s) =>
+        s.role === 'admin' ||
+        s.id.startsWith('HOD') ||
+        (s.designation && s.designation.toLowerCase().includes('hod')) ||
+        (s.designation && s.designation.toLowerCase().includes('head of department'))
+    );
+  }, [staffList]);
+
+  // Date selection (default to today)
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
   // Search query
@@ -88,6 +109,84 @@ export const PdtView: React.FC = () => {
     setStatus('Scheduled');
     setRemarks('');
     setEditingEntry(null);
+  };
+
+  const handleOpenFollowUpModal = (entry: PdtEntry) => {
+    setParentMeeting(entry);
+    setFollowUpTitle(`Follow-up from Meeting: ${entry.title}`);
+    setFollowUpDescription(`Action items from meeting on ${entry.time}: ${entry.description}`);
+    setFollowUpTargetDate(entry.date);
+    setFollowUpPriority('Medium');
+    setFollowUpAssignee('all_hods');
+    setIsFollowUpModalOpen(true);
+  };
+
+  const handleCreateFollowUpTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!followUpTitle.trim()) return;
+
+    // 1. Assign Task in HOD Task Manager
+    if (followUpAssignee === 'all_hods') {
+      if (hods.length > 0) {
+        hods.forEach((hod) => {
+          addTask({
+            title: followUpTitle,
+            description: followUpDescription,
+            assignedToStaffId: hod.id,
+            assignedToName: `${hod.facultyName} (HOD - ${hod.department})`,
+            priority: followUpPriority,
+            targetDate: followUpTargetDate,
+            status: 'Pending',
+            groupName: 'HODs Group',
+            isGroupTask: true,
+            department: hod.department,
+          });
+        });
+      }
+
+      // Add HODs Group Broadcast Master Task
+      addTask({
+        title: `${followUpTitle} [HODs Group Broadcast]`,
+        description: followUpDescription,
+        assignedToStaffId: 'GROUP_HODS',
+        assignedToName: 'HODs Group (All Department HODs)',
+        priority: followUpPriority,
+        targetDate: followUpTargetDate,
+        status: 'Pending',
+        groupName: 'HODs Group',
+        isGroupTask: true,
+      });
+    } else {
+      const selectedHod = hods.find((h) => h.id === followUpAssignee);
+      if (selectedHod) {
+        addTask({
+          title: followUpTitle,
+          description: followUpDescription,
+          assignedToStaffId: selectedHod.id,
+          assignedToName: `${selectedHod.facultyName} (HOD - ${selectedHod.department})`,
+          priority: followUpPriority,
+          targetDate: followUpTargetDate,
+          status: 'Pending',
+          department: selectedHod.department,
+        });
+      }
+    }
+
+    // 2. Auto-log Follow-up PDT task entry
+    const timeNow = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    addPdtEntry({
+      date: selectedDate,
+      time: timeNow,
+      type: 'Task',
+      title: `Follow-up: ${followUpTitle}`,
+      description: `Follow-up task assigned to HODs: ${followUpDescription}`,
+      status: 'Scheduled',
+      remarks: `Follow-up from meeting: "${parentMeeting?.title || ''}"`,
+    });
+
+    // Close and reset
+    setIsFollowUpModalOpen(false);
+    setParentMeeting(null);
   };
 
   const handleOpenAddModal = () => {
@@ -357,6 +456,17 @@ export const PdtView: React.FC = () => {
                         <strong className="text-slate-700 dark:text-slate-300">Remarks:</strong> {entry.remarks}
                       </div>
                     )}
+                    {entry.type === 'Meeting' && canEdit && (
+                      <div className="mt-2.5">
+                        <button
+                          onClick={() => handleOpenFollowUpModal(entry)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-650 hover:text-indigo-800 dark:text-indigo-400 text-xs font-bold transition-all"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Assign Follow-up Task to HODs
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -574,6 +684,125 @@ export const PdtView: React.FC = () => {
                 >
                   <Save className="w-4 h-4" />
                   Save Entry
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Follow Up Task Modal */}
+      {isFollowUpModalOpen && parentMeeting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative overflow-hidden">
+            <button
+              onClick={() => {
+                setIsFollowUpModalOpen(false);
+                setParentMeeting(null);
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-655 dark:hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-4">
+              <Plus className="w-5 h-5 text-indigo-650" />
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assign Follow-Up HOD Task</h3>
+            </div>
+
+            <form onSubmit={handleCreateFollowUpTask} className="space-y-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
+                  Task Title
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Enter task title"
+                  value={followUpTitle}
+                  onChange={(e) => setFollowUpTitle(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white font-semibold"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
+                  Task Description / Instructions
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Provide detailed action items or instructions..."
+                  value={followUpDescription}
+                  onChange={(e) => setFollowUpDescription(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white resize-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
+                  Assign To HOD
+                </label>
+                <select
+                  value={followUpAssignee}
+                  onChange={(e) => setFollowUpAssignee(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white font-bold"
+                >
+                  <option value="all_hods">👥 All HODs (Group Broadcast)</option>
+                  {hods.map((hod) => (
+                    <option key={hod.id} value={hod.id}>
+                      👤 {hod.facultyName} ({hod.department})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
+                    Target Date
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={followUpTargetDate}
+                    onChange={(e) => setFollowUpTargetDate(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white font-semibold"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">
+                    Priority
+                  </label>
+                  <select
+                    value={followUpPriority}
+                    onChange={(e) => setFollowUpPriority(e.target.value as any)}
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white font-bold"
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2.5 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFollowUpModalOpen(false);
+                    setParentMeeting(null);
+                  }}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-350 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl font-semibold shadow-sm transition-colors text-sm"
+                >
+                  <Save className="w-4 h-4" />
+                  Assign Task
                 </button>
               </div>
             </form>

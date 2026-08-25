@@ -1113,19 +1113,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
 
       if (snapshot.empty) {
-        setPdtEntries(localArr);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`, JSON.stringify(localArr));
+        if (localArr.length > 0) {
+          localArr.forEach((p) => {
+            if (p && p.id) syncDocToFirestore('pdtEntries', p.id, p);
+          });
+          setPdtEntries(localArr);
+        } else {
+          setPdtEntries([]);
+          localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}pdt_entries_v1`, JSON.stringify([]));
+        }
       } else {
-        const map = new Map<string, PdtEntry>();
+        const items = snapshot.docs.map((d) => d.data() as PdtEntry);
+        const cloudIds = new Set(items.map((item) => item.id));
+        let hasUnsaved = false;
+
         localArr.forEach((p) => {
-          if (p && p.id) map.set(p.id, p);
+          if (p && p.id && !cloudIds.has(p.id)) {
+            syncDocToFirestore('pdtEntries', p.id, p);
+            items.push(p);
+            hasUnsaved = true;
+          }
         });
-        snapshot.docs.forEach((d) => {
-          const data = d.data() as PdtEntry;
-          const key = data?.id || d.id;
-          if (key) map.set(key, data);
-        });
-        const finalPdt = Array.from(map.values()).sort(
+
+        const finalPdt = items.sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
         setPdtEntries(finalPdt);

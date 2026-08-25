@@ -1,0 +1,9 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-hodfacultytaskmo-3ed80699-eb26-46fb-9d56-0c5d50adc802",
+      "rules": "firestore.rules"
+    }
+  ]
+}
+

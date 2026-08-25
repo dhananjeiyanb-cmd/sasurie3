@@ -1430,6 +1430,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'adm001',
       'fac019',
       'cse01',
+      'sce01',
+      '001',
       '613',
       'sasidharan',
       'suma',
@@ -1495,14 +1497,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lowUser === 'principal.pa@sasurie.com' ||
       lowUser === 'principal_pa' ||
       lowUser === 'principalpa' ||
-      lowUser === 'pripa001';
+      lowUser === 'pripa001' ||
+      lowUser === '001';
 
     const isSecretaryPaUser =
       lowUser === 'secretary.pa@sasurie.com' ||
       lowUser === 'secretarypa@sasurie.com' ||
       lowUser === 'secretary_pa' ||
       lowUser === 'secretarypa' ||
-      lowUser === 'secpa001';
+      lowUser === 'secpa001' ||
+      lowUser === 'sce01';
 
     // System Super Admin Login (All Colleges & All Staff Access)
     if (isSuperAdminAccount && await checkPasswordValid(lowUser, lowPass)) {
@@ -1567,13 +1571,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Principal PA Login
     if (isPrincipalPaUser && await checkPasswordValid(lowUser, lowPass)) {
       const matchingStaff = staffList.find((s) => s.role === 'principal_pa');
-      const email = matchingStaff?.email || 'principal.pa@sasurie.com';
-      const name = matchingStaff?.facultyName || 'Er. R. Ramesh (Principal PA)';
+      const email = lowUser === '001' ? 'abishekjashwa@sasurie.com' : (matchingStaff?.email || 'principal.pa@sasurie.com');
+      const name = lowUser === '001' ? 'ABISHEK JASHWA (Principal PA)' : (matchingStaff?.facultyName || 'Er. R. Ramesh (Principal PA)');
       const inst = matchingStaff?.institution || dailyReport.collegeName || 'Sasurie College of Engineering';
+      const staffId = lowUser === '001' ? '001' : (matchingStaff?.id || 'PRIPA001');
       const priPaUser: User = {
-        username: email,
+        username: lowUser,
         role: 'principal_pa',
-        staffId: matchingStaff?.id || 'PRIPA001',
+        staffId,
         name,
         department: 'College Principal Office',
         institution: inst,
@@ -1582,18 +1587,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'principal_pa'),
       };
       setCurrentUser(priPaUser);
-      addSystemLog('login', `Logged in as Principal PA Ramesh`, priPaUser);
+      addSystemLog('login', `Logged in as Principal PA: ${name}`, priPaUser);
       return { success: true };
     }
 
     // Secretary PA Login
     if (isSecretaryPaUser && await checkPasswordValid(lowUser, lowPass)) {
-      const email = 'secretary.pa@sasurie.com';
-      const name = 'Er. K. Suresh (Secretary PA)';
+      const email = lowUser === 'sce01' ? 'kiruthikas@sasurie.com' : 'secretary.pa@sasurie.com';
+      const name = lowUser === 'sce01' ? 'Kiruthika S (Secretary PA)' : 'Er. K. Suresh (Secretary PA)';
+      const staffId = lowUser === 'sce01' ? 'sce01' : 'SECPA001';
       const secPaUser: User = {
-        username: email,
+        username: lowUser,
         role: 'secretary_pa',
-        staffId: 'SECPA001',
+        staffId,
         name,
         department: 'Management Secretariat',
         email,
@@ -1601,7 +1607,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         avatarUrl: getGoogleAvatarUrl(email, name, 'secretary_pa'),
       };
       setCurrentUser(secPaUser);
-      addSystemLog('login', `Logged in as Secretary PA Suresh`, secPaUser);
+      addSystemLog('login', `Logged in as Secretary PA: ${name}`, secPaUser);
       return { success: true };
     }
 

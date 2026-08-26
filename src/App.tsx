@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { CdcProvider } from './context/CdcContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { LoginView } from './views/LoginView';
@@ -226,10 +227,12 @@ const MainContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <CdcProvider>
-        <MainContent />
-      </CdcProvider>
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <CdcProvider>
+          <MainContent />
+        </CdcProvider>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

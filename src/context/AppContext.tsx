@@ -664,9 +664,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Staff Listener
     const unsubStaff = onSnapshot(collection(db, 'staff'), (snapshot) => {
+      let localStaffArr: Staff[] = [];
+      try {
+        const savedLocal = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`);
+        if (savedLocal) {
+          const parsed = JSON.parse(savedLocal);
+          if (Array.isArray(parsed)) localStaffArr = parsed.filter(isKeepStaff).filter(isNotRecentlyDeleted);
+        }
+      } catch {}
+
       if (snapshot.empty) {
-        setStaffList([]);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify([]));
+        const staffToInit = localStaffArr.length > 0 ? localStaffArr : INITIAL_STAFF;
+        staffToInit.forEach((s) => {
+          if (s && s.id) syncDocToFirestore('staff', s.id.toUpperCase(), s);
+        });
+        setStaffList(staffToInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff`, JSON.stringify(staffToInit));
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}staff_initialized`, 'true');
       } else {
         const items = snapshot.docs.map((d) => d.data() as Staff);
@@ -722,28 +735,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_CLASSES;
+        toInit.forEach((c) => {
+          if (c && c.id) syncDocToFirestore('classes', c.id, c);
+        });
         setClassList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as ClassRoom);
-        const map = new Map<string, ClassRoom>();
-        items.forEach((c) => { if (c && c.id) map.set(c.id, c); });
-        localArr.forEach((c) => {
-          if (c && c.id && !map.has(c.id)) {
-            map.set(c.id, c);
-          }
-        });
-        const finalClasses = Array.from(map.values());
-        setClassList(finalClasses);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`, JSON.stringify(finalClasses));
+        setClassList(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}classes`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'classes'));
 
     // Tasks Listener
     const unsubTasks = onSnapshot(collection(db, 'tasks'), (snapshot) => {
+      let localArr: Task[] = [];
+      try {
+        const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`);
+        if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) localArr = parsed; }
+      } catch {}
       if (snapshot.empty) {
-        setTaskList([]);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify([]));
+        const toInit = localArr.length > 0 ? localArr : INITIAL_TASKS;
+        toInit.forEach((t) => {
+          if (t && t.id) syncDocToFirestore('tasks', t.id, t);
+        });
+        setTaskList(toInit);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}tasks`, JSON.stringify(toInit));
       } else {
         const sampleTaskIds = ['TSK-101', 'TSK-102', 'TSK-103', 'TSK-104', 'TSK-105'];
         const items = snapshot.docs
@@ -763,20 +780,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_OBSERVATIONS;
+        toInit.forEach((o) => {
+          if (o && o.id) syncDocToFirestore('observations', o.id, o);
+        });
         setObservationList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as ClassObservation);
-        const map = new Map<string, ClassObservation>();
-        items.forEach((o) => { if (o && o.id) map.set(o.id, o); });
-        localArr.forEach((o) => {
-          if (o && o.id && !map.has(o.id)) {
-            map.set(o.id, o);
-          }
-        });
-        const finalObs = Array.from(map.values());
-        setObservationList(finalObs);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`, JSON.stringify(finalObs));
+        setObservationList(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}observations`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'observations'));
 
@@ -789,20 +801,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_DAILY_MONITORING;
+        toInit.forEach((m) => {
+          if (m && m.id) syncDocToFirestore('monitoring', m.id, m);
+        });
         setMonitoringList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as FacultyDailyMonitoring);
-        const map = new Map<string, FacultyDailyMonitoring>();
-        items.forEach((m) => { if (m && m.id) map.set(m.id, m); });
-        localArr.forEach((m) => {
-          if (m && m.id && !map.has(m.id)) {
-            map.set(m.id, m);
-          }
-        });
-        const finalMon = Array.from(map.values());
-        setMonitoringList(finalMon);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`, JSON.stringify(finalMon));
+        setMonitoringList(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}monitoring`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'monitoring'));
 
@@ -815,18 +822,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = dedupeAttendanceRecords(localArr.length > 0 ? localArr : INITIAL_ATTENDANCE_RECORDS);
+        toInit.forEach((a) => {
+          if (a && a.id) syncDocToFirestore('attendance', a.id, a);
+        });
         setAttendanceRecords(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as StudentAttendanceRecord);
-        const map = new Map<string, StudentAttendanceRecord>();
-        items.forEach((a) => { if (a && a.id) map.set(a.id, a); });
-        localArr.forEach((a) => {
-          if (a && a.id && !map.has(a.id)) {
-            map.set(a.id, a);
-          }
-        });
-        const finalAtt = dedupeAttendanceRecords(Array.from(map.values()));
+        const finalAtt = dedupeAttendanceRecords(items);
         setAttendanceRecords(finalAtt);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}attendance_records`, JSON.stringify(finalAtt));
       }
@@ -841,20 +844,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_LESSON_PLANS;
+        toInit.forEach((lp) => {
+          if (lp && lp.id) syncDocToFirestore('lessonPlans', lp.id, lp);
+        });
         setLessonPlanList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as LessonPlanItem);
-        const map = new Map<string, LessonPlanItem>();
-        items.forEach((lp) => { if (lp && lp.id) map.set(lp.id, lp); });
-        localArr.forEach((lp) => {
-          if (lp && lp.id && !map.has(lp.id)) {
-            map.set(lp.id, lp);
-          }
-        });
-        const finalLp = Array.from(map.values());
-        setLessonPlanList(finalLp);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`, JSON.stringify(finalLp));
+        setLessonPlanList(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}lesson_plans`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'lessonPlans'));
 
@@ -867,20 +865,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_NOTIFICATIONS;
+        toInit.forEach((n) => {
+          if (n && n.id) syncDocToFirestore('notifications', n.id, n);
+        });
         setNotifications(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as AppNotification);
-        const map = new Map<string, AppNotification>();
-        items.forEach((n) => { if (n && n.id) map.set(n.id, n); });
-        localArr.forEach((n) => {
-          if (n && n.id && !map.has(n.id)) {
-            map.set(n.id, n);
-          }
-        });
-        const finalNotif = Array.from(map.values());
-        setNotifications(finalNotif);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`, JSON.stringify(finalNotif));
+        setNotifications(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}notifications`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'notifications'));
 
@@ -893,20 +886,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
       if (snapshot.empty) {
         const toInit = localArr.length > 0 ? localArr : INITIAL_EVENTS;
+        toInit.forEach((ev) => {
+          if (ev && ev.id) syncDocToFirestore('events', ev.id, ev);
+        });
         setEventsList(toInit);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(toInit));
       } else {
         const items = snapshot.docs.map((d) => d.data() as EventRecord);
-        const map = new Map<string, EventRecord>();
-        items.forEach((e) => { if (e && e.id) map.set(e.id, e); });
-        localArr.forEach((e) => {
-          if (e && e.id && !map.has(e.id)) {
-            map.set(e.id, e);
-          }
-        });
-        const finalEvents = Array.from(map.values());
-        setEventsList(finalEvents);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(finalEvents));
+        setEventsList(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}events`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'events'));
 
@@ -929,36 +917,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .map(normalizeStudentSkillBankRecord)
           .filter(isNotRecentlyDeletedStudent);
         if (cleanedLocal.length > 0) {
+          cleanedLocal.forEach((st) => {
+            const docId = getStudentDocId(st);
+            if (docId) syncDocToFirestore('skillBankStudents', docId, st);
+          });
           setSkillBankStudents(cleanedLocal);
         } else {
-          setSkillBankStudents(INITIAL_STUDENTS_SKILL_BANK.filter(isNotRecentlyDeletedStudent));
+          setSkillBankStudents([]);
         }
       } else {
         const items = snapshot.docs
           .map((d) => normalizeStudentSkillBankRecord(d.data() as StudentSkillBankData))
           .filter(isNotRecentlyDeletedStudent);
-        const map = new Map<string, StudentSkillBankData>();
-
-        // Local state loaded from localStorage takes precedence for local additions / edits
-        localArr
-          .map(normalizeStudentSkillBankRecord)
-          .filter(isNotRecentlyDeletedStudent)
-          .forEach((st) => {
-            const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
-            if (key) map.set(key, st);
-          });
-
-        // Overlay remote items from Firestore snapshot
-        items.forEach((st) => {
-          const key = (st.studentProfile?.registerNumber || getStudentDocId(st)).toLowerCase();
-          if (key) {
-            map.set(key, st);
-          }
-        });
-
-        const finalStudents = Array.from(map.values());
-        setSkillBankStudents(finalStudents);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v12`, JSON.stringify(finalStudents));
+        setSkillBankStudents(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}skill_bank_students_v12`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'skillBankStudents'));
 
@@ -974,21 +946,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } catch {}
 
       if (snapshot.empty) {
+        localArr.forEach((kpi) => {
+          const key = kpi.staffId;
+          if (key) syncDocToFirestore('facultyKpis', key, kpi);
+        });
         setFacultyKpis(localArr);
         localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(localArr));
       } else {
-        const map = new Map<string, FacultyKpiRecord>();
-        localArr.forEach((r) => {
-          if (r && r.staffId) map.set(r.staffId, r);
-        });
-        snapshot.docs.forEach((d) => {
-          const data = d.data() as FacultyKpiRecord;
-          const key = data?.staffId || d.id;
-          if (key) map.set(key, data);
-        });
-        const finalKpis = Array.from(map.values());
-        setFacultyKpis(finalKpis);
-        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(finalKpis));
+        const items = snapshot.docs.map((d) => d.data() as FacultyKpiRecord);
+        setFacultyKpis(items);
+        localStorage.setItem(`${LOCAL_STORAGE_KEY_PREFIX}faculty_kpis_v1`, JSON.stringify(items));
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'facultyKpis'));
 
